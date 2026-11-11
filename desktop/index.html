@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Delonix Tutor</title>
+    <!--
+      Boot splash styling lives INLINE here (not in the external CSS) on purpose:
+      during a reload the Vite/CSS bundle has not necessarily parsed yet, so the
+      splash must be able to paint a finished, branded screen with zero external
+      dependencies. The JS hides #boot once the app has mounted.
+    -->
+    <style id="boot-style">
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: #1e1e1e;
+        color: #cccccc;
+        font-family: "Segoe UI", -apple-system, system-ui, Ubuntu, sans-serif;
+        opacity: 1;
+        transition: opacity 0.35s ease;
+      }
+      #boot.boot-hiding { opacity: 0; pointer-events: none; }
+      #boot .boot-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        color: #ffffff;
+      }
+      #boot .boot-logo { color: #519aba; font-size: 26px; line-height: 1; }
+      #boot .boot-sub { font-size: 12.5px; color: #858585; letter-spacing: 0.04em; }
+      #boot .boot-spinner {
+        width: 30px;
+        height: 30px;
+        border: 3px solid rgba(255, 255, 255, 0.14);
+        border-top-color: #0e639c;
+        border-radius: 50%;
+        animation: boot-spin 0.8s linear infinite;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        #boot .boot-spinner { animation-duration: 2s; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Boot splash: covers everything until the app has mounted (no raw HTML). -->
+    <div id="boot">
+      <div class="boot-brand"><span class="boot-logo">&#9776;</span> Delonix Tutor</div>
+      <div class="boot-spinner"></div>
+      <div class="boot-sub" data-i18n="boot.subtitle">Loading your workspace…</div>
+    </div>
+    <div id="app">
+      <!-- Title bar -->
+      <header id="titlebar">
+        <div class="title-left">
+          <span class="codicon-logo">&#9776;</span>
+          <nav class="menu">
+            <span data-menu="file" data-i18n="menu.file">File</span><span data-i18n="menu.edit">Edit</span><span data-i18n="menu.view">View</span><span data-menu="run" data-i18n="menu.run">Run</span><span data-i18n="menu.help">Help</span>
+          </nav>
+        </div>
+        <div class="title-center" id="title-project">Delonix Tutor</div>
+      </header>
+
+      <!-- Middle band: activity bar + sidebar + (editor stacked over panel) -->
+      <div id="body">
+        <!-- Activity bar. Monochromatic line icons (codicon/VSCode flavour),
+             drawn inline so there is zero external/CDN dependency. Every glyph
+             inherits `currentColor`, so the existing dim/active colouring and
+             the left accent bar keep working untouched. -->
+        <nav id="activitybar">
+          <button class="act active" data-view="explorer" data-mode="learning" title="Learning track" data-i18n-title="act.learning">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2 9l10 5 10-5-10-5Z"/><path d="M6 11.3V16c0 1.1 2.7 2.5 6 2.5s6-1.4 6-2.5v-4.7"/><path d="M21 9.5V15"/></svg>
+          </button>
+          <button class="act" data-view="workspace" data-mode="workspace" title="Explorer — open a real project" data-i18n-title="act.explorer">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7l-4-4Z"/><path d="M14 3v4h4"/><path d="M5 7v12a1 1 0 0 0 1 1h8"/></svg>
+          </button>
+          <button class="act" data-view="run" title="Run and Submit" data-i18n-title="act.run">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg>
+          </button>
+          <button class="act" data-view="debug" title="Run and Debug — step through a real trace" data-i18n-title="act.debug">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0"/><rect x="6" y="8" width="12" height="10" rx="6"/><path d="M12 12v6M6 11H3M6 15H3.2M18 11h3M18 15h2.8M7.3 8 5.3 6M16.7 8l2-2"/></svg>
+          </button>
+          <button class="act" data-view="review" title="Code Review — offline analysis" data-i18n-title="act.review">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 11l2 2 4-4"/></svg>
+          </button>
+          <button class="act" data-view="hint" title="Hints" data-i18n-title="act.hint">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3Z"/></svg>
+          </button>
+          <button class="act" data-view="glossary" title="Glossary — reserved words" data-i18n-title="act.glossary">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+          </button>
+          <button class="act" data-view="underhood" title="Under the hood — what the machine really does" data-i18n-title="act.underhood">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h4v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9"/></svg>
+          </button>
+          <button class="act" data-view="visualize" title="Visualize execution — run a program step by step" data-i18n-title="act.visualize">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4"/></svg>
+          </button>
+          <div class="act-spacer"></div>
+          <button class="act" data-view="settings" title="Change course / reset profile" data-i18n-title="act.settings">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          </button>
+        </nav>
+
+        <!-- Sidebar -->
+        <aside id="sidebar">
+          <!-- Learning mode: the guided track (unchanged). -->
+          <div id="learning-sidebar">
+            <div class="sidebar-header">
+              <span data-i18n="sidebar.learningTrack">Learning Track</span>
+              <button id="btn-reset-profile" class="sidebar-hdr-btn hidden" title="Change course / reset profile" data-i18n-title="sidebar.resetProfile"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
+            </div>
+            <div class="sidebar-section-title" id="project-title" role="button" tabindex="0"
+              aria-expanded="true" title="Collapse / expand the track" data-i18n-title="sidebar.collapse">Loading…</div>
+            <div class="track-wrap"><ul id="track-list" class="track-list"></ul></div>
+          </div>
+
+          <!-- Workspace mode: a real file explorer for actual projects. -->
+          <div id="workspace-sidebar" class="hidden">
+            <div class="sidebar-header ws-header">
+              <span data-i18n="ws.explorer">Explorer</span>
+              <div class="ws-hdr-actions">
+                <button id="ws-act-newfile" class="sidebar-hdr-btn" title="New File" data-i18n-title="ws.newFile"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7l-4-4Z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14h6"/></svg></button>
+                <button id="ws-act-newfolder" class="sidebar-hdr-btn" title="New Folder" data-i18n-title="ws.newFolder"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z"/><path d="M12 12v4M10 14h4"/></svg></button>
+                <button id="ws-act-refresh" class="sidebar-hdr-btn" title="Refresh" data-i18n-title="ws.refresh"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
+                <button id="ws-act-open" class="sidebar-hdr-btn" title="Open Folder" data-i18n-title="ws.openFolder"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg></button>
+              </div>
+            </div>
+            <div class="sidebar-section-title ws-root-title" id="ws-root-title"
+              title="Open a folder to start a real project" data-i18n-title="ws.rootHint">NO FOLDER OPENED</div>
+            <div id="ws-tree" class="ws-tree"></div>
+            <div id="ws-empty" class="ws-empty">
+              <p data-i18n="ws.emptyText">Build a real project with what you have learned.</p>
+              <button id="ws-open-folder-empty" class="btn btn-primary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg><span data-i18n="ws.openFolder">Open Folder</span></button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Editor column: editor region stacked over the bottom panel -->
+        <main id="editor-main">
+          <!-- Left column: editor, with a toggleable terminal docked below it -->
+          <div id="editor-stack" class="term-open">
+            <section id="editor-region">
+              <div class="editor-topbar">
+                <div id="tabs" class="tabs"></div>
+                <div class="panel-actions">
+                  <button id="btn-underhood" class="btn btn-secondary" title="Under the hood — real, measured CPU / memory / I/O for this code, plus the compiler pipeline" data-i18n-title="btn.underhood.title"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h4v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9"/></svg><span data-i18n="btn.underhood">Under the hood</span></button>
+                  <button id="btn-run" class="btn btn-primary hidden" title="Run / Submit (Ctrl+Enter)" data-i18n-title="btn.run.title"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span data-i18n="btn.run">Run / Submit</span></button>
+                  <button id="btn-hint" class="btn btn-secondary hidden" title="Request a hint (F1)" data-i18n-title="btn.hint.title"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3Z"/></svg><span data-i18n="btn.hint">Hint</span></button>
+                  <button id="btn-continue" class="btn btn-primary hidden" title="Continue (Ctrl+Enter)" data-i18n-title="btn.continue.title"><span data-i18n="btn.continue">Continue</span>&nbsp;&#8594;</button>
+                  <button id="btn-start" class="btn btn-primary hidden" title="Start the exercise (Ctrl+Enter)" data-i18n-title="btn.start.title"><span data-i18n="btn.start">Start</span>&nbsp;&#8594;</button>
+                  <button id="btn-next" class="btn btn-primary hidden" title="Next step (Ctrl+Enter)" data-i18n-title="btn.next.title"><span data-i18n="btn.next">Next</span>&nbsp;&#8594;</button>
+                  <span id="spinner" class="spinner hidden"></span>
+                </div>
+              </div>
+              <div id="editor" class="editor"></div>
+            </section>
+
+            <!-- Bottom terminal, toggled with Ctrl+` like VSCode -->
+            <div id="terminal-panel">
+              <div class="panel-header">
+                <span class="panel-header-title" data-i18n="panel.terminal">Terminal</span>
+                <button id="btn-term-close" class="icon-btn" title="Close panel (Ctrl+`)" data-i18n-title="panel.closeTerminal">&#10005;</button>
+              </div>
+              <div id="panel-terminal"></div>
+            </div>
+          </div>
+
+          <!-- Right column: results (always visible) -->
+          <aside id="results-panel">
+            <div class="panel-header"><span class="panel-header-title" data-i18n="panel.results">Results</span></div>
+            <div class="panel-body">
+              <div id="results-empty" class="results-empty" data-i18n="results.empty">
+                Your guided track appears here. Correctness is decided by the hidden tests — never by AI.
+              </div>
+              <div id="results-content" class="results-content hidden"></div>
+            </div>
+          </aside>
+        </main>
+
+        <!-- Workspace editor region: real multi-tab editing + run output. -->
+        <main id="ws-main" class="hidden">
+          <div id="ws-editor-stack">
+            <section id="ws-editor-region">
+              <div class="editor-topbar">
+                <div id="ws-tabs" class="tabs"></div>
+                <div class="panel-actions">
+                  <button id="ws-btn-save" class="btn btn-secondary" title="Save (Ctrl+S)" data-i18n="ws.save" data-i18n-title="ws.saveTitle">Save</button>
+                  <button id="ws-btn-saveall" class="btn btn-secondary" title="Save all modified files" data-i18n="ws.saveAll" data-i18n-title="ws.saveAllTitle">Save All</button>
+                  <button id="ws-btn-run" class="btn btn-primary" title="Run the active file" data-i18n-title="ws.runTitle"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span data-i18n="ws.run">Run</span></button>
+                </div>
+              </div>
+              <div id="ws-editor" class="editor"></div>
+              <div id="ws-welcome" class="ws-welcome">
+                <div class="ws-welcome-inner">
+                  <div class="ws-welcome-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="48" height="48"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg></div>
+                  <h1 data-i18n="ws.welcomeTitle">Workspace</h1>
+                  <p data-i18n="ws.welcomeText">Open a folder and build a real project with the skills from your Learning track.</p>
+                  <button id="ws-welcome-open" class="btn btn-primary">&#128194;&nbsp;<span data-i18n="ws.openFolder">Open Folder</span></button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Bottom output panel (stdout / stderr of the last run). -->
+            <div id="ws-output-panel">
+              <div class="panel-header">
+                <span class="panel-header-title" data-i18n="panel.output">Output</span>
+                <button id="ws-out-close" class="icon-btn" title="Hide output" data-i18n-title="panel.hideOutput">&#10005;</button>
+              </div>
+              <div id="ws-output" class="ws-output"></div>
+            </div>
+          </div>
+        </main>
+
+        <!-- Drag handle to resize the sidebar (both Learning track and
+             Explorer). Absolutely positioned over the sidebar's right seam;
+             the width itself lives in the `--sidebar-w` custom property on
+             #body and is persisted to localStorage by main.ts. -->
+        <div id="sidebar-resizer" role="separator" aria-orientation="vertical"
+          aria-label="Resize sidebar" title="Drag to resize"></div>
+      </div>
+
+      <!-- Status bar (full width, bottom) -->
+      <footer id="statusbar">
+        <div class="status-left">
+          <span id="status-phase">—</span>
+          <span id="status-level" class="pill"></span>
+          <span id="status-points" title="Points earned on this track" data-i18n-title="status.pointsTitle">&#9733; 0 pts</span>
+        </div>
+        <div class="status-right">
+          <span id="status-sandbox" role="button" tabindex="0"
+            title="Your code runs inside a Delonix container. Click to change the sandbox engine.">&#11041; Delonix sandbox</span>
+          <span id="status-lang">Rust</span>
+          <span id="status-honesty" title="Correctness is decided by the hidden tests, never by AI." data-i18n="status.honesty" data-i18n-title="status.honestyTitle">Tests decide correctness</span>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Onboarding overlay (shown when there is no saved profile) -->
+    <div id="onboarding" class="overlay hidden">
+      <div class="onb-card">
+        <div class="onb-brand"><span class="onb-logo">&#9776;</span> Delonix Tutor</div>
+
+        <section class="onb-screen" data-screen="language">
+          <h1 data-i18n="onb.language.title">What do you want to learn?</h1>
+          <p class="onb-sub" data-i18n="onb.language.sub">Pick a language and we'll guide you through a hands-on track, one step at a time.</p>
+          <div class="onb-grid" id="onb-languages"></div>
+        </section>
+
+        <section class="onb-screen hidden" data-screen="level">
+          <h1 data-i18n="onb.level.title">What's your level?</h1>
+          <p class="onb-sub" data-i18n="onb.level.sub">Pick one or more. Your track loads only the levels you choose &mdash; mix Basic and Intermediate, go straight to Advanced, or take all three. You can change this later from the &#9881; gear icon.</p>
+          <div class="onb-levels" id="onb-levels"></div>
+          <div class="onb-level-actions">
+            <button class="onb-back" id="onb-back" data-i18n="onb.back">&#8592; Back</button>
+            <button class="btn btn-primary onb-start" id="onb-start" disabled data-i18n="onb.start">Start&nbsp;&#8594;</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Settings overlay (sandbox engine + change course) -->
+    <div id="settings-overlay" class="overlay hidden">
+      <div class="settings-card">
+        <div class="gloss-head">
+          <div class="gloss-title"><span class="gloss-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></span> <span data-i18n="settings.title">Settings</span></div>
+          <button id="settings-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
+        </div>
+        <div class="settings-body">
+          <section class="settings-sec">
+            <h3 class="settings-h" data-i18n="settings.language.h">Language / Idioma</h3>
+            <p class="settings-note" data-i18n="settings.language.note">Choose the language of the app's interface. Course content (exercises, glossary and guides) stays in the language of the course.</p>
+            <div id="locale-choices" class="sandbox-choices" role="radiogroup" aria-label="Language / Idioma">
+              <label class="sandbox-opt">
+                <input type="radio" name="locale" value="en" />
+                <span class="sandbox-main">English</span>
+              </label>
+              <label class="sandbox-opt">
+                <input type="radio" name="locale" value="ptAO" />
+                <span class="sandbox-main">Português (Angola)</span>
+              </label>
+            </div>
+          </section>
+          <section class="settings-sec">
+            <h3 class="settings-h" data-i18n="settings.sandbox.h">Sandbox engine</h3>
+            <p class="settings-note" data-i18n="settings.sandbox.note">Your code runs in an isolated sandbox. Pick the engine that executes it.
+              The first run on a container engine can be slower (it starts the engine and pulls the image/packages);
+              <strong>Host</strong> is the fastest but the least isolated.</p>
+            <div id="sandbox-choices" class="sandbox-choices" role="radiogroup" aria-label="Sandbox engine">
+              <label class="sandbox-opt">
+                <input type="radio" name="sandbox" value="delonix" />
+                <span class="sandbox-main"><span class="sandbox-ic">&#11041;</span> Delonix <span class="sandbox-tag" data-i18n="settings.sandbox.default">default</span></span>
+                <span class="sandbox-desc" data-i18n="sandbox.delonix.desc">runs your code in a Delonix container &mdash; the engine that powers Delonix</span>
+              </label>
+              <label class="sandbox-opt">
+                <input type="radio" name="sandbox" value="docker" />
+                <span class="sandbox-main"><span class="sandbox-ic">&#11041;</span> Docker</span>
+                <span class="sandbox-desc" data-i18n="sandbox.docker.desc">runs your code in a Docker container</span>
+              </label>
+              <label class="sandbox-opt">
+                <input type="radio" name="sandbox" value="podman" />
+                <span class="sandbox-main"><span class="sandbox-ic">&#11041;</span> Podman</span>
+                <span class="sandbox-desc" data-i18n="sandbox.podman.desc">runs your code in a Podman container (rootless, daemonless)</span>
+              </label>
+              <label class="sandbox-opt">
+                <input type="radio" name="sandbox" value="host" />
+                <span class="sandbox-main"><span class="sandbox-ic">&#8962;</span> <span data-i18n="sandbox.host.name">Host (direct)</span></span>
+                <span class="sandbox-desc" data-i18n="sandbox.host.desc">runs on this machine without a container &mdash; fastest, less isolated</span>
+              </label>
+            </div>
+            <p id="sandbox-appnote" class="settings-note settings-appnote hidden" data-i18n-html="settings.sandbox.appnote">
+              Sandbox selection applies only inside the Delonix Tutor app. Run <code>npm run tauri dev</code> to execute code.
+            </p>
+          </section>
+          <section class="settings-sec">
+            <h3 class="settings-h" data-i18n="settings.course.h">Course</h3>
+            <p class="settings-note" data-i18n="settings.course.note">Start over with a different language or level.
+              This clears your saved profile, points and progress on this device.</p>
+            <button id="settings-reset" class="btn btn-secondary" data-i18n="settings.reset">Change course / reset profile</button>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Glossary overlay (reserved-word reference) -->
+    <div id="glossary-overlay" class="overlay hidden">
+      <div class="gloss-card">
+        <div class="gloss-head">
+          <div class="gloss-title"><span class="gloss-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></span> <span data-i18n="gloss.title">Glossary</span>
+            <span class="gloss-sub" data-i18n="gloss.sub">reserved words</span></div>
+          <button id="gloss-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
+        </div>
+        <input id="gloss-search" class="gloss-search" type="text"
+          placeholder="Filter keywords…" aria-label="Filter glossary keywords" data-i18n-placeholder="gloss.filter" />
+        <div id="gloss-list" class="gloss-list"></div>
+      </div>
+    </div>
+
+    <!-- Study-guide overlay (remediation when unit accuracy is low) -->
+    <div id="studyguide-overlay" class="overlay hidden">
+      <div class="study-card">
+        <div class="study-head">
+          <div class="study-title"><span class="study-icon">&#129517;</span>
+            <span id="study-title-text">Study guide</span></div>
+          <button id="study-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
+        </div>
+        <div id="study-body" class="markdown study-body"></div>
+      </div>
+    </div>
+
+    <!-- Under-the-hood overlay (REAL, measured resources + compiler pipeline) -->
+    <div id="underhood-overlay" class="overlay hidden">
+      <div class="uh-card">
+        <div class="uh-head">
+          <div class="uh-title"><span class="uh-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h4v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9"/></svg></span> <span data-i18n="uh.title">Under the hood</span>
+            <span class="uh-sub" data-i18n="uh.sub">real &amp; measured</span></div>
+          <div class="uh-head-actions">
+            <button id="uh-rerun" class="btn btn-secondary" title="Compile and measure the current code again" data-i18n-title="uh.remeasureTitle">&#8635;&nbsp;<span data-i18n="uh.remeasure">Re-measure</span></button>
+            <button id="uh-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
+          </div>
+        </div>
+        <div id="uh-body" class="uh-body"></div>
+      </div>
+    </div>
+
+    <!-- Visualize-execution overlay (step-by-step tracer, "Python Tutor" style) -->
+    <div id="visualize-overlay" class="overlay hidden">
+      <div class="viz-card">
+        <div class="viz-head">
+          <div class="viz-title"><span class="viz-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4"/></svg></span> <span data-i18n="viz.title">Visualize execution</span>
+            <span class="viz-sub" data-i18n="viz.sub">step by step</span></div>
+          <div class="viz-head-actions">
+            <button id="viz-run" class="btn btn-primary" title="Run this program step by step" data-i18n-title="viz.runTitle">&#9654;&nbsp;<span data-i18n="viz.run">Visualize</span></button>
+            <span id="viz-spinner" class="spinner hidden"></span>
+            <button id="viz-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
+          </div>
+        </div>
+
+        <!-- Transport: shown once a trace is ready -->
+        <div id="viz-transport" class="viz-transport hidden">
+          <div class="viz-controls">
+            <button id="viz-back" class="viz-ctrl" title="Step back" data-i18n-title="viz.backTitle">&#9664;&nbsp;<span data-i18n="viz.back">Step back</span></button>
+            <button id="viz-play" class="viz-ctrl viz-ctrl-play" title="Play / Pause" data-i18n-title="viz.playTitle">&#9654;&nbsp;<span data-i18n="viz.play">Play</span></button>
+            <button id="viz-fwd" class="viz-ctrl" title="Step forward" data-i18n-title="viz.fwdTitle"><span data-i18n="viz.fwd">Step</span>&nbsp;&#9654;</button>
+            <label class="viz-speed" title="Playback speed" data-i18n-title="viz.speedTitle">
+              <span data-i18n="viz.speed">Speed</span>
+              <input id="viz-speed" type="range" min="1" max="10" value="5" aria-label="Playback speed" />
+            </label>
+          </div>
+          <div class="viz-progress">
+            <span id="viz-progress-label" class="viz-progress-label">0 / 0</span>
+            <div class="viz-progress-track"><div id="viz-progress-fill" class="viz-progress-fill"></div></div>
+          </div>
+        </div>
+
+        <div class="viz-body">
+          <div class="viz-left">
+            <div id="viz-editor" class="viz-editor"></div>
+          </div>
+          <div class="viz-right">
+            <div id="viz-notes" class="viz-notes hidden"></div>
+            <div id="viz-player" class="viz-player hidden">
+              <div class="viz-panel">
+                <div class="viz-panel-head" data-i18n="viz.variables">Variables</div>
+                <div id="viz-vars" class="viz-vars"></div>
+              </div>
+              <div class="viz-panel">
+                <div class="viz-panel-head" data-i18n="viz.callstack">Call stack</div>
+                <div id="viz-stack" class="viz-stack"></div>
+              </div>
+              <div class="viz-panel viz-panel-output">
+                <div class="viz-panel-head"><span data-i18n="viz.output">Output</span> <span class="viz-panel-sub" data-i18n="viz.stdoutSoFar">stdout so far</span></div>
+                <pre id="viz-output" class="viz-output"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run and Debug overlay (VSCode-style debugger over a REAL pre-computed trace) -->
+    <div id="debug-overlay" class="overlay hidden">
+      <div class="dbg-card">
+        <div class="dbg-head">
+          <div class="dbg-title"><span class="dbg-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0"/><rect x="6" y="8" width="12" height="10" rx="6"/><path d="M12 12v6M6 11H3M6 15H3.2M18 11h3M18 15h2.8M7.3 8 5.3 6M16.7 8l2-2"/></svg></span> <span data-i18n="dbg.title">Run and Debug</span>
+            <span class="dbg-sub" data-i18n="dbg.sub">real trace</span>
+            <span id="dbg-target-name" class="dbg-target"></span>
+          </div>
+          <div class="dbg-head-actions">
+            <button id="dbg-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
+          </div>
+        </div>
+
+        <!-- Debug toolbar -->
+        <div id="dbg-toolbar" class="dbg-toolbar">
+          <button id="dbg-start" class="dbg-btn dbg-btn-start" title="Start Debugging (F5)" data-i18n-title="dbg.startTitle">&#9654;&nbsp;<span data-i18n="dbg.start">Start Debugging</span><span class="dbg-kbd">F5</span></button>
+          <div id="dbg-controls" class="dbg-controls hidden">
+            <button id="dbg-continue" class="dbg-btn" title="Continue to next breakpoint (F5)" data-i18n-title="dbg.continueTitle">&#9654;&#9654;&nbsp;<span data-i18n="dbg.continue">Continue</span><span class="dbg-kbd">F5</span></button>
+            <button id="dbg-stepover" class="dbg-btn" title="Step Over (F10)" data-i18n-title="dbg.stepoverTitle">&#8631;&nbsp;<span data-i18n="dbg.stepover">Step Over</span><span class="dbg-kbd">F10</span></button>
+            <button id="dbg-stepinto" class="dbg-btn" title="Step Into (F11)" data-i18n-title="dbg.stepintoTitle">&#8628;&nbsp;<span data-i18n="dbg.stepinto">Step Into</span><span class="dbg-kbd">F11</span></button>
+            <button id="dbg-stepback" class="dbg-btn" title="Step Back (Shift+F11)" data-i18n-title="dbg.stepbackTitle">&#8630;&nbsp;<span data-i18n="dbg.stepback">Step Back</span></button>
+            <button id="dbg-stop" class="dbg-btn dbg-btn-stop" title="Stop (Shift+F5)" data-i18n-title="dbg.stopTitle">&#9632;&nbsp;<span data-i18n="dbg.stop">Stop</span></button>
+          </div>
+          <span id="dbg-stepcount" class="dbg-stepcount hidden">0 / 0</span>
+          <span id="dbg-spinner" class="spinner hidden"></span>
+          <span id="dbg-status" class="dbg-status"></span>
+        </div>
+
+        <div class="dbg-body">
+          <!-- Left: Variables / Call Stack / Breakpoints -->
+          <aside class="dbg-side">
+            <section class="dbg-pane">
+              <div class="dbg-pane-head" data-i18n="dbg.variables">Variables</div>
+              <div id="dbg-vars" class="dbg-vars"></div>
+            </section>
+            <section class="dbg-pane">
+              <div class="dbg-pane-head" data-i18n="dbg.callstack">Call Stack</div>
+              <div id="dbg-stack" class="dbg-stack"></div>
+            </section>
+            <section class="dbg-pane">
+              <div class="dbg-pane-head" data-i18n="dbg.breakpoints">Breakpoints</div>
+              <div id="dbg-breakpoints" class="dbg-breakpoints"></div>
+            </section>
+          </aside>
+
+          <!-- Right: source editor (breakpoint gutter) over the Debug Console -->
+          <div class="dbg-main">
+            <div id="dbg-notes" class="dbg-notes hidden"></div>
+            <div id="dbg-editor" class="dbg-editor"></div>
+            <div id="dbg-console-wrap" class="dbg-console-wrap">
+              <div class="dbg-console-head"><span data-i18n="dbg.console">Debug Console</span>
+                <span class="dbg-console-sub" data-i18n="dbg.stdoutSoFar">stdout so far</span></div>
+              <pre id="dbg-console" class="dbg-console"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast host for satisfying drill / unit feedback -->
+    <div id="toast-host" aria-live="polite"></div>
+
+    <!-- Code Review: right-hand investigation drawer (P2) -->
+    <aside id="review-overlay" class="review-drawer hidden" aria-label="Code Review">
+      <header class="review-hdr">
+        <span class="review-title">Code Review</span>
+        <div id="review-tools" class="review-tools"></div>
+        <button id="review-close" class="review-close" title="Close" aria-label="Close Code Review">&times;</button>
+      </header>
+      <div class="review-controls">
+        <select id="review-scope" class="review-scope" aria-label="Review scope">
+          <option value="project" selected>Whole project</option>
+          <option value="changes">Working changes</option>
+          <option value="file">Current file</option>
+        </select>
+        <button id="review-run" class="btn btn-primary review-run">Review</button>
+        <button id="review-report" class="btn btn-secondary review-run" title="Generate a report + an AI second-opinion prompt">Report</button>
+      </div>
+      <div id="review-coverage" class="review-coverage"></div>
+      <div id="review-filters" class="review-filters"></div>
+      <div id="review-results" class="review-results"></div>
+    </aside>
+    <!-- CodeMap: symbol navigation drawer (P3) -->
+    <aside id="codemap-overlay" class="codemap-drawer hidden" aria-label="CodeMap">
+      <header class="codemap-hdr">
+        <span class="codemap-label">CodeMap</span>
+        <span id="codemap-title" class="codemap-title"></span>
+        <span id="codemap-res" class="cm-res inferred">inferred</span>
+        <button id="codemap-close" class="review-close" title="Close" aria-label="Close CodeMap">&times;</button>
+      </header>
+      <div id="codemap-body" class="codemap-body"></div>
+    </aside>
+    <!-- Code Review report + AI second-opinion prompt -->
+    <div id="report-overlay" class="overlay hidden">
+      <div class="report-box">
+        <header class="report-hdr">
+          <span>Code Review report &amp; AI second-opinion prompt</span>
+          <button id="report-close" class="review-close" title="Close" aria-label="Close report">&times;</button>
+        </header>
+        <textarea id="report-text" class="report-text" readonly aria-label="Report markdown"></textarea>
+        <div class="report-actions">
+          <button id="report-copy" class="btn btn-secondary">Copy</button>
+          <button id="report-download" class="btn btn-primary">Download .md</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

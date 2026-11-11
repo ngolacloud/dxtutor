@@ -1,0 +1,396 @@
+language = "rust"
+
+# A beginner's glossary of Rust keywords and core items used in the first course.
+# Each entry says what it does, when to reach for it, and a one-line example.
+
+[[entry]]
+keyword = "fn"
+summary = "Declares a function — a named, reusable block of code that may take parameters and return a value."
+when_to_use = "Whenever you want to name a piece of work so you can call it from more than one place, starting with `main`."
+example = "fn double(n: i32) -> i32 { n * 2 }"
+
+[[entry]]
+keyword = "let"
+summary = "Binds a value to a name, creating a variable. By default the binding is immutable — you cannot reassign it."
+when_to_use = "Every time you want to give a value a name so you can refer to it later by that name."
+example = "let name = \"Rust\";"
+
+[[entry]]
+keyword = "mut"
+summary = "Marks a `let` binding as mutable, so you are allowed to change the value it holds after creating it."
+when_to_use = "Only when you really need to reassign or modify a variable; prefer immutable bindings otherwise."
+example = "let mut count = 0; count += 1;"
+
+[[entry]]
+keyword = "pub"
+summary = "Makes an item (function, struct, field, module) public, so code outside its module can use it."
+when_to_use = "When a function or type is part of the interface you want other modules or the tests to call."
+example = "pub fn greet(name: &str) -> String { format!(\"Hello, {name}!\") }"
+
+[[entry]]
+keyword = "if"
+summary = "Runs a block of code only when a boolean condition is true; may be followed by `else`."
+when_to_use = "When the program must take one path or another depending on a condition."
+example = "if n > 0 { println!(\"positive\"); }"
+
+[[entry]]
+keyword = "else"
+summary = "Provides the alternative block that runs when the preceding `if` condition is false."
+when_to_use = "To handle the 'otherwise' case of an `if`, or to chain with `else if`."
+example = "if even { ... } else { println!(\"odd\"); }"
+
+[[entry]]
+keyword = "for"
+summary = "Repeats a block once for each item produced by an iterator, binding each item to a name."
+when_to_use = "When you want to walk every element of a range or collection exactly once."
+example = "for i in 0..3 { println!(\"{i}\"); }"
+
+[[entry]]
+keyword = "while"
+summary = "Repeats a block as long as a boolean condition stays true, checking it before each pass."
+when_to_use = "When you must loop an unknown number of times until some condition changes."
+example = "while n > 0 { n -= 1; }"
+
+[[entry]]
+keyword = "loop"
+summary = "Repeats a block forever until you explicitly `break` out of it; can also yield a value with `break expr`."
+when_to_use = "When you need an unconditional loop and will decide inside when to stop."
+example = "loop { if done { break; } }"
+
+[[entry]]
+keyword = "match"
+summary = "Compares a value against a list of patterns and runs the arm of the first one that fits; must cover every case."
+when_to_use = "When a value can be one of several shapes (numbers, enum variants, `Option`) and each needs its own handling."
+example = "match n { 0 => \"zero\", _ => \"other\" };"
+
+[[entry]]
+keyword = "struct"
+summary = "Defines a custom type that groups several named fields together into one value."
+when_to_use = "When you want to model a 'thing' with multiple related pieces of data, like a point or a user."
+example = "struct Point { x: i32, y: i32 }"
+
+[[entry]]
+keyword = "enum"
+summary = "Defines a type whose value is exactly one of a fixed set of named variants, each optionally carrying data."
+when_to_use = "When a value is one choice out of a closed set of alternatives, like a state or a command."
+example = "enum Direction { North, South, East, West }"
+
+[[entry]]
+keyword = "impl"
+summary = "Attaches methods and associated functions to a type, or implements a trait for a type."
+when_to_use = "When you want a type to have behaviour (methods) or to satisfy a trait's contract."
+example = "impl Point { fn origin() -> Point { Point { x: 0, y: 0 } } }"
+
+[[entry]]
+keyword = "trait"
+summary = "Declares a set of methods a type can promise to provide — an interface that many types can share."
+when_to_use = "When you want different types to be used interchangeably through a common set of behaviours."
+example = "trait Greet { fn hello(&self) -> String; }"
+
+[[entry]]
+keyword = "use"
+summary = "Brings an item (type, function, macro) into scope by a short name so you need not write its full path."
+when_to_use = "At the top of a file or test to import what you use from the standard library or another module."
+example = "use std::collections::HashMap;"
+
+[[entry]]
+keyword = "return"
+summary = "Exits the current function immediately, handing back the given value. The last expression without a semicolon returns implicitly too."
+when_to_use = "To leave a function early; for the final value, idiomatic Rust often omits `return` and lets the tail expression stand."
+example = "fn abs(n: i32) -> i32 { if n < 0 { return -n; } n }"
+
+[[entry]]
+keyword = "&"
+summary = "Borrows a value by reference instead of moving or copying it, letting code read (or with `&mut`, write) it without taking ownership."
+when_to_use = "When a function needs to look at a value but should not own or consume it, such as `&str` parameters."
+example = "fn len(s: &str) -> usize { s.len() }"
+
+[[entry]]
+keyword = "str"
+summary = "The primitive string-slice type, almost always seen behind a reference as `&str`: a borrowed, read-only view of UTF-8 text."
+when_to_use = "For function parameters that only need to read text, because any `String` or literal can be borrowed as `&str`."
+example = "let greeting: &str = \"Hello\";"
+
+[[entry]]
+keyword = "String"
+summary = "An owned, growable, heap-allocated UTF-8 string that you can build, modify, and hand back from a function."
+when_to_use = "When you need to own text, build it up, or return freshly created text (as `greet` returns a `String`)."
+example = "let owned: String = String::from(\"Hello\");"
+
+[[entry]]
+keyword = "i32"
+summary = "A 32-bit signed integer type — the default whole-number type in Rust, holding values roughly ±2.1 billion."
+when_to_use = "For ordinary counting and arithmetic with whole numbers when no special range is required."
+example = "let n: i32 = -42;"
+
+[[entry]]
+keyword = "println!"
+summary = "A macro that prints its formatted arguments to standard output followed by a newline; `{}` or `{name}` slots are filled in."
+when_to_use = "To show output to the user or to inspect values while learning. The `!` marks it as a macro, not a function."
+example = "println!(\"Hello, {name}!\");"
+
+[[entry]]
+keyword = "format!"
+summary = "A macro that builds an owned `String` from a template and arguments — like `println!`, but it returns the text instead of printing it."
+when_to_use = "When you need to construct text to return or store, rather than send it straight to the screen."
+example = "let s = format!(\"Hello, {name}!\");"
+
+[[entry]]
+keyword = "bool"
+summary = "The boolean type, holding exactly `true` or `false`. Comparisons and logical operators produce `bool` values."
+when_to_use = "For yes/no flags and the conditions that drive `if`, `while`, and `match` guards."
+example = "let ready: bool = count > 0;"
+
+[[entry]]
+keyword = "f64"
+summary = "A 64-bit floating-point number, for real values with a fractional part. Division keeps fractions instead of truncating."
+when_to_use = "For measurements, ratios, and formulas where whole numbers would lose precision, like temperature conversion."
+example = "let pi: f64 = 3.14159;"
+
+[[entry]]
+keyword = "u32"
+summary = "A 32-bit unsigned integer: whole numbers from 0 upward, never negative."
+when_to_use = "For counts, sizes, and loop bounds that cannot be negative, such as summing 1..=n."
+example = "let n: u32 = 100;"
+
+[[entry]]
+keyword = "usize"
+summary = "An unsigned integer sized to the machine's pointer width; the type Rust uses for lengths, counts, and indices."
+when_to_use = "Whenever you count or index a collection — `len()` and `.count()` both return `usize`."
+example = "let n: usize = s.chars().count();"
+
+[[entry]]
+keyword = "char"
+summary = "A single Unicode scalar value — one character, which may be several bytes of UTF-8. Distinct from a one-byte value."
+when_to_use = "When you iterate or reason about individual characters, e.g. via `s.chars()`."
+example = "let first: char = 'A';"
+
+[[entry]]
+keyword = "break"
+summary = "Exits the nearest enclosing loop immediately; inside a plain `loop`, `break value` can also yield a result."
+when_to_use = "To stop looping as soon as a condition is met, rather than waiting for the loop's own test."
+example = "loop { if done { break; } }"
+
+[[entry]]
+keyword = "Vec"
+summary = "A growable, heap-allocated list of values of one type (`Vec<T>`), kept in order with fast indexing and iteration."
+when_to_use = "Whenever you need an ordered, resizable collection — pushing, indexing, or iterating many values."
+example = "let mut xs: Vec<i32> = vec![1, 2, 3];"
+
+[[entry]]
+keyword = "vec!"
+summary = "A macro that builds a `Vec` from a list of elements (or a repeated value), saving you repeated `push` calls."
+when_to_use = "To create a vector with known initial contents in one expression."
+example = "let xs = vec![10, 20, 30];"
+
+[[entry]]
+keyword = "HashMap"
+summary = "A collection mapping keys to values (`HashMap<K, V>`) with near-constant-time lookup; order is not preserved."
+when_to_use = "When you look values up by a key rather than by position, like scores keyed by name."
+example = "use std::collections::HashMap; let mut m = HashMap::new(); m.insert(\"Al\", 90);"
+
+[[entry]]
+keyword = "Option"
+summary = "An enum that is either `Some(value)` or `None`, modelling a value that may be absent. Rust's replacement for null."
+when_to_use = "For results that might not exist — a lookup, a first element, a safe division by zero."
+example = "fn first(xs: &[i32]) -> Option<i32> { xs.first().copied() }"
+
+[[entry]]
+keyword = "Some"
+summary = "The `Option` variant that wraps a present value. Pattern-match or `unwrap_or` it to read the inner value."
+when_to_use = "To construct or match the 'a value is present' case of an `Option`."
+example = "let x: Option<i32> = Some(5);"
+
+[[entry]]
+keyword = "None"
+summary = "The `Option` variant representing the absence of a value — the safe stand-in for null."
+when_to_use = "To signal or match 'there is no value here', such as a missing key or an invalid input."
+example = "let x: Option<i32> = None;"
+
+[[entry]]
+keyword = "Result"
+summary = "An enum that is either `Ok(value)` on success or `Err(error)` on failure, modelling operations that can fail without exceptions."
+when_to_use = "For fallible operations like parsing or I/O, where the caller must handle a possible error."
+example = "fn parse(s: &str) -> Result<i32, std::num::ParseIntError> { s.parse() }"
+
+[[entry]]
+keyword = "Ok"
+summary = "The `Result` variant that wraps a successful value."
+when_to_use = "To construct or match the success case of a `Result`."
+example = "match text.parse::<i32>() { Ok(n) => n, Err(_) => 0 }"
+
+[[entry]]
+keyword = "Err"
+summary = "The `Result` variant that wraps a failure value (the error)."
+when_to_use = "To construct or match the failure case of a `Result`."
+example = "match text.parse::<i32>() { Ok(n) => n, Err(e) => { eprintln!(\"{e}\"); 0 } }"
+
+# ── Advanced track: the type system ────────────────────────────────────────
+
+[[entry]]
+keyword = "<T>"
+summary = "A generic type parameter: a stand-in type filled in later, letting one function or struct work for many types. The compiler specialises a copy per concrete type (monomorphization), so it is zero-cost."
+when_to_use = "When the same logic should apply to several types — e.g. a function over any slice, or a container of any element type."
+example = "fn first<T: Copy>(xs: &[T]) -> T { xs[0] }"
+
+[[entry]]
+keyword = "where"
+summary = "Introduces trait bounds in a readable clause below a signature, instead of inline after the type parameter. Means exactly the same as inline bounds."
+when_to_use = "When a generic has several or long bounds and an inline `<T: ...>` list would clutter the header."
+example = "fn join<T>(xs: &[T]) -> String where T: std::fmt::Display { /* ... */ }"
+
+[[entry]]
+keyword = "type (associated type)"
+summary = "A type a trait names and each implementer fixes, like `Iterator::Item`. Keeps signatures free of extra generic parameters when a type has one natural related type."
+when_to_use = "When implementing a trait such as `Iterator`, or defining your own trait whose implementers each have a single related type."
+example = "impl Iterator for Countdown { type Item = u32; fn next(&mut self) -> Option<u32> { /* ... */ } }"
+
+[[entry]]
+keyword = "impl Trait"
+summary = "An anonymous type that implements a trait. In argument position it is a concise generic (static dispatch); in return position it hands back an opaque concrete type, often one whose name cannot be written (e.g. a closure-based iterator)."
+when_to_use = "To accept 'any type implementing this' tersely, or to return an iterator/closure whose concrete type is unnameable — all with static dispatch."
+example = "fn counter() -> impl Iterator<Item = u32> { (1..=3).map(|n| n * 10) }"
+
+[[entry]]
+keyword = "dyn"
+summary = "Marks a trait object — `&dyn Trait` or `Box<dyn Trait>` — whose method is resolved at run time through a vtable (dynamic dispatch). Lets a single collection hold a mix of concrete types."
+when_to_use = "When you need a heterogeneous collection of implementers, or to erase the concrete type behind a trait. The trait must be object-safe."
+example = "let shapes: Vec<Box<dyn Shape>> = vec![Box::new(Square { side: 2.0 })];"
+
+[[entry]]
+keyword = "Box"
+summary = "A smart pointer that owns a value on the heap. Commonly used as `Box<dyn Trait>` to store a trait object, or to give a value a known pointer size."
+when_to_use = "To put a value on the heap — for trait objects, recursive types, or large values you want to move cheaply."
+example = "let s: Box<dyn Shape> = Box::new(Circle { radius: 1.0 });"
+
+[[entry]]
+keyword = "Rc"
+summary = "A reference-counted smart pointer for shared ownership within a single thread. Cloning bumps a counter; the value drops when the last `Rc` goes. It is NOT thread-safe, so it is not `Send`."
+when_to_use = "When several owners in the same thread must share read-only data and a single owner is not enough."
+example = "use std::rc::Rc; let a = Rc::new(vec![1, 2, 3]); let b = Rc::clone(&a);"
+
+[[entry]]
+keyword = "Arc"
+summary = "An atomically reference-counted smart pointer: like `Rc`, but thread-safe (`Send + Sync`), so it can share ownership of data across threads."
+when_to_use = "To share read-only data between threads — give each thread its own `Arc::clone` of the same value."
+example = "use std::sync::Arc; let shared = Arc::new(vec![10, 20]); let copy = Arc::clone(&shared);"
+
+[[entry]]
+keyword = "'a"
+summary = "A named lifetime: a compile-time label for how long a reference is valid. Writing it relates the lifetimes of inputs and outputs so the borrow checker can prove no reference dangles. It has no runtime cost."
+when_to_use = "When a function returns a reference tied to its inputs, or a struct stores a reference — cases the compiler cannot infer by elision."
+example = "fn longest<'a>(a: &'a str, b: &'a str) -> &'a str { if a.len() >= b.len() { a } else { b } }"
+
+[[entry]]
+keyword = "Send"
+summary = "An auto-derived marker trait meaning a value can be moved to another thread. Almost every type is `Send`; `Rc<T>` is a notable exception."
+when_to_use = "You rarely write it — the compiler checks it. `thread::spawn` requires the moved closure and its captures to be `Send`."
+example = "let data = vec![1, 2, 3]; std::thread::spawn(move || data.iter().sum::<i32>());"
+
+[[entry]]
+keyword = "Sync"
+summary = "An auto-derived marker trait meaning `&T` can be shared between threads (equivalently, `&T` is `Send`). Enables safe read sharing across threads, typically via `Arc`."
+when_to_use = "Checked by the compiler, not written by hand. It is what lets an `Arc<T>` be shared across threads when `T: Sync`."
+example = "use std::sync::Arc; let s = Arc::new(5); let s2 = Arc::clone(&s); std::thread::spawn(move || *s2);"
+
+[[entry]]
+keyword = "trait object"
+summary = "A value accessed behind `dyn Trait` (via `&dyn`, `Box<dyn>`, etc.): a fat pointer carrying the data and a vtable of the trait's methods, dispatched at run time. Only object-safe traits qualify."
+when_to_use = "When you need run-time polymorphism — a mixed collection of implementers, or a type erased behind its trait."
+example = "fn render(items: &[Box<dyn Draw>]) -> String { items.iter().map(|i| i.draw()).collect() }"
+
+[[entry]]
+keyword = "object safety"
+summary = "The rule deciding whether a trait can become a `dyn` trait object: its methods must take a form of `self`, must not be generic, and must not return `Self`, so a single vtable can describe them."
+when_to_use = "Consider it whenever you want `Box<dyn Trait>`; design the trait with `&self` methods that do not return `Self` to keep it object-safe."
+example = "trait Draw { fn draw(&self) -> String; } // object-safe: works as Box<dyn Draw>"
+
+[[entry]]
+keyword = "thread"
+summary = "An independent sequence of instructions the OS can run at the same time as others. Every program starts with one thread (running `main`); threads of one program share memory, which is what makes synchronisation necessary."
+when_to_use = "When a program must do several things at once — to use more than one CPU core, or to keep working while waiting on something slow."
+example = "use std::thread; let h = thread::spawn(|| 2 + 2); assert_eq!(h.join().unwrap(), 4);"
+
+[[entry]]
+keyword = "spawn"
+summary = "`std::thread::spawn` starts a new thread running the given closure and returns a `JoinHandle`. The closure (and anything it captures) must be `Send`."
+when_to_use = "Whenever you want work to run concurrently on its own thread; pair it with `join` to collect the result and wait for completion."
+example = "let handle = std::thread::spawn(|| println!(\"on a thread\"));"
+
+[[entry]]
+keyword = "join"
+summary = "`JoinHandle::join` blocks the current thread until the spawned thread finishes, returning a `Result` that holds whatever the thread's closure produced (or the panic)."
+when_to_use = "To wait for a thread and retrieve its result, and to be sure it has finished before the program continues."
+example = "let h = std::thread::spawn(|| 21 * 2); let answer = h.join().unwrap();"
+
+[[entry]]
+keyword = "move"
+summary = "A closure modifier that transfers ownership of the captured variables into the closure instead of borrowing them. Required for thread closures so the data can safely outlive the spawning scope."
+when_to_use = "When a closure must own its captures — above all when passing it to `thread::spawn`, so the new thread owns what it uses."
+example = "let s = String::from(\"hi\"); std::thread::spawn(move || println!(\"{s}\"));"
+
+[[entry]]
+keyword = "mpsc"
+summary = "The `std::sync::mpsc` module: a *multi-producer, single-consumer* channel. `channel()` returns a `(Sender, Receiver)` pair; senders can be cloned so many threads feed one receiver."
+when_to_use = "When threads should cooperate by passing messages rather than sharing memory — the safest way to move values between threads."
+example = "use std::sync::mpsc; let (tx, rx) = mpsc::channel(); tx.send(1).unwrap(); assert_eq!(rx.recv().unwrap(), 1);"
+
+[[entry]]
+keyword = "channel"
+summary = "A one-way queue between threads created by `mpsc::channel()`. `send` moves a value in; `recv` blocks until a value is available and moves it out. Iterating the receiver yields values until every sender is dropped."
+when_to_use = "To stream values from one or more producer threads to a single consumer without any shared mutable state."
+example = "let (tx, rx) = std::sync::mpsc::channel(); std::thread::spawn(move || tx.send(42).unwrap()); let got = rx.recv().unwrap();"
+
+[[entry]]
+keyword = "Mutex"
+summary = "`std::sync::Mutex<T>` — *mutual exclusion* — guards a value so only one thread accesses it at a time. `lock()` blocks until the lock is free and returns a guard with exclusive access; the lock releases when the guard is dropped."
+when_to_use = "When several threads must read and write the same value. Wrap it in an `Arc` to share the `Mutex` itself across threads: `Arc<Mutex<T>>`."
+example = "use std::sync::Mutex; let m = Mutex::new(0); *m.lock().unwrap() += 1;"
+
+[[entry]]
+keyword = "lock"
+summary = "`Mutex::lock` acquires the mutex, blocking until it is free, and returns a `Result` holding a guard. While you hold the guard you have exclusive access to the protected value; dropping it unlocks the mutex."
+when_to_use = "Every time you touch the value inside a `Mutex`. Keep the critical section short — hold the guard only as long as needed, since it serialises the threads."
+example = "let mut n = counter.lock().unwrap(); *n += 1; // lock releases when `n` drops"
+
+[[entry]]
+keyword = "VecDeque"
+summary = "`std::collections::VecDeque<T>` is a double-ended queue: it can push and pop at both the front and the back in average O(1). Used as a FIFO queue via `push_back` and `pop_front`."
+when_to_use = "When you need first-in, first-out order (a queue) or must add/remove at both ends — breadth-first search, task buffers, sliding windows."
+example = "use std::collections::VecDeque; let mut q = VecDeque::new(); q.push_back(1); assert_eq!(q.pop_front(), Some(1));"
+
+[[entry]]
+keyword = "HashSet"
+summary = "`std::collections::HashSet<T>` stores unique values with average O(1) `insert` and `contains`. It is a `HashMap` with no associated values — order of iteration is unspecified."
+when_to_use = "For fast membership tests and de-duplication. Collect an iterator into a `HashSet` to drop duplicates; sort into a `Vec` first if you need stable output."
+example = "use std::collections::HashSet; let s: HashSet<i32> = [1, 2, 2, 3].iter().copied().collect(); assert_eq!(s.len(), 3);"
+
+[[entry]]
+keyword = "push"
+summary = "`Vec::push` appends a value to the end of a vector, growing it. Paired with `pop`, it makes a `Vec` a last-in, first-out stack."
+when_to_use = "To add an element to the end of a `Vec`, or to use a `Vec` as a stack (push to add to the top)."
+example = "let mut v = vec![1, 2]; v.push(3); assert_eq!(v, vec![1, 2, 3]);"
+
+[[entry]]
+keyword = "pop"
+summary = "`Vec::pop` removes the last element and returns it as an `Option` — `Some(x)` when there was one, `None` when the vector was empty. Never panics."
+when_to_use = "To take the most recently pushed element off a stack, often in a `while let Some(x) = v.pop()` loop that drains the vector."
+example = "let mut v = vec![1, 2, 3]; assert_eq!(v.pop(), Some(3)); assert_eq!(v, vec![1, 2]);"
+
+[[entry]]
+keyword = "push_back"
+summary = "`VecDeque::push_back` adds a value to the back of a double-ended queue in average O(1). It is the enqueue operation when using a `VecDeque` as a FIFO queue."
+when_to_use = "To enqueue an item at the back of a queue; pair it with `pop_front` to serve items in arrival order."
+example = "use std::collections::VecDeque; let mut q = VecDeque::new(); q.push_back(\"a\"); q.push_back(\"b\");"
+
+[[entry]]
+keyword = "pop_front"
+summary = "`VecDeque::pop_front` removes and returns the front value of a deque as an `Option`, in average O(1). It is the dequeue operation of a FIFO queue."
+when_to_use = "To take the oldest item from the front of a queue, preserving arrival order (unlike `Vec::pop`, which takes the newest)."
+example = "use std::collections::VecDeque; let mut q: VecDeque<i32> = [1, 2].into_iter().collect(); assert_eq!(q.pop_front(), Some(1));"
+
+[[entry]]
+keyword = "entry"
+summary = "`HashMap::entry(key)` returns an `Entry` for a key, letting you update-or-insert in one lookup. `entry(k).or_insert(v)` gives a mutable reference to the value, creating it with `v` first if the key is absent."
+when_to_use = "To count or accumulate per key without a separate \"is it present?\" check — the idiomatic frequency-counting pattern."
+example = "use std::collections::HashMap; let mut m: HashMap<char, i32> = HashMap::new(); *m.entry('a').or_insert(0) += 1;"

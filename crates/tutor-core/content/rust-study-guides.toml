@@ -1,0 +1,871 @@
+language = "rust"
+
+# Remediation study guides, one per unit. Shown to a learner who is struggling
+# (e.g. under ~25% accuracy) so they can slow down, re-read the ideas calmly, and
+# keep going instead of giving up. Content is in English (EN product).
+
+[[guide]]
+unit_id = "u1-hello"
+title = "Take a breath: Hello, Rust, one idea at a time"
+body = """
+## You are not stuck — you are learning
+
+If the first exercises felt hard, that is completely normal. Everyone types a
+program that will not run before they type one that does. Let us walk back
+through this unit slowly, one small idea at a time. Nothing here is magic.
+
+## 1. A program is a list of instructions, run top to bottom
+
+A computer does exactly what you tell it, in order, and nothing more. A Rust
+program is just a list of instructions. When you run it, Rust looks for one
+special starting point — a function named `main` — and runs whatever is inside
+it, from the first line to the last.
+
+```rust
+fn main() {
+    println!("Hello, world!");
+}
+```
+
+Read it as a sentence: *"to run this program, print the line Hello, world!"*.
+That is the whole thing. Every larger program is this same skeleton with more
+lines inside `main`.
+
+## 2. `println!` prints one line
+
+`println!("...")` writes the text between the quotes to the screen and then
+moves to a new line. The `!` is just how Rust marks a **macro** — for now, treat
+it as 'a special print command'. The quotes `"..."` hold the exact characters to
+show.
+
+If your line did not print, check the easy things first: the quotes, the
+parentheses, and the semicolon `;` at the end. Rust is strict about these on
+purpose — the strictness is what lets it catch your mistakes early.
+
+## 3. `let` gives a value a name
+
+```rust
+let name = "Rust";
+println!("Hello, {name}!");
+```
+
+`let name = "Rust";` stores the text `Rust` under the name `name`. Then inside
+the printed text, `{name}` is a slot: Rust drops the value of `name` right there.
+So the program prints `Hello, Rust!`. Naming a value once and reusing it by name
+is one of the most common things you will ever do.
+
+## 4. A function is a named piece of work
+
+```rust
+fn double(n: i32) -> i32 {
+    n * 2
+}
+```
+
+- `fn double` names a new function `double`.
+- `(n: i32)` says it takes one input called `n`, a 32-bit whole number (`i32`).
+- `-> i32` says it hands back an `i32`.
+- The body `n * 2` with **no semicolon** is the value it returns.
+
+You call it with `double(21)`, and you get `42` back. A function lets you name a
+calculation once and reuse it as many times as you like.
+
+## 5. Putting it together: `greet`
+
+The challenge asks you to return text instead of printing it. `println!` prints
+a line; `format!` builds the very same text as a `String` you can return:
+
+```rust
+pub fn greet(name: &str) -> String {
+    format!("Hello, {name}!")
+}
+```
+
+`&str` is a borrowed, read-only view of some text that is passed in; `String` is
+text your function owns and gives back. The tests then check that
+`greet("World")` equals `"Hello, World!"`.
+
+## How to get unstuck, every time
+
+1. Read the error message — it names the line and usually the fix.
+2. Change one small thing, then run again. Tiny steps beat big guesses.
+3. Compare your line, character by character, with the example above.
+4. Re-run the drills before the challenge; the muscle memory makes it click.
+
+You have everything you need. Go back to the first drill and take it one line at
+a time — you will get there.
+"""
+
+[[guide]]
+unit_id = "u2-variables"
+title = "Slow down: values, names, and types"
+body = """
+## One idea: every value has a type, and names are cheap
+
+If types felt confusing, breathe. A **type** is just a label that says what a
+value is — a whole number (`i32`), a real number (`f64`), a yes/no (`bool`), or
+text (`&str`/`String`). Most of the time Rust works out the type for you, so you
+rarely write it down.
+
+## `let` names a value; `mut` lets it change
+
+```rust
+let x = 5;        // x is 5, and cannot change
+let mut y = 5;    // y is 5, and MAY change
+y = 6;            // fine, because of `mut`
+```
+
+Rust makes names **immutable by default** on purpose: a value you did not mark
+`mut` cannot change behind your back. Reach for `mut` only when you truly need to
+update something, like a counter.
+
+## Arithmetic and the Celsius challenge
+
+The challenge converts Celsius to Fahrenheit with `F = C * 9/5 + 32`. The trap is
+whole-number division: `9 / 5` as integers is `1`, which is wrong. Work in `f64`
+by writing the numbers with a dot — `9.0`, `5.0`, `32.0` — so the fraction `1.8`
+survives.
+
+## To get unstuck
+
+1. Read the compiler error; it usually names the exact fix.
+2. If a number should have a fraction, make sure every literal in the formula is
+   an `f64` (has a `.0`).
+3. Change one thing, run again. Small steps win.
+"""
+
+[[guide]]
+unit_id = "u3-control-flow"
+title = "Taking it steady: making decisions"
+body = """
+## One idea: the program chooses a path
+
+A branch is a fork in the road. The program checks a condition and goes one way
+or the other. In Rust `if` can be a plain statement or an **expression** that
+produces a value.
+
+## `if` / `else`
+
+```rust
+if n % 2 == 0 {
+    println!("even");
+} else {
+    println!("odd");
+}
+```
+
+`n % 2` is the remainder after dividing by two; it is `0` for even numbers.
+Exactly one block runs.
+
+## `if` as an expression, and `match`
+
+```rust
+let label = if n % 2 == 0 { "even" } else { "odd" };
+```
+
+Both arms must give the same type, and the chosen one becomes the value. `match`
+is the exhaustive cousin — it checks a value against patterns and the `_` arm
+catches the rest, so every case is covered.
+
+## The `sign` challenge
+
+Return `"negative"`, `"zero"`, or `"positive"`. The return type is `&'static str`
+because those words are baked into the program — no `String` to build. An
+`if`/`else if`/`else` chain in the three obvious orders solves it.
+
+## To get unstuck
+
+1. Make sure every `if` that returns a value also has an `else`.
+2. Check your comparison operators: `<`, `==`, `>`.
+3. Re-run the drills; the `match` drill mirrors the shape you need.
+"""
+
+[[guide]]
+unit_id = "u4-loops"
+title = "One pass at a time: loops"
+body = """
+## One idea: repeat work without copying code
+
+A loop keeps a little piece of state and repeats its body until a stopping point.
+Pick the loop by who decides when to stop.
+
+## `for` walks a range or collection
+
+```rust
+for i in 1..=3 {   // 1, 2, 3  (the = includes the end)
+    println!("{i}");
+}
+```
+
+This is the safest loop: no counter to manage, no off-by-one.
+
+## `while` repeats until a condition flips
+
+```rust
+let mut n = 3;
+while n > 0 {
+    println!("{n}");
+    n -= 1;         // you MUST change n, or it never stops
+}
+```
+
+## The accumulator and the `sum_to` challenge
+
+The challenge returns `1 + 2 + ... + n`. Keep a running total outside the loop and
+add each value inside:
+
+```rust
+let mut total = 0;
+for i in 1..=n {
+    total += i;
+}
+total
+```
+
+`sum_to(0)` must be `0` — and it is, because the range `1..=0` is empty, so the
+loop body never runs.
+
+## To get unstuck
+
+1. If a `while` loop hangs, you forgot to change the variable in the condition.
+2. Use `1..=n` (inclusive) so `n` itself is counted.
+3. Return the `total` as the last line, with no semicolon.
+"""
+
+[[guide]]
+unit_id = "u5-functions"
+title = "Building blocks: functions"
+body = """
+## One idea: name a calculation, reuse it
+
+A function takes typed inputs and gives back a typed output. When you call it, the
+arguments are copied into the parameters, the body runs, and the result flows
+back.
+
+```rust
+fn double(n: i32) -> i32 {
+    n * 2        // last expression, NO semicolon → this is returned
+}
+```
+
+- `(n: i32)` — one parameter `n`, an `i32`.
+- `-> i32` — it returns an `i32`.
+- The tail expression (no semicolon) is the return value. `return` is only for
+  leaving early.
+
+## Composition
+
+Functions plug into each other: the output of one becomes the input of another.
+Methods like `max` and `min` are called with a dot and chain nicely:
+
+```rust
+n.max(0).min(9)   // never below 0, never above 9
+```
+
+## The `max_of_three` challenge
+
+Return the largest of three numbers. The short way reuses `max` twice:
+
+```rust
+a.max(b).max(c)
+```
+
+`a.max(b)` is the larger of the first two; `.max(c)` folds in the third.
+
+## To get unstuck
+
+1. A missing semicolon on the LAST line is correct — that line is the result.
+2. If Rust complains about types, check the `-> i32` matches what you return.
+3. Prefer `a.max(b)` over writing the comparisons by hand; it is clearer.
+"""
+
+[[guide]]
+unit_id = "u6-ownership"
+title = "The big idea, gently: ownership and borrowing"
+body = """
+## One idea: every value has exactly one owner
+
+This is the part of Rust that feels new — so go slow. Each value has a single
+**owner**. When the owner goes out of scope, Rust frees the value automatically.
+No garbage collector, no manual `free`.
+
+## Moving vs borrowing
+
+Assigning a `String` **moves** it; the old name is done:
+
+```rust
+let a = String::from("hi");
+let b = a;        // ownership moved to b
+// a is no longer usable here
+```
+
+Usually you do not want to give ownership away — you just want to look. That is
+**borrowing** with `&`:
+
+```rust
+fn char_len(s: &String) -> usize { s.len() } // borrows, returns a number
+let a = String::from("hi");
+let n = char_len(&a);   // lend a reference
+println!("{a}");        // a still works — it was only borrowed
+```
+
+`&` is a shared read-only borrow; `&mut` is an exclusive borrow that can change
+the value. The rule is **many readers or one writer, never both**.
+
+## The `count_chars` challenge
+
+Take `&str` (a borrowed view of text) and return how many characters it has:
+
+```rust
+s.chars().count()
+```
+
+Use `chars().count()`, not `len()`: `len()` counts bytes, and an accented letter
+like `é` is one character but two bytes.
+
+## To get unstuck
+
+1. If Rust says a value was "moved", you probably needed `&` to borrow it instead.
+2. Take `&str`, not `String`, when a function only reads text.
+3. Count characters with `.chars().count()`.
+"""
+
+[[guide]]
+unit_id = "u7-collections"
+title = "Many values at once: Vec and HashMap"
+body = """
+## One idea: store a group of values behind one name
+
+A **`Vec<T>`** is a growable, ordered list. A **`HashMap<K, V>`** maps keys to
+values for fast lookup. **Iterators** walk either one.
+
+## Vec
+
+```rust
+let mut xs = vec![1, 2, 3];
+xs.push(4);            // [1, 2, 3, 4]
+for x in &xs {         // borrow each element
+    println!("{x}");
+}
+```
+
+## HashMap
+
+```rust
+use std::collections::HashMap;
+let mut scores = HashMap::new();
+scores.insert("Al", 90);
+scores.get("Al");      // Some(90)  — get returns an Option
+```
+
+## Iterator pipelines and the `evens` challenge
+
+The challenge keeps only the even numbers:
+
+```rust
+nums.iter().copied().filter(|n| n % 2 == 0).collect()
+```
+
+- `iter()` streams the elements (as references),
+- `copied()` turns `&i32` into owned `i32`,
+- `filter(|n| n % 2 == 0)` keeps the even ones,
+- `collect()` gathers them into a new `Vec<i32>`.
+
+## To get unstuck
+
+1. If `collect` cannot tell what to build, annotate the type: `let v: Vec<i32> =`.
+2. Iterating `&xs` borrows; it does not consume the vector.
+3. `filter` keeps elements where the test is `true`.
+"""
+
+[[guide]]
+unit_id = "u8-structs-enums"
+title = "Your own types: structs and enums"
+body = """
+## One idea: describe your data with your own types
+
+A **`struct`** groups related fields into one value. An **`enum`** says a value is
+exactly one of a fixed set of variants.
+
+## struct
+
+```rust
+struct Point { x: i32, y: i32 }
+let p = Point { x: 3, y: 4 };
+println!("{}", p.x);   // read a field with a dot
+```
+
+## Methods with `impl`
+
+```rust
+impl Point {
+    fn sum(&self) -> i32 { self.x + self.y }
+}
+p.sum();   // called with a dot; &self borrows the point
+```
+
+## enum and match
+
+```rust
+enum Light { Red, Yellow, Green }
+match light {
+    Light::Red => "stop",
+    Light::Yellow => "slow down",
+    Light::Green => "go",
+};
+```
+
+`match` must cover every variant — that is Rust stopping you forgetting a case.
+
+## The `manhattan` challenge
+
+Define `Point` with **public** fields so the tests can build points, then compute
+`|a.x - b.x| + |a.y - b.y|`:
+
+```rust
+(a.x - b.x).abs() + (a.y - b.y).abs()
+```
+
+`.abs()` gives the absolute value (distance is never negative).
+
+## To get unstuck
+
+1. The tests do `use student::{manhattan, Point}` — so both must be `pub`, and the
+   fields `pub x`, `pub y`.
+2. Read fields with `a.x`, `b.y`.
+3. Do not print — return the number; the tests check the return value.
+"""
+
+[[guide]]
+unit_id = "u9-error-handling"
+title = "No crashes: Option and Result"
+body = """
+## One idea: absence and failure are ordinary values
+
+Rust has no `null` and no exceptions. Instead:
+
+- **`Option<T>`** is `Some(value)` or `None` — a value that might be missing.
+- **`Result<T, E>`** is `Ok(value)` or `Err(error)` — an operation that might fail.
+
+Because they are enums, you must handle the empty/failing case before you can use
+the inner value. The compiler insists, which is why Rust programs rarely crash.
+
+## Handling them with `match`
+
+```rust
+match halve(10) {
+    Some(h) => println!("half is {h}"),
+    None => println!("not even"),
+}
+
+match "42".parse::<i32>() {
+    Ok(n) => println!("parsed {n}"),
+    Err(_) => println!("not a number"),
+}
+```
+
+## The `safe_div` challenge
+
+Dividing by zero crashes. Make it safe by returning an `Option`:
+
+```rust
+if b == 0 {
+    None
+} else {
+    Some(a / b)
+}
+```
+
+Guard the zero case first, then return `Some(a / b)`. The caller is now forced to
+handle the "cannot divide" case.
+
+## To get unstuck
+
+1. The return type is `Option<i32>`, so return `None` or `Some(...)` — not a bare
+   number.
+2. Check `b == 0` BEFORE dividing.
+3. `Some(0)` is a real answer (e.g. `safe_div(0, 5)`); only a zero *divisor* is
+   `None`.
+"""
+
+# ── Advanced track: the type system ────────────────────────────────────────
+
+[[guide]]
+unit_id = "u10-traits"
+title = "Slow down: a trait is just a to-do list for a type"
+body = """
+## One idea, said plainly
+
+A trait is a list of methods a type promises to provide. Nothing more. You write
+the list once, then each type "signs the contract" with an `impl` block.
+
+Think of it in two halves:
+
+1. **The contract** — what must exist:
+
+   ```rust
+   trait Animal {
+       fn speak(&self) -> String;
+   }
+   ```
+
+2. **The promise kept** — one type providing it:
+
+   ```rust
+   impl Animal for Dog {
+       fn speak(&self) -> String { String::from("Woof") }
+   }
+   ```
+
+## If you are stuck
+
+- A trait on its own does nothing — it needs at least one `impl` block.
+- `&self` means the method reads the value it is called on (`d.speak()`).
+- A **default method** has a body in the trait; a type that likes it writes
+  nothing. A type only MUST write the methods that have no body.
+- The same trait can be implemented by many types, each differently. That is the
+  whole point — shared vocabulary, independent behaviour.
+
+Re-do `d26` first (one method), then `d27` (a default method), then `d28` (two
+types, one trait). The challenge is just those three ideas put together.
+"""
+
+[[guide]]
+unit_id = "u11-generics"
+title = "Slow down: a generic is a type you fill in later"
+body = """
+## One idea, said plainly
+
+`<T>` is a blank you leave in the code. The compiler fills it with a real type —
+`i32`, `&str`, `f64` — each time you call the function. It then makes a separate
+specialised copy per type, so generics are as fast as hand-written code.
+
+```rust
+fn first<T: Copy>(xs: &[T]) -> T { xs[0] }
+first(&[1, 2, 3]);   // here T = i32
+first(&["a", "b"]);  // here T = &str
+```
+
+## If you are stuck
+
+- A type parameter goes in angle brackets right after the name: `fn name<T>(...)`.
+- A **bound** like `T: Copy` or `T: Display` says what `T` can do. Without it, the
+  body cannot do much, because the compiler must work for *every* possible type.
+- `Copy` lets you return a value by copying it; `Display` lets you print it with
+  `{}`; `PartialOrd` lets you compare with `<` and `>`.
+- Structs can be generic too: `struct Pair<T> { a: T, b: T }`.
+
+For the challenge `max_of`, start from the first element with `xs.first()?`
+(that handles the empty case by returning `None`), then loop keeping the larger
+value.
+"""
+
+[[guide]]
+unit_id = "u12-trait-bounds"
+title = "Slow down: a bound is a promise about a type"
+body = """
+## One idea, said plainly
+
+A bound is you telling the compiler "whatever type this is, it can at least do
+*this*". That promise is what lets the body of a generic actually use the value.
+
+```rust
+fn show<T: std::fmt::Display>(x: T) { println!("{x}"); } // needs Display to print
+```
+
+Two ways to write the same thing:
+
+```rust
+fn f<T: Display + Clone>(x: T) { /* inline */ }
+
+fn f<T>(x: T) where T: Display + Clone { /* where clause */ }
+```
+
+## If you are stuck
+
+- Pick bounds by what the body does: printing → `Display`, `{:?}` → `Debug`,
+  `.clone()` → `Clone`, `==` → `PartialEq`, `<`/`>` → `PartialOrd`.
+- Combine several with `+`.
+- Use a `where` clause when the header gets long — it means exactly the same.
+- The error "the trait bound `X` is not satisfied" means you used a capability you
+  did not ask for. Add the matching bound.
+
+For `count_matching`, the only thing the body does to `T` is compare with `==`, so
+the only bound you need is `T: PartialEq`.
+"""
+
+[[guide]]
+unit_id = "u13-associated-types"
+title = "Slow down: an associated type is a type the trait names"
+body = """
+## One idea, said plainly
+
+Some traits need to talk about a related type, not just methods. `Iterator` needs
+to say what it yields, so it declares `type Item`. Each implementer fills it in.
+
+```rust
+impl Iterator for Countdown {
+    type Item = u32;                       // this iterator yields u32
+    fn next(&mut self) -> Option<u32> { /* ... */ }
+}
+```
+
+## If you are stuck
+
+- `type Item;` inside a trait is a blank; `type Item = u32;` inside an `impl` fills
+  it. Refer to it elsewhere as `Self::Item`.
+- To make your own type iterable, implement `Iterator`: choose `type Item` and
+  write `next`, returning `Some(value)` while there is more and `None` when done.
+- Once `next` exists, you get `map`, `filter`, `take`, `sum`, `collect` for free.
+
+For the Fibonacci challenge, keep two numbers `a` and `b`. On each `next`: save
+`a`, set `a = b`, set `b = old_a + b`, and return `Some(old_a)`. Then
+`self.take(count).collect()` gives the first `count` values.
+"""
+
+[[guide]]
+unit_id = "u14-dispatch"
+title = "Slow down: who decides which method runs, and when?"
+body = """
+## One idea, said plainly
+
+When you call a trait method, Rust must pick the real function. Two ways:
+
+- **Static dispatch** (`impl Trait`, generics): decided at compile time, one copy
+  per type, fast and inlinable.
+- **Dynamic dispatch** (`dyn Trait`, usually `Box<dyn Trait>`): decided at run
+  time via a vtable. A little slower per call, but it lets one collection hold
+  different types.
+
+```rust
+fn announce(x: impl Display) { /* static */ }
+let shapes: Vec<Box<dyn Shape>> = /* ... */; // dynamic: mixed types allowed
+```
+
+## If you are stuck
+
+- Want a `Vec` holding *different* types that share a trait? You need
+  `Vec<Box<dyn Trait>>`. A generic `Vec<T>` is one type only.
+- `Box::new(value)` puts the value on the heap and gives back a `Box<dyn Trait>`
+  when the target type is `dyn Trait`.
+- `impl Trait` in a return is for when the real type has no writable name (like a
+  mapped iterator).
+
+For `total_area`, implement `Shape` for `Rect` (`w * h`) and `Circle`
+(`std::f64::consts::PI * r * r`), then
+`shapes.iter().map(|s| s.area()).sum()`.
+"""
+
+[[guide]]
+unit_id = "u15-lifetimes"
+title = "Slow down: a lifetime just says 'this borrow is still valid'"
+body = """
+## One idea, said plainly
+
+A reference is a borrow of data someone else owns. A lifetime is the compiler's
+way of checking the borrow never outlives the data. Most of the time it is
+inferred and you write nothing.
+
+You only name a lifetime (`'a`) when the compiler cannot guess the relationship:
+
+```rust
+fn longest<'a>(a: &'a str, b: &'a str) -> &'a str { /* returns one of the inputs */ }
+```
+
+This reads: the result lives no longer than the inputs.
+
+## If you are stuck
+
+- Lifetimes have NO runtime cost. They are a compile-time proof, then they vanish.
+- One reference in, one out? You almost never need to write a lifetime — elision
+  handles it: `fn first_line(s: &str) -> &str`.
+- Two references in and a reference out? Name a shared `'a` so the compiler knows
+  which input the output borrows from.
+- A struct that stores a reference must name the lifetime: `struct E<'a> { t: &'a str }`.
+
+For `longest_word`, you do not even write `'a`: `split_whitespace()` then
+`.max_by_key(|w| w.len()).unwrap_or("")`. The returned slice borrows from the
+input, and elision ties them together for you.
+"""
+
+[[guide]]
+unit_id = "u16-send-sync"
+title = "Slow down: the compiler guards your threads"
+body = """
+## One idea, said plainly
+
+Two marker traits make concurrency safe, and the compiler checks them for you:
+
+- **`Send`** — a value can be *moved* to another thread.
+- **`Sync`** — a value can be *shared* (`&T`) across threads.
+
+You almost never write them. You just use threads, and if something is unsafe to
+send or share, the program will not compile.
+
+```rust
+let data = vec![1, 2, 3];
+let h = std::thread::spawn(move || data.iter().sum::<i32>()); // move: needs Send
+let total = h.join().unwrap();
+```
+
+To *share* instead of move, wrap in `Arc` (thread-safe shared ownership):
+
+```rust
+use std::sync::Arc;
+let shared = Arc::new(vec![10, 20, 30]);
+let copy = Arc::clone(&shared); // give each thread its own handle
+```
+
+## If you are stuck
+
+- `move ||` transfers captured values into the thread. `join()` waits and returns
+  the thread's result.
+- To let several threads read the same data, make an `Arc` and `Arc::clone` it
+  once per thread.
+- **Object safety** (the other half of this unit) is a separate rule: a trait can
+  be `dyn Trait` only if its methods take `&self`, are not generic, and do not
+  return `Self`.
+
+For `parallel_sum`: `Arc::new(data)`, compute a chunk size with
+`len.div_ceil(workers.max(1))`, spawn a thread per chunk that sums its range, then
+add up what each `join()` returns. Treat empty input and `workers == 0` as special
+cases first.
+"""
+
+[[guide]]
+unit_id = "u17-threads"
+title = "Slow down: a thread is just another line of work"
+body = """
+## One idea, said plainly
+
+A thread is a second line of execution running at the same time as `main`. You
+start one, you wait for it, you collect its answer.
+
+```rust
+use std::thread;
+
+let handle = thread::spawn(|| 2 + 2); // start a thread
+let answer = handle.join().unwrap();  // wait for it, get its result (4)
+```
+
+- **`spawn`** starts the thread and hands you a *join handle*.
+- **`join`** blocks until the thread finishes and returns whatever the closure
+  produced (inside a `Result`, so you `unwrap`).
+
+## If you are stuck
+
+- A thread may run after the function that started it would have ended, so a
+  closure that uses local data must *own* it. Add **`move`** before the `||` to
+  give the thread ownership of what it captures.
+- Always `join` the threads you spawn — otherwise `main` can end and stop them
+  mid-work.
+
+For `sum_in_two_threads`: split the vector in two with `data.split_off(mid)` where
+`mid = len / 2`. `move` each half into its own `thread::spawn(|| half.iter().sum())`,
+then return `h1.join().unwrap() + h2.join().unwrap()`. An empty vector just gives
+two empty halves that sum to `0`.
+"""
+
+[[guide]]
+unit_id = "u18-channels"
+title = "Slow down: a channel is a pipe between threads"
+body = """
+## One idea, said plainly
+
+Instead of sharing memory, threads can pass messages through a channel — a one-way
+pipe. One end sends, the other receives.
+
+```rust
+use std::sync::mpsc;
+
+let (tx, rx) = mpsc::channel();
+tx.send(42).unwrap();         // put a value in
+let got = rx.recv().unwrap(); // take it out (blocks until it arrives)
+```
+
+- `tx` is the **sender**, `rx` is the **receiver**. `mpsc` means *many senders,
+  one receiver*.
+- You can loop the receiver: `for v in rx { ... }`. The loop ends by itself once
+  every sender has been dropped.
+
+## If you are stuck
+
+- A value is *moved* into the channel by `send` and *moved* out by `recv`, so only
+  one thread ever owns it. There is nothing to race.
+- To have several producers, `tx.clone()` the sender and give each clone to a
+  thread. The receiver keeps going until all of them are gone.
+
+For `sum_via_channel`: `move` the data into a producer thread that sends each
+element, then on the main thread return `rx.iter().sum()`. The iterator stops
+exactly when the producer drops its sender, so an empty vector sums to `0`.
+"""
+
+[[guide]]
+unit_id = "u19-shared-state"
+title = "Slow down: Arc shares, Mutex guards"
+body = """
+## One idea, said plainly
+
+Sometimes threads really must share one mutable value. Two tools together make
+that safe:
+
+- **`Arc`** lets many threads *own a handle* to the same value.
+- **`Mutex`** lets only *one thread at a time* touch it.
+
+```rust
+use std::sync::{Arc, Mutex};
+
+let counter = Arc::new(Mutex::new(0));
+let c = Arc::clone(&counter);      // a handle for another thread
+let mut n = c.lock().unwrap();     // exclusive access
+*n += 1;                           // safe change; lock frees when `n` drops
+```
+
+## If you are stuck
+
+- `lock()` gives you a guard. While you hold it you are the only thread touching
+  the value; when the guard drops, the lock releases. Keep that span short.
+- Give each thread its own `Arc::clone` of the `Arc<Mutex<...>>`, not the original.
+
+For `parallel_counter`: `Arc::new(Mutex::new(0i64))`, spawn `n_threads` threads,
+each looping `per_thread` times doing `*c.lock().unwrap() += 1`. Join them all,
+then read the counter. The total is always `n_threads * per_thread` — the mutex
+makes sure no increment is lost.
+"""
+
+[[guide]]
+unit_id = "u20-parallelism"
+title = "Slow down: split the work, combine the answers"
+body = """
+## One idea, said plainly
+
+To go faster with threads, give each thread a *disjoint* piece of the data. Because
+the pieces do not overlap, there is nothing to race; you just add up the partial
+results.
+
+```rust
+use std::thread;
+
+let data = vec![1, 2, 3, 4];
+let total: i32 = thread::scope(|s| {
+    let h = s.spawn(|| data.iter().sum::<i32>()); // borrow, no move/Arc needed
+    h.join().unwrap()
+});
+```
+
+- **`thread::scope`** lets scoped threads *borrow* local data, because they are all
+  joined before the scope returns.
+- Gather the partials in a fixed order (by chunk index) so the answer is the same
+  every run.
+
+## If you are stuck
+
+- Split, compute, combine: cut the data into chunks, sum/count each on a thread,
+  then reduce the partials.
+- Disjoint slices mean no locks are needed at all.
+
+For `count_primes_parallel`: build `(2..=upto).collect()`, split into chunks sized
+`len.div_ceil(workers.max(1))`, and have each thread count primes in its chunk with
+a trial-division `is_prime` (test divisors while `d * d <= n`). Sum what the threads
+return. Handle `upto < 2` as `0` first.
+"""

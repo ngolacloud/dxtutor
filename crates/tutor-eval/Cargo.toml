@@ -1,0 +1,25 @@
+[package]
+name = "tutor-eval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tutor-core = { path = "../tutor-core" }
+anyhow.workspace = true
+tempfile.workspace = true
+serde.workspace = true
+# Declarative language plugins are TOML descriptors.
+toml.workspace = true
+serde_json = "1"
+libc = "0.2"
+# Motor JS embebido (QuickJS). Sem bindgen/clang: usa bindings pré-gerados e compila
+# o QuickJS a partir da fonte com o `cc` do sistema. Sem browser, sem Node.
+rquickjs = "0.9"
+# Traçador de Rust por instrumentação de código-fonte: parse-se o programa do
+# aluno com `syn`, injectam-se chamadas de traço com `quote` e lê-se a posição
+# (linha) original via `proc-macro2` com `span-locations`.
+syn = { version = "2", features = ["full", "visit-mut"] }
+quote = "1"
+proc-macro2 = { version = "1", features = ["span-locations"] }

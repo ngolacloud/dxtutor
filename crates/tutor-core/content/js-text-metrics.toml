@@ -1,0 +1,281 @@
+id = "js-text-metrics"
+language = "js"
+title = "Métricas de Texto (JavaScript)"
+summary = """
+A mesma trilha do analisador de frequência de palavras, agora em JavaScript puro,
+avaliada por um motor embebido (QuickJS via rquickjs) — sem browser e sem Node.
+Fase a fase constróis tokenização, contagem com Map, e o top-K; no fim medes, com
+o cronómetro em Rust à volta do motor, a diferença entre ordenar tudo (O(m log m))
+e manter só os K maiores com um amontoado (O(m log k)).
+
+A correcção é julgada por testes JS (fonte da verdade). A complexidade é uma
+estimativa empírica, declarada como tal — nunca uma prova.
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 1 — Tokenizar
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p1-tokenize"
+title = "Fase 1 — Partir o texto em palavras"
+level = "básico"
+entry = "tokenize"
+instructions = """
+## Objectivo
+
+Implementa `tokenize(input)`, que recebe uma string e devolve um array com as suas
+**palavras** normalizadas:
+
+- separa em qualquer caractere que **não** seja alfanumérico;
+- passa tudo a **minúsculas**;
+- **descarta** os pedaços vazios.
+
+Exemplo: `"Ola, Mundo! Ola"` → `["ola", "mundo", "ola"]`.
+
+Começa simples. A eficiência discutimos no gabarito.
+"""
+starter = """
+function tokenize(input) {
+  // TODO: parte o texto em palavras normalizadas
+}
+"""
+tests = """
+test('pontuacao e maiusculas', () => {
+  assertEqual(tokenize('Hello, World!'), ['hello', 'world']);
+});
+
+test('numeros e repeticao', () => {
+  assertEqual(tokenize('A a B2 b2'), ['a', 'a', 'b2', 'b2']);
+});
+
+test('so pontuacao fica vazio', () => {
+  assertEqual(tokenize('  ...  --  '), []);
+});
+"""
+
+[phase.gabarito]
+time = "O(n)"
+space = "O(n)"
+solution = """
+function tokenize(input) {
+  return input
+    .split(/[^0-9A-Za-z]+/)
+    .filter(s => s.length > 0)
+    .map(s => s.toLowerCase());
+}
+"""
+justification = """
+Percorremos o texto **uma vez** (o `split` por expressão regular é linear no
+comprimento) e cada caractere é copiado no máximo uma vez para a saída. Logo o
+tempo é **O(n)** no comprimento do texto, e o espaço é **O(n)** porque guardamos
+as palavras resultantes.
+
+Armadilha comum: a cada palavra, varrer tudo o que já foi acumulado (por exemplo
+para contar duplicados, ou construir a saída por concatenação repetida). Isso
+torna o algoritmo **O(n²)** sem mudar o resultado — passa os mesmos testes. A
+sonda de complexidade apanha exactamente esse caso.
+
+Nota sobre a regex: `[^0-9A-Za-z]` capta apenas ASCII alfanumérico, o suficiente
+para esta lição. Uma tokenização Unicode-completa usaria `\\p{L}`/`\\p{N}` com a
+flag `u`, ao custo de mais regras — fora do âmbito desta fase.
+"""
+
+[phase.probe]
+expected = "O(n)"
+# O(n) vs O(n²) separa-se trivialmente (o quadratico quadruplica a cada duplicacao),
+# por isso bastam tamanhos pequenos. E preciso que sejam pequenos: em QuickJS
+# (interpretado) o custo da variante O(n²) e dominado pela CONTAGEM de iteracoes do
+# laco interno (~n²/2), logo tamanhos grandes estourariam o timeout. Estes quatro
+# tamanhos dao tres duplicacoes limpas — que chegam de sobra para separar as classes —
+# e mantem a variante quadratica em poucos segundos, bem abaixo do limite.
+sizes = [500, 1000, 2000, 4000]
+generator = """
+function gen(n) {
+  // Texto de ~n palavras.
+  let parts = [];
+  for (let i = 0; i < n; i++) parts.push('lorem');
+  return parts.join(' ');
+}
+"""
+call = """
+return tokenize(input);
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 2 — Contar frequencias
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p2-count"
+title = "Fase 2 — Contar quantas vezes cada palavra aparece"
+level = "intermedio"
+entry = "countFrequencies"
+instructions = """
+## Objectivo
+
+Implementa `countFrequencies(words)`, que recebe o array de palavras (da Fase 1) e
+devolve um `Map` de `palavra → contagem`.
+
+```js
+function countFrequencies(words) { /* devolve um Map */ }
+```
+
+Aprende aqui a **tabela de dispersão** (`Map`): inserção e procura em tempo
+constante amortizado.
+"""
+starter = """
+function countFrequencies(words) {
+  // TODO: conta as ocorrencias de cada palavra num Map
+}
+"""
+tests = """
+test('conta correctamente', () => {
+  const freq = countFrequencies(['a', 'b', 'a']);
+  assertEqual(freq.get('a'), 2);
+  assertEqual(freq.get('b'), 1);
+  assertTrue(freq.get('c') === undefined);
+});
+
+test('vazio da mapa vazio', () => {
+  const freq = countFrequencies([]);
+  assertEqual(freq.size, 0);
+});
+"""
+
+[phase.gabarito]
+time = "O(n)"
+space = "O(k)"
+solution = """
+function countFrequencies(words) {
+  const freq = new Map();
+  for (const w of words) {
+    freq.set(w, (freq.get(w) || 0) + 1);
+  }
+  return freq;
+}
+"""
+justification = """
+Uma única passagem pelas `n` palavras, com inserção/actualização em **O(1)**
+amortizado no `Map` → tempo **O(n)**. O espaço é **O(k)**, onde `k` é o número de
+palavras *distintas* (no pior caso `k = n`).
+
+A matemática do O(1) amortizado: a tabela redimensiona duplicando a capacidade,
+pelo que o custo total de `n` inserções é uma série geométrica `n + n/2 + … ≈ 2n`,
+ou seja O(1) por inserção em média.
+
+Armadilha: usar um array e, a cada palavra, procurar linearmente (`indexOf`) se
+já existe. Isso é **O(n·k)** — quadrático quando há muitas distintas. O `Map`
+troca essa procura linear por uma dispersão de custo constante.
+"""
+
+[phase.probe]
+expected = "O(n)"
+# Muitas duplicacoes (so 128 palavras distintas) dao a sonda a linha recta de uma
+# unica passagem pelo Map, com n a crescer em duplicacoes.
+sizes = [8000, 16000, 32000, 64000, 128000]
+generator = """
+function gen(n) {
+  let words = [];
+  for (let i = 0; i < n; i++) words.push('w' + (i % 128));
+  return words;
+}
+"""
+call = """
+return countFrequencies(input);
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 3 — Top-K (a licao de complexidade)
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p3-topk"
+title = "Fase 3 — As K palavras mais frequentes"
+level = "avancado"
+entry = "topK"
+instructions = """
+## Objectivo
+
+Implementa `topK(freq, k)`, que recebe o `Map` de frequências e devolve um array
+com as `k` palavras mais frequentes, **ordenadas por contagem decrescente** e, em
+empate, por ordem **alfabética crescente**. Cada elemento é um par `[palavra,
+contagem]`.
+
+```js
+function topK(freq, k) { /* devolve [[palavra, contagem], ...] */ }
+```
+
+Esta fase é sobre **complexidade**. Há mais do que uma forma correcta — o gabarito
+compara ordenar tudo (`O(m log m)`) com manter só os K maiores num amontoado
+(`O(m log k)`), e explica quando cada uma vale a pena.
+"""
+starter = """
+function topK(freq, k) {
+  // TODO: devolve as k palavras mais frequentes, com desempate alfabetico
+}
+"""
+tests = """
+test('ordena por contagem desc', () => {
+  const f = new Map([['a', 3], ['b', 1], ['c', 2]]);
+  assertEqual(topK(f, 2), [['a', 3], ['c', 2]]);
+});
+
+test('desempate alfabetico', () => {
+  const f = new Map([['pera', 2], ['maca', 2], ['uva', 2]]);
+  assertEqual(topK(f, 2), [['maca', 2], ['pera', 2]]);
+});
+
+test('k maior que tudo', () => {
+  const f = new Map([['a', 1]]);
+  assertEqual(topK(f, 10), [['a', 1]]);
+});
+"""
+
+[phase.gabarito]
+time = "O(m log m)"
+space = "O(m)"
+solution = """
+function topK(freq, k) {
+  const v = Array.from(freq.entries());
+  // Contagem decrescente; em empate, palavra crescente.
+  v.sort((a, b) => (b[1] - a[1]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return v.slice(0, k);
+}
+"""
+justification = """
+**Solução de referência (ordenar tudo):** copiar os `m` pares distintos é O(m),
+ordená-los é **O(m log m)** (ordenação por comparação — limite inferior
+`log₂(m!) = Θ(m log m)` de Stirling), e cortar aos primeiros `k` é O(k). Domina o
+**O(m log m)**.
+
+**Alternativa óptima para k pequeno (amontoado de tamanho k):** mantém-se um
+*min-heap* dos k maiores vistos até agora; cada um dos `m` elementos faz um
+`push`/`pop` de **O(log k)** → total **O(m log k)**, espaço **O(k)**. Quando
+`k ≪ m` (ex.: top-10 de um milhão), isto é dramaticamente melhor.
+
+**O que a sonda realmente vê:** com `k = 10` fixo, `log k` é uma *constante*, logo
+a solução por amontoado comporta-se como **linear** (`O(m)`) à medida que `m`
+cresce, enquanto ordenar tudo cresce como **linearítmica** (`O(m log m)`). A sonda
+cronometra tamanhos que duplicam e, pela constância da razão `t / f(m)`, separa as
+duas: a solução por heap aparece como `O(n)` — *melhor* que o `O(n log n)`
+esperado — e a ordenação total bate certo no `O(n log n)`. É a mesma lição, agora
+medida e não afirmada: o heap não é «mais rápido por magia», é assintoticamente
+mais barato quando `k ≪ m`.
+"""
+
+[phase.probe]
+expected = "O(n log n)"
+# A fase do heap: `m` distintos a crescer, `k = 10` fixo. Tamanhos grandes e muitas
+# duplicacoes alargam a gama de `log m`, o que deixa a sonda separar de forma fiavel
+# a ordenacao total (m·log m, linearitmica) de uma solucao por amontoado de tamanho
+# k (m·log k ≈ m, linear). O gabarito ordena tudo ⇒ esperamos O(n log n).
+sizes = [8000, 16000, 32000, 64000, 128000]
+generator = """
+function gen(n) {
+  const f = new Map();
+  for (let i = 0; i < n; i++) f.set('w' + i, (i % 997) + 1);
+  return [f, 10];
+}
+"""
+call = """
+const [freq, k] = input;
+return topK(freq, k);
+"""

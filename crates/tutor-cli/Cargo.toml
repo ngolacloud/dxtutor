@@ -1,0 +1,16 @@
+[package]
+name = "tutor-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "dxt"
+path = "src/main.rs"
+
+[dependencies]
+tutor-core = { path = "../tutor-core" }
+tutor-eval = { path = "../tutor-eval" }
+tutor-tui = { path = "../tutor-tui" }
+anyhow.workspace = true

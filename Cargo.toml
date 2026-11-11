@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tutor-core",
+    "crates/tutor-eval",
+    "crates/tutor-llm",
+    "crates/tutor-tui",
+    "crates/tutor-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["angolardevops"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+anyhow = "1"
+tempfile = "3"

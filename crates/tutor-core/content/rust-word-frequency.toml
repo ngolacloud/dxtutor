@@ -1,0 +1,317 @@
+id = "rust-word-frequency"
+language = "rust"
+title = "Analisador de Frequência de Palavras"
+summary = """
+Constrói, fase a fase, uma ferramenta que lê texto e diz quais as palavras mais
+frequentes. Pelo caminho aprendes fatiar strings, tabelas de dispersão (hash),
+ordenação, e — no fim — a diferença de complexidade entre ordenar tudo e manter
+apenas os K maiores com um amontoado (heap).
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 1 — Tokenizar
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p1-tokenize"
+title = "Fase 1 — Partir o texto em palavras"
+level = "básico"
+entry = "tokenize"
+instructions = """
+## Objectivo
+
+Implementa `tokenize`, que recebe um texto e devolve as suas **palavras**
+normalizadas:
+
+- separa em qualquer caractere que **não** seja alfanumérico;
+- passa tudo a **minúsculas**;
+- **descarta** os pedaços vazios.
+
+Exemplo: `"Olá, Mundo! Olá"` → `["olá", "mundo", "olá"]`.
+
+Começa simples. A eficiência discutimos no gabarito.
+"""
+starter = """
+pub fn tokenize(input: &str) -> Vec<String> {
+    todo!("parte o texto em palavras normalizadas")
+}
+"""
+tests = """
+use student::tokenize;
+
+#[test]
+fn pontuacao_e_maiusculas() {
+    assert_eq!(tokenize("Hello, World!"), vec!["hello", "world"]);
+}
+
+#[test]
+fn numeros_e_repeticao() {
+    assert_eq!(tokenize("A a B2 b2"), vec!["a", "a", "b2", "b2"]);
+}
+
+#[test]
+fn so_pontuacao_fica_vazio() {
+    assert!(tokenize("  ...  --  ").is_empty());
+}
+"""
+
+[phase.gabarito]
+time = "O(n)"
+space = "O(n)"
+solution = """
+pub fn tokenize(input: &str) -> Vec<String> {
+    input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_lowercase())
+        .collect()
+}
+"""
+justification = """
+Percorremos o texto **uma vez** (`split` é linear) e cada caractere é copiado no
+máximo uma vez para a saída. Logo o tempo é **O(n)** no comprimento do texto, e o
+espaço é **O(n)** porque guardamos as palavras resultantes.
+
+Armadilha comum: construir a saída concatenando ou procurando dentro do que já
+foi acumulado a cada palavra — isso torna o algoritmo **O(n²)** sem mudar o
+resultado. A sonda de complexidade apanha exactamente esse caso.
+"""
+
+[phase.probe]
+expected = "O(n)"
+# O(n) vs O(n²) separa-se trivialmente (o quadrático quadruplica a cada duplicação),
+# por isso não precisamos de tamanhos enormes aqui — e mantê-los moderados deixa a
+# demo (que corre a variante O(n²) de propósito) rápida, bem abaixo dos ~15s.
+sizes = [2000, 4000, 8000, 16000]
+generator = """
+fn gen(n: usize) -> String {
+    // Texto de ~n palavras.
+    let mut s = String::with_capacity(n * 6);
+    for _ in 0..n {
+        s.push_str("lorem ");
+    }
+    s
+}
+"""
+call = """
+let out = student::tokenize(&input);
+black_box(out);
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 2 — Contar frequências
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p2-count"
+title = "Fase 2 — Contar quantas vezes cada palavra aparece"
+level = "intermedio"
+entry = "count_frequencies"
+instructions = """
+## Objectivo
+
+Implementa `count_frequencies`, que recebe a lista de palavras (da Fase 1) e
+devolve um mapa `palavra → contagem`.
+
+```rust
+use std::collections::HashMap;
+pub fn count_frequencies(words: &[String]) -> HashMap<String, usize> { ... }
+```
+
+Aprende aqui a **tabela de dispersão** (`HashMap`): inserção e procura em tempo
+constante amortizado.
+"""
+starter = """
+use std::collections::HashMap;
+
+pub fn count_frequencies(words: &[String]) -> HashMap<String, usize> {
+    todo!("conta as ocorrências de cada palavra")
+}
+"""
+tests = """
+use std::collections::HashMap;
+use student::count_frequencies;
+
+#[test]
+fn conta_correctamente() {
+    let words = vec!["a".to_string(), "b".to_string(), "a".to_string()];
+    let freq = count_frequencies(&words);
+    assert_eq!(freq.get("a"), Some(&2));
+    assert_eq!(freq.get("b"), Some(&1));
+    assert_eq!(freq.get("c"), None);
+}
+
+#[test]
+fn vazio_da_mapa_vazio() {
+    let freq = count_frequencies(&[]);
+    assert!(freq.is_empty());
+}
+"""
+
+[phase.gabarito]
+time = "O(n)"
+space = "O(k)"
+solution = """
+use std::collections::HashMap;
+
+pub fn count_frequencies(words: &[String]) -> HashMap<String, usize> {
+    let mut freq = HashMap::new();
+    for w in words {
+        *freq.entry(w.clone()).or_insert(0) += 1;
+    }
+    freq
+}
+"""
+justification = """
+Uma única passagem pelas `n` palavras, com inserção/actualização em **O(1)**
+amortizado na `HashMap` → tempo **O(n)**. O espaço é **O(k)**, onde `k` é o número
+de palavras *distintas* (no pior caso `k = n`).
+
+A matemática do O(1) amortizado da `HashMap`: o redimensionamento duplica a
+capacidade, então o custo total de `n` inserções é uma série geométrica
+`n + n/2 + n/4 + … ≈ 2n`, ou seja O(1) por inserção em média.
+"""
+
+[phase.probe]
+expected = "O(n)"
+# Tamanhos grandes e com muitas duplicações (n, 2n, 4n, …) dão à sonda espaço para
+# confirmar a linha recta de uma única passagem pela HashMap.
+sizes = [16000, 32000, 64000, 128000, 256000]
+prelude = """
+use std::collections::HashMap;
+"""
+generator = """
+fn gen(n: usize) -> Vec<String> {
+    (0..n).map(|i| format!("w{}", i % 128)).collect()
+}
+"""
+call = """
+let out = student::count_frequencies(&input);
+black_box(out);
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 3 — Top-K (a lição de complexidade)
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p3-topk"
+title = "Fase 3 — As K palavras mais frequentes"
+level = "avancado"
+entry = "top_k"
+instructions = """
+## Objectivo
+
+Implementa `top_k`, que recebe o mapa de frequências e devolve as `k` palavras
+mais frequentes, **ordenadas por contagem decrescente** e, em empate, por ordem
+**alfabética crescente**.
+
+```rust
+use std::collections::HashMap;
+pub fn top_k(freq: &HashMap<String, usize>, k: usize) -> Vec<(String, usize)> { ... }
+```
+
+Esta fase é sobre **complexidade**. Há mais do que uma forma correcta — o gabarito
+compara ordenar tudo (`O(m log m)`) com manter só os K maiores num amontoado
+(`O(m log k)`), e explica quando cada uma vale a pena.
+"""
+starter = """
+use std::collections::HashMap;
+
+pub fn top_k(freq: &HashMap<String, usize>, k: usize) -> Vec<(String, usize)> {
+    todo!("devolve as k palavras mais frequentes, com desempate alfabético")
+}
+"""
+tests = """
+use std::collections::HashMap;
+use student::top_k;
+
+fn mapa(pares: &[(&str, usize)]) -> HashMap<String, usize> {
+    pares.iter().map(|(w, c)| (w.to_string(), *c)).collect()
+}
+
+#[test]
+fn ordena_por_contagem_desc() {
+    let f = mapa(&[("a", 3), ("b", 1), ("c", 2)]);
+    assert_eq!(
+        top_k(&f, 2),
+        vec![("a".to_string(), 3), ("c".to_string(), 2)]
+    );
+}
+
+#[test]
+fn desempate_alfabetico() {
+    let f = mapa(&[("pera", 2), ("maca", 2), ("uva", 2)]);
+    assert_eq!(
+        top_k(&f, 2),
+        vec![("maca".to_string(), 2), ("pera".to_string(), 2)]
+    );
+}
+
+#[test]
+fn k_maior_que_tudo() {
+    let f = mapa(&[("a", 1)]);
+    assert_eq!(top_k(&f, 10), vec![("a".to_string(), 1)]);
+}
+"""
+
+[phase.gabarito]
+time = "O(m log m)"
+space = "O(m)"
+solution = """
+use std::collections::HashMap;
+
+pub fn top_k(freq: &HashMap<String, usize>, k: usize) -> Vec<(String, usize)> {
+    let mut v: Vec<(String, usize)> =
+        freq.iter().map(|(w, c)| (w.clone(), *c)).collect();
+    // Contagem decrescente; em empate, palavra crescente.
+    v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    v.truncate(k);
+    v
+}
+"""
+justification = """
+**Solução de referência (ordenar tudo):** copiar os `m` pares distintos é O(m),
+ordená-los é **O(m log m)** (ordenação por comparação — limite inferior
+`log₂(m!) = Θ(m log m)` de Stirling), e truncar é O(k). Domina o **O(m log m)**.
+
+**Alternativa óptima para k pequeno (amontoado de tamanho k):** mantém-se um
+*min-heap* dos k maiores vistos até agora; cada um dos `m` elementos faz um
+`push`/`pop` de **O(log k)** → total **O(m log k)**, espaço **O(k)**. Quando
+`k ≪ m` (ex.: top-10 de um milhão), isto é dramaticamente melhor.
+
+Regra de engenharia: se precisas de **tudo ordenado**, ordena (`O(m log m)`). Se
+só precisas do **top-k** com `k` pequeno, usa o amontoado (`O(m log k)`). A
+sonda cronometra a tua solução e compara a classe medida com a esperada.
+
+**O que a sonda realmente vê:** com `k = 10` fixo, `log k` é uma *constante*, logo
+a solução por amontoado comporta-se como **linear** (`O(m)`) à medida que `m`
+cresce, enquanto ordenar tudo cresce como **linearítmica** (`O(m log m)`). A sonda
+mede tamanhos que duplicam e, pela constância da razão `t / f(m)`, separa as duas:
+a tua solução por heap aparece como `O(n)` — *melhor* que o `O(n log n)` esperado —
+e a solução por ordenação total bate certo no `O(n log n)`. É a mesma lição, agora
+medida e não afirmada: o heap não é «mais rápido por magia», é assintoticamente mais
+barato quando `k ≪ m`.
+"""
+
+[phase.probe]
+expected = "O(n log n)"
+# A fase do heap: `m` distintos a crescer, `k = 10` fixo. Tamanhos grandes e muitas
+# duplicações alargam a gama de `log m`, que é o que deixa a sonda separar de forma
+# fiável a ordenação total (m·log m, linearítmica) de uma solução por amontoado de
+# tamanho k (m·log k ≈ m, linear). O gabarito ordena tudo ⇒ esperamos O(n log n).
+sizes = [16000, 32000, 64000, 128000, 256000]
+prelude = """
+use std::collections::HashMap;
+"""
+generator = """
+fn gen(n: usize) -> (HashMap<String, usize>, usize) {
+    let mut f = HashMap::new();
+    for i in 0..n {
+        f.insert(format!("w{}", i), (i % 997) + 1);
+    }
+    (f, 10)
+}
+"""
+call = """
+let (freq, k) = input;
+let out = student::top_k(&freq, k);
+black_box(out);
+"""

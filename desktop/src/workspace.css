@@ -1,0 +1,300 @@
+/* dxtutor desktop — Workspace / Explorer mode.
+   Reuses the Dark+ tokens declared in styles.css (:root custom properties). */
+
+/* ── Mode switching ──────────────────────────────────────────────
+   #editor-main (Learning) and #ws-main (Workspace) share grid cell 3; only one
+   shows at a time. Likewise the two sidebars share #sidebar. The <body> class
+   `mode-workspace` / `mode-learning` (set by main.ts) is the single source. */
+#editor-main { grid-column: 3; grid-row: 1; }
+#ws-main     { grid-column: 3; grid-row: 1; }
+
+#ws-main.hidden { display: none; }
+
+body.mode-workspace #editor-main { display: none; }
+body.mode-workspace #ws-main { display: grid; }
+body.mode-workspace #learning-sidebar { display: none; }
+body.mode-workspace #workspace-sidebar { display: block; }
+
+/* In Learning mode the workspace chrome is fully hidden. */
+body:not(.mode-workspace) #ws-main { display: none; }
+#workspace-sidebar.hidden { display: none; }
+body.mode-workspace #workspace-sidebar.hidden { display: block; }
+
+/* ── Explorer sidebar ──────────────────────────────────────────── */
+.ws-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ws-hdr-actions { display: flex; gap: 2px; }
+.ws-hdr-actions .sidebar-hdr-btn { display: inline-flex; }
+
+.ws-root-title { cursor: default; }
+.ws-root-title:hover { background: none; color: var(--fg); }
+
+.ws-tree {
+  padding-bottom: 8px;
+  min-width: 0;
+}
+
+.ws-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding-right: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+}
+.ws-row:hover { background: var(--bg-hover); }
+.ws-row.active { background: var(--bg-selected); }
+.ws-row.active .ws-name { color: var(--fg-bright); }
+.ws-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--focus);
+}
+.ws-caret {
+  font-size: 10px;
+  color: var(--fg-dim);
+  flex: none;
+  width: 12px;
+  text-align: center;
+}
+.ws-icon { flex: none; font-size: 13px; line-height: 1; }
+.ws-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ws-tree-error { padding: 12px 16px; color: var(--red); font-size: 12px; line-height: 1.5; }
+
+.ws-empty {
+  padding: 16px 16px 0;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.ws-empty p { margin-bottom: 12px; }
+.ws-empty.hidden { display: none; }
+.ws-empty .btn { width: 100%; justify-content: center; }
+
+/* ── Workspace editor region ───────────────────────────────────── */
+#ws-main {
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-editor);
+}
+#ws-editor-stack {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+#ws-editor-stack.out-open {
+  grid-template-rows: minmax(0, 1fr) 240px;
+}
+
+#ws-editor-region {
+  position: relative;
+  display: grid;
+  grid-template-rows: 35px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+#ws-editor { min-height: 0; min-width: 0; height: 100%; background: var(--bg-editor); }
+
+/* Welcome overlay shown when no file is open. */
+.ws-welcome {
+  position: absolute;
+  left: 0; right: 0;
+  top: 35px; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-editor);
+  text-align: center;
+  padding: 24px;
+}
+.ws-welcome.hidden { display: none; }
+.ws-welcome-inner { max-width: 360px; }
+.ws-welcome-logo { font-size: 44px; color: #519aba; margin-bottom: 14px; }
+.ws-welcome h1 { font-size: 22px; font-weight: 600; color: var(--fg-bright); margin-bottom: 8px; }
+.ws-welcome p { color: var(--fg-dim); font-size: 13px; line-height: 1.6; margin-bottom: 18px; }
+
+/* Workspace tabs: dirty dot ● and a hover close ✕. */
+.ws-tab { gap: 6px; }
+.ws-tab-name { overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.ws-tab-dot { color: var(--fg); font-size: 11px; line-height: 1; }
+.ws-tab-close {
+  color: var(--fg-dim);
+  font-size: 11px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0;
+}
+.ws-tab:hover .ws-tab-close { opacity: 1; }
+.ws-tab-close:hover { background: rgba(255,255,255,0.12); color: var(--fg-bright); }
+
+/* ── Output panel (run stdout / stderr) ────────────────────────── */
+#ws-output-panel {
+  display: none;
+  grid-template-rows: 28px minmax(0, 1fr);
+  border-top: 1px solid var(--seam);
+  background: var(--bg-panel);
+  min-height: 0;
+  min-width: 0;
+}
+#ws-editor-stack.out-open #ws-output-panel { display: grid; }
+
+/* Scroll container for the structured run output (built by runActive). */
+.ws-output {
+  margin: 0;
+  padding: 10px 14px 14px;
+  overflow: auto;
+  background: #181818;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── Structured RUN output ──────────────────────────────────────
+   Header ("$ running app.py"), stdout / stderr split into labelled streams,
+   and a clear exit-state footer — cleared and rebuilt on every run. */
+.run-block {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.run-cmd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--fg-muted);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--seam);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-prompt { color: var(--green-bright); font-weight: 700; }
+.run-cmd b { color: var(--fg-bright); font-weight: 600; }
+.run-cmd .run-spin {
+  width: 12px; height: 12px; margin-left: 2px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: var(--fg-bright);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.run-sec { margin: 8px 0; }
+.run-sec-h {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+.run-sec.err .run-sec-h { color: var(--red); }
+.run-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d4d4d4;
+}
+.run-sec.err .run-pre { color: #f48771; }
+.run-muted { color: var(--fg-dim); font-style: italic; }
+.run-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 6px 11px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.run-status::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+.run-status.ok   { color: var(--green); background: rgba(78,201,176,0.1);  border-color: rgba(78,201,176,0.35); }
+.run-status.err  { color: var(--red);   background: rgba(241,76,76,0.1);   border-color: rgba(241,76,76,0.35); }
+.run-status.info { color: var(--fg-dim); background: rgba(157,157,157,0.08); border-color: rgba(157,157,157,0.25); }
+
+@media (prefers-reduced-motion: reduce) {
+  .run-cmd .run-spin { animation-duration: 2s; }
+}
+
+/* ── Context menu (tree right-click) ───────────────────────────── */
+.ws-ctx {
+  position: fixed;
+  z-index: 10000;
+  min-width: 160px;
+  background: #252526;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+.ws-ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.ws-ctx-item:hover { background: var(--accent); color: #fff; }
+
+/* ── Menu-bar drop-downs (File / Run) ──────────────────────────── */
+.menu span[data-menu] { cursor: pointer; }
+.menu span[data-menu].open { color: var(--fg-bright); background: rgba(255,255,255,0.1); }
+.menu-dropdown {
+  position: fixed;
+  z-index: 10000;
+  min-width: 190px;
+  background: #252526;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.menu-item:hover { background: var(--accent); color: #fff; }
+.menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  #ws-editor-stack { transition: none; }
+}

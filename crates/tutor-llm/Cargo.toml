@@ -1,0 +1,16 @@
+[package]
+name = "tutor-llm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde = { workspace = true }
+serde_json = "1"
+# Cliente HTTP bloqueante com TLS próprio (rustls via a feature `tls`, por
+# omissão). A feature `json` liga a integração serde_json (send_json/into_json).
+# Evita-se reqwest/tokio de propósito: a TUI é síncrona e a chamada corre numa
+# thread dedicada.
+ureq = { version = "2.12", features = ["json"] }

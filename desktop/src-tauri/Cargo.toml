@@ -1,0 +1,37 @@
+# dxtutor desktop — Tauri backend.
+#
+# This crate is deliberately its OWN workspace (empty [workspace] table below)
+# so it is fully decoupled from the parent tutor-* Cargo workspace. It depends
+# on the "brain" crates by relative path, linking the tutor logic without
+# touching anything shared.
+[package]
+name = "dxtutor-desktop"
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["angolardevops"]
+description = "Delonix Tutor — VSCode-style desktop editor shell for the dxtutor programming tutor."
+
+# Decouple from the parent workspace at ../../Cargo.toml.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.8"
+libc = "0.2"
+
+# The dxtutor "brain", linked by relative path — no changes to the shared crates.
+tutor-core = { path = "../../crates/tutor-core" }
+tutor-eval = { path = "../../crates/tutor-eval" }
+tutor-llm = { path = "../../crates/tutor-llm" }
+
+[features]
+# Kept so `cargo build` matches the Tauri v2 convention even without the CLI.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

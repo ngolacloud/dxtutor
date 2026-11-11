@@ -1,0 +1,23 @@
+# Rust build artifacts
+/target
+**/target
+
+# Node / Vite
+node_modules/
+desktop/dist/
+desktop/.vite/
+
+# Tauri build output
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs & env
+*.log
+.env
+.env.local
