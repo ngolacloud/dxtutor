@@ -2264,6 +2264,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
   background: var(--accent); color: #fff; border: none;
 }
 .rv-fixbtn:hover { background: var(--accent-hover); }
+.rv-fixbtn.warn { background: var(--orange); color: #1a1a1a; }
 /* Inline "what to do here" ghost in the editor. */
 .rv-ghost { color: var(--orange); opacity: 0.75; font-style: italic; }
 
@@ -2350,3 +2351,94 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .cm-row:hover { background: var(--bg-hover); }
 .cm-kind { font-size: 9px; color: var(--fg-muted); text-transform: uppercase; min-width: 56px; }
 .cm-loc { font-family: var(--font-mono); font-size: 11px; color: var(--fg); }
+
+/* ── Dev Assistant chat (P4 shell) ───────────────────────────────────────────── */
+.assistant-drawer {
+  position: fixed;
+  top: var(--titlebar-h, 36px);
+  right: 0;
+  bottom: var(--statusbar-h, 24px);
+  width: 440px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
+  z-index: 42;
+  font-size: 12px;
+}
+.assistant-drawer.hidden { display: none; }
+.assistant-hdr { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.assistant-title { font-weight: 600; letter-spacing: 0.3px; }
+.assistant-provider {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-input); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; max-width: 150px;
+}
+.assistant-provider:focus { outline: none; border-color: var(--accent); }
+.assistant-provider option { background: var(--bg-elevated); color: var(--fg); }
+.assistant-model { flex: 1; font-family: var(--font-mono); font-size: 10px; }
+.assistant-model.ok { color: var(--green); }
+.assistant-model.off { color: var(--fg-muted); }
+.assistant-iconbtn { background: none; border: none; color: var(--fg-dim); font-size: 16px; cursor: pointer; padding: 0 6px; }
+.assistant-iconbtn:hover { color: var(--fg-bright); }
+.assistant-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.as-welcome { color: var(--fg-dim); line-height: 1.6; padding: 8px; }
+.as-msg { display: flex; flex-direction: column; gap: 3px; }
+.as-role { font-size: 10px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.as-msg.user .as-body { background: var(--bg-selected-inactive); }
+.as-body { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; color: var(--fg); }
+.as-think { display: flex; align-items: center; gap: 8px; color: var(--fg-dim); }
+.as-think .rv-spin { width: 14px; height: 14px; }
+.assistant-compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); align-items: flex-end; }
+.assistant-input { flex: 1; resize: none; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: inherit; font-size: 12px; }
+.assistant-input:focus { outline: none; border-color: var(--accent); }
+.assistant-send { padding: 6px 16px; }
+.assistant-send.stop { background: var(--red); }
+
+/* AI providers settings modal */
+.providers-box {
+  display: flex; flex-direction: column; width: min(560px, 92vw); max-height: 88vh;
+  background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden;
+}
+.providers-form { padding: 12px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.providers-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--fg-dim); }
+.providers-form input, .providers-form select {
+  background: var(--bg-input); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 5px; padding: 6px 8px; font-size: 12px; font-family: var(--font-mono);
+}
+.providers-form input:focus, .providers-form select:focus { outline: none; border-color: var(--accent); }
+.providers-note { font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
+.providers-note code { background: var(--bg-elevated); padding: 1px 4px; border-radius: 3px; }
+.providers-status { flex: 1; font-size: 11px; color: var(--green); }
+
+/* ── Edit with me (P4 §6) ────────────────────────────────────────────────────── */
+.edit-box {
+  display: flex; flex-direction: column; width: min(1100px, 94vw); height: min(84vh, 820px);
+  background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden;
+}
+.edit-hdr { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.edit-title { font-weight: 600; }
+.edit-title #edit-file { font-family: var(--font-mono); color: var(--fg-bright); }
+.edit-status { flex: 1; font-size: 11px; color: var(--fg-muted); }
+.edit-status.streaming { color: var(--accent); }
+.edit-status.paused { color: var(--orange); }
+.edit-status.done { color: var(--green); }
+.edit-status.err { color: var(--red); }
+.edit-instr { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.edit-instruction {
+  flex: 1; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 7px 10px; font-size: 12px;
+}
+.edit-instruction:focus { outline: none; border-color: var(--accent); }
+.edit-diff { flex: 1; min-height: 0; }
+.edit-actions { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
+.edit-tip { flex: 1; font-size: 11px; color: var(--fg-muted); }
+.as-cursor { color: var(--accent); animation: as-blink 1s steps(2) infinite; }
+@keyframes as-blink { 50% { opacity: 0; } }
+.rv-askbtn {
+  flex: none; font-size: 10px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  background: transparent; color: var(--accent); border: 1px solid var(--accent);
+}
+.rv-askbtn:hover { background: rgba(90, 160, 224, 0.12); }

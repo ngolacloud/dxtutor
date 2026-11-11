@@ -93,6 +93,9 @@
           <button class="act" data-view="review" title="Code Review — offline analysis" data-i18n-title="act.review">
             <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 11l2 2 4-4"/></svg>
           </button>
+          <button class="act" data-view="assistant" title="Dev Assistant — chat" data-i18n-title="act.assistant">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M8 10h8M8 13h5"/></svg>
+          </button>
           <button class="act" data-view="hint" title="Hints" data-i18n-title="act.hint">
             <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3Z"/></svg>
           </button>
@@ -530,6 +533,67 @@
         <div class="report-actions">
           <button id="report-copy" class="btn btn-secondary">Copy</button>
           <button id="report-download" class="btn btn-primary">Download .md</button>
+        </div>
+      </div>
+    </div>
+    <!-- Dev Assistant: chat drawer (local Ollama; streaming/providers in P4) -->
+    <aside id="assistant-overlay" class="assistant-drawer hidden" aria-label="Dev Assistant">
+      <header class="assistant-hdr">
+        <span class="assistant-title">Dev Assistant</span>
+        <select id="assistant-provider" class="assistant-provider" aria-label="AI provider"></select>
+        <span id="assistant-model" class="assistant-model off">…</span>
+        <button id="assistant-settings" class="assistant-iconbtn" title="AI providers &amp; keys" aria-label="AI settings">&#9881;</button>
+        <button id="assistant-clear" class="assistant-iconbtn" title="New chat" aria-label="New chat">+</button>
+        <button id="assistant-close" class="review-close" title="Close" aria-label="Close assistant">&times;</button>
+      </header>
+      <div id="assistant-messages" class="assistant-messages"></div>
+      <div class="assistant-compose">
+        <textarea id="assistant-input" class="assistant-input" rows="3" placeholder="Ask anything — paste a finding or prompt… (Ctrl+Enter to send)" aria-label="Message"></textarea>
+        <button id="assistant-send" class="btn btn-primary assistant-send">Send</button>
+      </div>
+    </aside>
+    <!-- Edit with me: interruptible AI-assisted editing (P4 §6) -->
+    <div id="edit-overlay" class="overlay hidden">
+      <div class="edit-box">
+        <header class="edit-hdr">
+          <span class="edit-title">Edit with me — <span id="edit-file"></span></span>
+          <span id="edit-status" class="edit-status"></span>
+          <button id="edit-close" class="review-close" title="Close" aria-label="Close editor">&times;</button>
+        </header>
+        <div class="edit-instr">
+          <input id="edit-instruction" class="edit-instruction" placeholder="Describe the change… (e.g. add error handling to parse())" aria-label="Edit instruction" />
+          <button id="edit-generate" class="btn btn-primary">Generate</button>
+        </div>
+        <div id="edit-diff" class="edit-diff"></div>
+        <div class="edit-actions">
+          <span class="edit-tip">Pause to take over — edit the right side by hand — then Continue.</span>
+          <button id="edit-pause" class="btn btn-secondary" disabled>Pause</button>
+          <button id="edit-apply" class="btn btn-primary" disabled>Apply</button>
+          <button id="edit-discard" class="btn btn-secondary">Discard</button>
+        </div>
+      </div>
+    </div>
+    <!-- AI providers & keys settings -->
+    <div id="providers-overlay" class="overlay hidden">
+      <div class="providers-box">
+        <header class="report-hdr">
+          <span>AI providers &amp; keys</span>
+          <button id="providers-close" class="review-close" title="Close" aria-label="Close settings">&times;</button>
+        </header>
+        <div class="providers-form">
+          <label>Default provider<select id="cfg-provider" aria-label="Default provider"></select></label>
+          <label>Anthropic API key<input id="cfg-anthropic-key" type="password" autocomplete="off" placeholder="sk-ant-…" /></label>
+          <label>Anthropic workspace id<input id="cfg-anthropic-ws" autocomplete="off" placeholder="for org-scoped keys" /></label>
+          <label>Anthropic model<input id="cfg-assistant-model" autocomplete="off" placeholder="claude-haiku-4-5" /></label>
+          <label>OpenAI API key<input id="cfg-openai-key" type="password" autocomplete="off" placeholder="sk-…" /></label>
+          <label>Gemini API key<input id="cfg-gemini-key" type="password" autocomplete="off" placeholder="AIza…" /></label>
+          <label>Ollama host<input id="cfg-ollama-host" autocomplete="off" placeholder="http://localhost:11434" /></label>
+          <label>Ollama model<input id="cfg-ollama-model" autocomplete="off" placeholder="qwen2.5:latest" /></label>
+          <p class="providers-note">Stored locally at <code>~/.config/dxtutor/providers.json</code> (mode 0600). Environment variables are used as a fallback.</p>
+        </div>
+        <div class="report-actions">
+          <span id="providers-status" class="providers-status"></span>
+          <button id="providers-save" class="btn btn-primary">Save</button>
         </div>
       </div>
     </div>

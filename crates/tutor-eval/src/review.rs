@@ -89,19 +89,27 @@ pub struct Finding {
     pub fix: Option<SuggestedFix>,
 }
 
-/// An analyzer-proposed edit: replace the given span with `replacement`
-/// (empty `replacement` means "delete this span").
+/// One edit of a fix: replace the given span with `replacement` (empty = delete).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SuggestedFix {
-    /// Human title, e.g. "replace with `x`" or "remove this".
-    pub title: String,
+pub struct FixEdit {
     pub replacement: String,
     pub file: String,
     pub start_line: u32,
     pub start_col: u32,
     pub end_line: u32,
     pub end_col: u32,
+}
+
+/// A machine-applicable fix: ALL its edits must be applied together (a partial apply
+/// can break the file). Only built from suggestions the analyzer marks safe to apply
+/// automatically (clippy `MachineApplicable`, Ruff `safe`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedFix {
+    /// Human title, e.g. "replace with `x`", "remove this", or "apply 2 edits".
+    pub title: String,
+    pub edits: Vec<FixEdit>,
 }
 
 // ── Analyzer availability & run report ──────────────────────────────────────────
@@ -261,11 +269,28 @@ pub fn review(root: &Path, scope: &ReviewScope, version: Option<String>) -> Resu
         findings.append(&mut py_findings);
     }
 
+    dedup_findings(&mut findings); // `--all-targets` lints lib+test → same finding twice
     Ok(ReviewReport {
         findings,
         analyzers,
         version,
     })
+}
+
+/// Drop duplicate findings (same analyzer/rule/location/message), e.g. a lib warning
+/// reported once under the lib target and once under its unit-test target.
+fn dedup_findings(findings: &mut Vec<Finding>) {
+    let mut seen = std::collections::HashSet::new();
+    findings.retain(|f| {
+        seen.insert((
+            f.analyzer.clone(),
+            f.rule.clone().unwrap_or_default(),
+            f.primary.file.clone(),
+            f.primary.start_line,
+            f.primary.start_col,
+            f.message.clone(),
+        ))
+    });
 }
 
 // ── Rust adapter ────────────────────────────────────────────────────────────────
@@ -618,43 +643,46 @@ fn parse_go_vet(stderr: &str) -> Vec<Finding> {
     out
 }
 
-/// Extract a machine-applicable fix from a cargo/clippy message: the first span (in
-/// the message or a child help/suggestion) that carries a `suggested_replacement`.
+/// Extract a machine-applicable fix from a cargo/clippy message. Collects EVERY edit
+/// from suggestions marked `MachineApplicable` (in the message or its help children);
+/// `MaybeIncorrect` / `HasPlaceholders` / `Unspecified` suggestions are NOT offered
+/// as one-click fixes. Returns `None` when there is no safe suggestion.
 fn cargo_fix(msg: &serde_json::Value) -> Option<SuggestedFix> {
-    let scan = |spans: Option<&Vec<serde_json::Value>>| -> Option<SuggestedFix> {
-        for s in spans? {
-            if let Some(rep) = s.get("suggested_replacement").and_then(|r| r.as_str()) {
-                let span = span_from_json(s)?;
-                return Some(make_fix(rep, &span));
-            }
-        }
-        None
-    };
-    if let Some(f) = scan(msg.get("spans").and_then(|s| s.as_array())) {
-        return Some(f);
-    }
+    let mut edits = Vec::new();
+    push_cargo_suggestion(msg, &mut edits);
     if let Some(children) = msg.get("children").and_then(|c| c.as_array()) {
         for child in children {
-            if let Some(f) = scan(child.get("spans").and_then(|s| s.as_array())) {
-                return Some(f);
+            push_cargo_suggestion(child, &mut edits);
+        }
+    }
+    if edits.is_empty() {
+        None
+    } else {
+        Some(SuggestedFix {
+            title: fix_title(&edits),
+            edits,
+        })
+    }
+}
+
+/// If `m` is a `MachineApplicable` suggestion, push each of its replacement spans.
+fn push_cargo_suggestion(m: &serde_json::Value, out: &mut Vec<FixEdit>) {
+    if m.get("suggestion_applicability").and_then(|a| a.as_str()) != Some("MachineApplicable") {
+        return;
+    }
+    if let Some(spans) = m.get("spans").and_then(|s| s.as_array()) {
+        for s in spans {
+            if let Some(rep) = s.get("suggested_replacement").and_then(|r| r.as_str()) {
+                if let Some(span) = span_from_json(s) {
+                    out.push(fix_edit(rep, &span));
+                }
             }
         }
     }
-    None
 }
 
-/// Build a `SuggestedFix` for a span, titling it by whether it deletes or replaces.
-fn make_fix(replacement: &str, span: &Span) -> SuggestedFix {
-    let title = if replacement.trim().is_empty() {
-        "remove this".to_string()
-    } else {
-        let one = replacement.replace('\n', " ");
-        let short: String = one.chars().take(60).collect();
-        let ell = if one.chars().count() > 60 { "…" } else { "" };
-        format!("replace with `{short}{ell}`")
-    };
-    SuggestedFix {
-        title,
+fn fix_edit(replacement: &str, span: &Span) -> FixEdit {
+    FixEdit {
         replacement: replacement.to_string(),
         file: span.file.clone(),
         start_line: span.start_line,
@@ -664,27 +692,60 @@ fn make_fix(replacement: &str, span: &Span) -> SuggestedFix {
     }
 }
 
-/// Extract Ruff's first auto-fix edit for a finding, if any.
+/// Title a fix by its edits: a single replace/remove, or "apply N edits".
+fn fix_title(edits: &[FixEdit]) -> String {
+    if edits.len() == 1 {
+        let r = &edits[0].replacement;
+        if r.trim().is_empty() {
+            "remove this".to_string()
+        } else {
+            let one = r.replace('\n', " ");
+            let short: String = one.chars().take(56).collect();
+            let ell = if one.chars().count() > 56 { "…" } else { "" };
+            format!("replace with `{short}{ell}`")
+        }
+    } else {
+        format!("apply {} edits", edits.len())
+    }
+}
+
+/// Extract Ruff's auto-fix, but ONLY when Ruff marks it `safe` to apply. Collects all
+/// of the fix's edits (some fixes relocate/sort across several spans).
 fn ruff_fix(item: &serde_json::Value) -> Option<SuggestedFix> {
     let fix = item.get("fix")?;
-    let edit = fix.get("edits")?.as_array()?.first()?;
-    let content = edit.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+    if fix.get("applicability").and_then(|a| a.as_str()) != Some("safe") {
+        return None;
+    }
     let file = item.get("filename").and_then(|f| f.as_str()).unwrap_or("").to_string();
     let n = |v: &serde_json::Value, a: &str, b: &str, d: u64| {
         v.get(a).and_then(|l| l.get(b)).and_then(|x| x.as_u64()).unwrap_or(d) as u32
     };
-    let sr = n(edit, "location", "row", 1);
-    let sc = n(edit, "location", "column", 1);
-    let er = n(edit, "end_location", "row", sr as u64);
-    let ec = n(edit, "end_location", "column", sc as u64);
-    let span = Span { file, start_line: sr, start_col: sc, end_line: er, end_col: ec, label: None };
-    let mut f = make_fix(&content, &span);
-    if let Some(m) = fix.get("message").and_then(|m| m.as_str()) {
-        if !m.is_empty() {
-            f.title = m.to_string();
-        }
+    let mut edits = Vec::new();
+    for edit in fix.get("edits")?.as_array()? {
+        let content = edit.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+        let sr = n(edit, "location", "row", 1);
+        let sc = n(edit, "location", "column", 1);
+        let er = n(edit, "end_location", "row", sr as u64);
+        let ec = n(edit, "end_location", "column", sc as u64);
+        edits.push(FixEdit {
+            replacement: content,
+            file: file.clone(),
+            start_line: sr,
+            start_col: sc,
+            end_line: er,
+            end_col: ec,
+        });
     }
-    Some(f)
+    if edits.is_empty() {
+        return None;
+    }
+    let title = fix
+        .get("message")
+        .and_then(|m| m.as_str())
+        .filter(|m| !m.is_empty())
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| fix_title(&edits));
+    Some(SuggestedFix { title, edits })
 }
 
 // ── Python adapter (Ruff) ───────────────────────────────────────────────────────
@@ -927,20 +988,24 @@ fn normalize(path: &str, root: &Path) -> String {
     abs.to_string_lossy().replace("/./", "/")
 }
 
-/// Files with uncommitted changes, via `git`. Empty on any failure (caller falls back).
+/// Files with uncommitted changes, via `git`: both tracked edits AND new untracked
+/// files. Empty on any failure (caller falls back to the whole project).
 fn git_changed_files(root: &Path) -> Vec<String> {
-    let out = Command::new("git")
-        .args(["diff", "--name-only", "HEAD"])
-        .current_dir(root)
-        .output();
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
+    let run = |args: &[&str]| -> Vec<String> {
+        match Command::new("git").args(args).current_dir(root).output() {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+    let mut files = run(&["diff", "--name-only", "HEAD"]);
+    files.extend(run(&["ls-files", "--others", "--exclude-standard"])); // new untracked files
+    files.sort();
+    files.dedup();
+    files
 }
 
 fn first_nonempty_line(s: &str) -> Option<String> {

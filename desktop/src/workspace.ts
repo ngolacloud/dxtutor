@@ -107,7 +107,7 @@ function baseName(p: string): string {
 
 // ── Language detection by extension ──────────────────────────────────────────
 
-function langForFile(name: string): string {
+export function langForFile(name: string): string {
   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
   const map: Record<string, string> = {
     rs: "rust",
@@ -652,6 +652,21 @@ export function initWorkspace() {
     },
   });
 
+  // "Edit with AI" — delegate an interruptible edit of the active file (Alt+I).
+  wsEditor.addAction({
+    id: "dxtutor.editWithAI",
+    label: "Edit with AI",
+    contextMenuGroupId: "modification",
+    contextMenuOrder: 1.5,
+    keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyI],
+    run: (ed) => {
+      const model = ed.getModel();
+      if (activeTabPath && model && editHandler) {
+        editHandler(activeTabPath, model.getValue(), model.getLanguageId());
+      }
+    },
+  });
+
   // Sidebar header actions.
   $("#ws-act-open").addEventListener("click", () => void openFolder());
   $("#ws-act-newfile").addEventListener("click", () => void createEntry(false));
@@ -758,6 +773,30 @@ export function setCodeMapHandler(fn: (symbol: string) => void): void {
   codeMapHandler = fn;
 }
 
+/** Register the handler that starts an AI "Edit with me" on a file (wired by main.ts). */
+let editHandler: ((path: string, content: string, lang: string) => void) | null = null;
+export function setEditHandler(fn: (path: string, content: string, lang: string) => void): void {
+  editHandler = fn;
+}
+
+/** Current in-editor content of `path` if a tab is open, else null (unopened). */
+export function currentFileContent(path: string): string | null {
+  const tab = tabByPath(path);
+  return tab ? tab.model.getValue() : null;
+}
+
+/** Replace the ENTIRE content of `path` with `content`, as one undoable edit. */
+export async function replaceFileContent(path: string, content: string): Promise<boolean> {
+  await openFileAt(path, 1, 1);
+  const model = wsEditor?.getModel();
+  if (!wsEditor || !model) return false;
+  wsEditor.pushUndoStop();
+  model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null);
+  wsEditor.pushUndoStop();
+  wsEditor.focus();
+  return true;
+}
+
 /**
  * Open `path` in the workspace editor and reveal (line, col) — both 1-based. Used
  * by the Code Review panel to jump straight to a finding's evidence.
@@ -779,29 +818,53 @@ export function setReviewMarkers(path: string, markers: monaco.editor.IMarkerDat
   if (tab) monaco.editor.setModelMarkers(tab.model, "dxtutor-review", markers);
 }
 
+export interface ReviewEdit {
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
+  replacement: string;
+}
+
 /**
- * Apply an analyzer's machine fix: replace [sl,sc..el,ec] with `replacement` in
- * `path`, as one undoable edit the developer can revert. Returns false if the file
- * could not be opened. This is the first programmatic edit in the app, so it brackets
- * the change with undo stops to keep a clean "undo" boundary.
+ * Apply ALL edits of an analyzer's machine fix to `path` as ONE undoable change.
+ * STALENESS GUARD: refuses if the buffer differs from its last-saved content (i.e. it
+ * was edited since the review ran) — applying stale spans would corrupt the source.
+ * Edits are applied bottom-up so earlier positions stay valid. Multi-part fixes apply
+ * atomically (never a partial, file-breaking apply).
  */
-export async function applyReviewEdit(
+export async function applyReviewEdits(
   path: string,
-  sl: number,
-  sc: number,
-  el: number,
-  ec: number,
-  replacement: string,
-): Promise<boolean> {
-  await openFileAt(path, sl, sc);
+  edits: ReviewEdit[],
+): Promise<{ ok: boolean; reason?: string }> {
+  if (edits.length === 0) return { ok: false, reason: "nothing to apply" };
+  await openFileAt(path, edits[0].startLine, edits[0].startCol);
+  const tab = tabByPath(path);
   const model = wsEditor?.getModel();
-  if (!wsEditor || !model) return false;
-  const range = new monaco.Range(sl, sc, el, ec);
+  if (!wsEditor || !model || !tab) return { ok: false, reason: "could not open the file" };
+  if (model.getValue() !== tab.saved) {
+    return { ok: false, reason: "file changed since the review — re-run Review" };
+  }
+  const ops = edits
+    .slice()
+    .sort((a, b) => b.startLine - a.startLine || b.startCol - a.startCol)
+    .map((e) => ({
+      range: new monaco.Range(e.startLine, e.startCol, e.endLine, e.endCol),
+      text: e.replacement,
+    }));
   wsEditor.pushUndoStop();
-  model.pushEditOperations([], [{ range, text: replacement }], () => null);
+  model.pushEditOperations([], ops, () => null);
   wsEditor.pushUndoStop();
   wsEditor.focus();
-  return true;
+  return { ok: true };
+}
+
+/** Clear all review squiggles (owner "dxtutor-review") and the inline ghost. */
+export function clearReviewMarkers(): void {
+  for (const m of monaco.editor.getModels()) {
+    monaco.editor.setModelMarkers(m, "dxtutor-review", []);
+  }
+  setReviewGhost(null, "");
 }
 
 // A single inline "what to do here" ghost (dim text after the finding's line).

@@ -741,6 +741,109 @@ async fn assistant_chat(
     .map_err(|e| format!("{e}"))
 }
 
+/// Cancellation flags for in-flight streaming LLM requests, keyed by request id.
+static LLM_CANCELS: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+> = std::sync::OnceLock::new();
+fn llm_cancels(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>
+{
+    LLM_CANCELS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Stream a Dev-Assistant chat turn. Emits `llm://token` {requestId, delta} per token
+/// chunk, then `llm://done` {requestId, model} or `llm://error` {requestId, error}.
+/// Returns immediately; the stream runs on a thread (the pty.rs pattern). Cancel it
+/// mid-flight with `assistant_cancel(requestId)` — the Stop button.
+/// The AI providers and what each can do right now (Ollama live; others gated).
+#[tauri::command]
+fn list_providers() -> Vec<tutor_llm::chat::ProviderInfo> {
+    tutor_llm::chat::list_providers()
+}
+
+/// The saved AI/provider settings (keys + Ollama config), for the settings form.
+#[tauri::command]
+fn get_providers_config() -> tutor_llm::chat::ProvidersConfig {
+    tutor_llm::chat::load_config()
+}
+
+/// Persist AI/provider settings to `~/.config/dxtutor/providers.json` (mode 0600).
+#[tauri::command]
+fn save_providers_config(config: tutor_llm::chat::ProvidersConfig) -> Result<(), String> {
+    tutor_llm::chat::save_config(&config).map_err(|e| format!("{e}"))
+}
+
+#[tauri::command]
+fn assistant_chat_stream(
+    app: tauri::AppHandle,
+    messages: Vec<tutor_llm::chat::ChatMsg>,
+    provider: Option<String>,
+    model: Option<String>,
+    request_id: String,
+) {
+    use std::sync::atomic::Ordering;
+    use tauri::Emitter;
+
+    // ollama (local), claude, openai and gemini all have SSE streaming adapters. Any
+    // other id fails honestly rather than silently doing nothing.
+    let prov = provider.as_deref().unwrap_or("ollama").to_string();
+    if !matches!(prov.as_str(), "ollama" | "claude" | "openai" | "gemini") {
+        let _ = app.emit(
+            "llm://error",
+            serde_json::json!({
+                "requestId": request_id,
+                "error": format!("The “{prov}” provider has no streaming adapter yet. Use Ollama, Claude, OpenAI or Gemini."),
+            }),
+        );
+        return;
+    }
+
+    let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    llm_cancels().lock().unwrap().insert(request_id.clone(), flag.clone());
+    std::thread::spawn(move || {
+        let emit_app = app.clone();
+        let rid = request_id.clone();
+        // One cancel-aware token sink shared by every provider branch.
+        let emit = |delta: &str| -> bool {
+            if flag.load(Ordering::Relaxed) {
+                return false; // cancelled via the Stop button
+            }
+            let _ = emit_app.emit("llm://token", serde_json::json!({ "requestId": rid, "delta": delta }));
+            true
+        };
+        let res = match prov.as_str() {
+            "claude" => tutor_llm::chat::claude_chat_stream_env(&messages, emit),
+            "openai" => tutor_llm::chat::openai_chat_stream_env(&messages, model.as_deref(), emit),
+            "gemini" => tutor_llm::chat::gemini_chat_stream_env(&messages, model.as_deref(), emit),
+            _ => tutor_llm::chat::ollama_chat_stream(&messages, model.as_deref(), emit),
+        };
+        llm_cancels().lock().unwrap().remove(&request_id);
+        match res {
+            Ok(reply) => {
+                let _ = app.emit(
+                    "llm://done",
+                    serde_json::json!({ "requestId": request_id, "model": reply.model }),
+                );
+            }
+            Err(e) => {
+                let _ = app.emit(
+                    "llm://error",
+                    serde_json::json!({ "requestId": request_id, "error": format!("{e}") }),
+                );
+            }
+        }
+    });
+}
+
+/// Cancel an in-flight streaming request (the Stop button / interrupt).
+#[tauri::command]
+fn assistant_cancel(request_id: String) {
+    use std::sync::atomic::Ordering;
+    if let Some(f) = llm_cancels().lock().unwrap().get(&request_id) {
+        f.store(true, Ordering::Relaxed);
+    }
+}
+
 /// CodeMap: the definitions, references and (inferred) callers of `symbol` across
 /// the project at `root`. Runs off the UI thread. This slice is Rust + syntactic
 /// (`resolution: "inferred"`); a rust-analyzer-backed resolved path lands later.
@@ -929,6 +1032,11 @@ fn main() {
             symbol_relations,
             assistant_models,
             assistant_chat,
+            assistant_chat_stream,
+            assistant_cancel,
+            list_providers,
+            get_providers_config,
+            save_providers_config,
             request_plan,
             request_fix,
             get_course,

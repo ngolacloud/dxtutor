@@ -13,9 +13,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { monaco } from "./monaco";
+import { askAssistant } from "./assistant";
+import { startEdit } from "./edit";
 import {
   activeFilePath,
-  applyReviewEdit,
+  applyReviewEdits,
+  clearReviewMarkers,
+  currentFileContent,
+  langForFile,
   openFileAt,
   setReviewGhost,
   setReviewMarkers,
@@ -36,14 +41,17 @@ interface Span {
   endCol: number;
   label: string | null;
 }
-interface SuggestedFix {
-  title: string;
+interface FixEdit {
   replacement: string;
   file: string;
   startLine: number;
   startCol: number;
   endLine: number;
   endCol: number;
+}
+interface SuggestedFix {
+  title: string;
+  edits: FixEdit[];
 }
 interface Finding {
   analyzer: string;
@@ -184,6 +192,7 @@ function secondOpinionPrompt(report: ReviewReport, root: string): string {
 }
 
 export function openReview(): void {
+  $("#assistant-overlay")?.classList.add("hidden"); // the two right drawers are exclusive
   $("#review-overlay").classList.remove("hidden");
   void refreshAnalyzers();
   if (!lastReport) {
@@ -214,6 +223,7 @@ async function runReview(): Promise<void> {
   }
 
   running = true;
+  clearReviewMarkers(); // drop stale squiggles/ghost from the previous run
   const runBtn = $("#review-run") as HTMLButtonElement;
   runBtn.disabled = true;
   runBtn.textContent = "Reviewing…";
@@ -317,10 +327,31 @@ function render(report: ReviewReport, root: string): void {
       navigate(flatFindings[Number(row.dataset.idx)]);
     });
   });
-  results.querySelectorAll<HTMLElement>(".rv-fixbtn").forEach((btn) => {
+  results.querySelectorAll<HTMLElement>(".rv-askbtn[data-ask]").forEach((btn) => {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      void applyFix(flatFindings[Number(btn.dataset.idx)]);
+      askAboutFinding(flatFindings[Number(btn.dataset.ask)]);
+    });
+  });
+  results.querySelectorAll<HTMLElement>(".rv-askbtn[data-edit]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      void fixWithAI(flatFindings[Number(btn.dataset.edit)]);
+    });
+  });
+  results.querySelectorAll<HTMLButtonElement>(".rv-fixbtn").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const res = await applyFix(flatFindings[Number(btn.dataset.idx)]);
+      if (!res.ok) {
+        const orig = btn.textContent;
+        btn.textContent = `⚠ ${res.reason ?? "failed"}`;
+        btn.classList.add("warn");
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove("warn");
+        }, 2600);
+      }
     });
   });
 }
@@ -335,11 +366,11 @@ function findingRow(f: Finding, idx: number): string {
     f.related.length > 0
       ? `<div class="rv-meta rv-related">${f.related.length} related location${f.related.length > 1 ? "s" : ""}</div>`
       : "";
-  // A machine-applicable fix becomes an inline "Apply fix" (the analyzer tells us the
-  // exact replacement — deterministic, no AI). Otherwise the Verify line is the guide.
-  const fix = f.fix
-    ? `<div class="rv-fix"><span class="rv-fix-t">💡 ${esc(f.fix.title)}</span><button class="rv-fixbtn" data-idx="${idx}">Apply fix</button></div>`
-    : "";
+  // Actions: a deterministic "Apply fix" when the analyzer offers a safe one, plus
+  // "Ask AI" (second opinion — streams the analysis from the local model).
+  const fixTitle = f.fix ? `<span class="rv-fix-t">💡 ${esc(f.fix.title)}</span>` : `<span class="rv-fix-t"></span>`;
+  const fixBtn = f.fix ? `<button class="rv-fixbtn" data-idx="${idx}">Apply fix</button>` : "";
+  const actions = `<div class="rv-fix">${fixTitle}<button class="rv-askbtn" data-ask="${idx}">Ask AI</button><button class="rv-askbtn" data-edit="${idx}">Fix with AI</button>${fixBtn}</div>`;
   return `<div class="rv-item cls-${f.class}" data-idx="${idx}">
     <div class="rv-row1">
       <span class="rv-badge ${f.class}">${classIcon(f.class)} ${classLabel(f.class)}</span>
@@ -348,7 +379,7 @@ function findingRow(f: Finding, idx: number): string {
       <span class="rv-loc">${where}</span>
     </div>
     <div class="rv-msg">${esc(f.message)}</div>
-    ${evid}${cons}${verf}${fix}${rel}
+    ${evid}${cons}${verf}${actions}${rel}
   </div>`;
 }
 
@@ -382,7 +413,7 @@ function renderFilters(report: ReviewReport): void {
       const c = b.dataset.class as FindingClass;
       if (hiddenClasses.has(c)) hiddenClasses.delete(c);
       else hiddenClasses.add(c);
-      if (lastReport) render(lastReport, workspaceRoot() ?? "");
+      if (lastReport) render(lastReport, lastRoot || workspaceRoot() || "");
     });
   });
 }
@@ -418,30 +449,62 @@ function navigate(f: Finding): void {
 
     // Inline placeholder at the line: the suggested fix (code / "remove this"), or the
     // message when there is no auto-fix. Re-running the review clears it when resolved.
-    let hint: string;
-    if (f.fix) {
-      hint = f.fix.replacement.trim() === "" ? "remove this" : `fix: ${f.fix.title.replace(/^replace with /, "")}`;
-    } else {
-      hint = f.message;
-    }
+    const hint = f.fix ? `fix: ${f.fix.title}` : f.message;
     setReviewGhost(f.primary.startLine, hint.length > 90 ? hint.slice(0, 90) + "…" : hint);
   });
 }
 
-/** Apply the analyzer's machine fix (replace / remove) as one undoable edit. */
-async function applyFix(f: Finding): Promise<void> {
-  if (!f.fix) return;
+/** Open the Dev Assistant with a second-opinion prompt about this finding. */
+function askAboutFinding(f: Finding): void {
+  const loc = `${relative(resolvePath(f.primary.file, lastRoot), lastRoot)}:${f.primary.startLine}:${f.primary.startCol}`;
+  const prompt = [
+    `A local static analyzer (${f.analyzer}${f.rule ? " " + f.rule : ""}) reported this at ${loc}:`,
+    ``,
+    `> ${f.message}`,
+    ``,
+    `Treat it as a HYPOTHESIS, not a confirmed bug. Looking at the real code at that location, tell me:`,
+    `1. Is it a genuine BUG, a conditional RISK, an OPPORTUNITY (clarity/perf/style), or a false positive — with evidence.`,
+    `2. The smallest correct fix that preserves intended behaviour, or why to leave it.`,
+    `3. A concrete test that would confirm or refute it.`,
+  ].join("\n");
+  askAssistant(prompt);
+}
+
+/** Delegate the fix to the AI: open "Edit with me" on the finding's file, pre-filled. */
+async function fixWithAI(f: Finding): Promise<void> {
   ensureWorkspaceMode();
-  const abs = resolvePath(f.fix.file || f.primary.file, lastRoot);
-  const ok = await applyReviewEdit(
+  const abs = resolvePath(f.primary.file, lastRoot);
+  let content = currentFileContent(abs);
+  if (content == null) {
+    try {
+      content = await invoke<string>("read_text_file", { path: abs });
+    } catch {
+      content = null;
+    }
+  }
+  if (content == null) return;
+  const name = abs.split("/").pop() ?? abs;
+  const instruction = `Fix the ${f.analyzer}${f.rule ? " " + f.rule : ""} issue at line ${f.primary.startLine}: ${f.message}. Change only what is necessary.`;
+  startEdit(abs, content, langForFile(name), instruction);
+}
+
+/** Apply ALL edits of the analyzer's machine fix as one undoable change. */
+async function applyFix(f: Finding): Promise<{ ok: boolean; reason?: string }> {
+  if (!f.fix || f.fix.edits.length === 0) return { ok: false, reason: "no fix" };
+  ensureWorkspaceMode();
+  const abs = resolvePath(f.fix.edits[0].file || f.primary.file, lastRoot);
+  const res = await applyReviewEdits(
     abs,
-    f.fix.startLine,
-    f.fix.startCol,
-    f.fix.endLine,
-    f.fix.endCol,
-    f.fix.replacement,
+    f.fix.edits.map((e) => ({
+      startLine: e.startLine,
+      startCol: e.startCol,
+      endLine: e.endLine,
+      endCol: e.endCol,
+      replacement: e.replacement,
+    })),
   );
-  if (ok) setReviewGhost(null, ""); // the code changed — re-run Review to refresh
+  if (res.ok) setReviewGhost(null, ""); // code changed — re-run Review to refresh
+  return res;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────

@@ -28,9 +28,11 @@ import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler } from "./workspace";
+import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler } from "./workspace";
 import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
+import { initAssistant, openAssistant } from "./assistant";
+import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
 import { t, initI18n, getLocale, setLocale, onLocaleChange, type Locale } from "./i18n";
 
@@ -3433,6 +3435,10 @@ function wireChrome() {
         openReview();
         return;
       }
+      if (view === "assistant") {
+        openAssistant();
+        return;
+      }
       // Mode-owning buttons: Learning track (data-mode=learning) and the file
       // Explorer (data-mode=workspace) switch the whole surface.
       if (view === "workspace") {
@@ -3530,6 +3536,9 @@ async function main() {
   initReview({ ensureWorkspaceMode: () => setMode("workspace") }); // Code Review panel
   initCodeMap({ ensureWorkspaceMode: () => setMode("workspace") }); // CodeMap panel
   setCodeMapHandler((symbol) => void openCodeMap(symbol)); // editor → CodeMap
+  initAssistant(); // Dev Assistant chat panel
+  initEdit(); // "Edit with me" interruptible assisted editing
+  setEditHandler((path, content, lang) => startEdit(path, content, lang)); // editor → Edit with AI
   initDebug({ getTarget: currentDebugTarget }); // wire the Run-and-Debug panel
   await setupTerminal();
 
