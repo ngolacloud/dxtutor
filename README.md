@@ -33,3 +33,20 @@ Inferir a complexidade (Big-O) de código arbitrário é **indecidível** em ger
 ```bash
 cargo run -p tutor-cli -- demo
 ```
+
+## Licença
+
+Projecto *open source* sob **dupla licença**, à convenção do ecossistema Rust:
+
+- Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT License ([LICENSE-MIT](LICENSE-MIT))
+
+Podes escolher qualquer uma das duas. Ambas preservam o aviso de direitos de
+autor (© angolardevops / NgolaCloud): quem usa, copia ou deriva o projecto é
+obrigado a manter a atribuição. A Apache-2.0 acrescenta uma concessão explícita
+de patentes; a MIT é mais curta e permissiva — manter as duas dá ao utilizador a
+liberdade de escolher a que melhor se encaixa no seu projecto.
+
+Salvo indicação expressa em contrário, qualquer contribuição submetida para
+inclusão neste projecto, nos termos da Apache-2.0, fica sob esta mesma dupla
+licença, sem termos ou condições adicionais.
