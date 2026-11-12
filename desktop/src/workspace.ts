@@ -814,6 +814,28 @@ function bindSections(): void {
   });
 }
 
+/** The active file's path as clickable `›`-separated breadcrumb segments (prototype
+ *  parity): workspace root → … → file (with its type icon). Empty for Explain/no file. */
+function renderBreadcrumbs(): void {
+  const host = document.getElementById("ws-breadcrumbs");
+  if (!host) return;
+  const path = activeTabPath && activeTabPath !== EXPLAIN_TAB ? activeTabPath : null;
+  if (!path || !rootPath) {
+    host.innerHTML = "";
+    return;
+  }
+  const rel = path.startsWith(rootPath) ? path.slice(rootPath.length).replace(/^\/+/, "") : baseName(path);
+  const parts = [baseName(rootPath), ...rel.split("/").filter(Boolean)];
+  const fi = fileIcon(baseName(path));
+  host.innerHTML = parts
+    .map((seg, i) => {
+      const isFile = i === parts.length - 1;
+      const icon = isFile ? `<span class="${fi.cls}">${fi.svg}</span>` : "";
+      return `<span class="bc-seg${isFile ? " file" : ""}">${icon}${esc(seg)}</span>`;
+    })
+    .join(`<span class="bc-sep">›</span>`);
+}
+
 // ── Tabs + editor ─────────────────────────────────────────────────────────────
 
 function renderTabs() {
@@ -901,6 +923,7 @@ function setActiveTab(path: string) {
     $("#ws-welcome").classList.add("hidden");
     $("#explain-panel").classList.remove("hidden");
     renderTabs();
+    renderBreadcrumbs(); // Explain tab → clear (no single file path)
     requestAnimationFrame(() => wsEditor?.layout());
     return;
   }
@@ -916,6 +939,7 @@ function setActiveTab(path: string) {
   saveOpenTabs();
   renderTabs();
   highlightActiveRow();
+  renderBreadcrumbs();
   void renderSections(); // refresh the Outline for the newly-active file
   requestAnimationFrame(() => {
     wsEditor?.layout();
