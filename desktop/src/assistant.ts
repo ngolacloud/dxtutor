@@ -170,6 +170,23 @@ async function continuePlan(): Promise<void> {
   );
 }
 
+/** Render the isolated-task result for message `i` (running / patch / error), if any. */
+function taskCard(i: number): string {
+  const t = tasks.get(i);
+  if (!t) return "";
+  if (t.status === "running") {
+    return `<div class="as-task"><span class="as-spin"></span> Running in isolation (worktree of HEAD)…</div>`;
+  }
+  if (t.status === "error") {
+    return `<div class="as-task err">⚠ Isolated task failed: ${esc(t.error)}</div>`;
+  }
+  const patch = t.patch.trim();
+  return (
+    `<div class="as-task done">✓ Ran in isolation — the working tree was not touched. Reviewed patch:</div>` +
+    `<pre class="as-patch">${esc(patch || "(no changes)")}</pre>`
+  );
+}
+
 /** Render the plan progress card (title · N/M · step checklist), Antigravity-CLI style. */
 function planCard(p: Plan): string {
   const total = p.steps.length;
@@ -290,6 +307,7 @@ export function initAssistant(): void {
     if (btn.classList.contains("as-apply")) void applyAction(idx);
     else if (btn.classList.contains("as-write")) void startCodeStream(idx);
     else if (btn.classList.contains("as-plan-next")) void continuePlan(); // drive the next step
+    else if (btn.classList.contains("as-isolate")) void runInIsolation(idx); // isolated worktree → patch
     else if (btn.classList.contains("as-accept-all")) {
       acceptRange(); // keep the full proposal (already in the buffer; one undo step)
       reviews.delete(idx);
@@ -1258,6 +1276,53 @@ function codeTargetAbs(file: string): string | null {
   return root ? `${root.replace(/\/$/, "")}/${file.replace(/^\.?\//, "")}` : null;
 }
 
+// Cloud-shaped isolated tasks (RF-AG-01/05): a dxcode proposal can be run in an isolated
+// worktree instead of written to the buffer; it returns a PATCH, leaving the tree untouched.
+interface TaskState {
+  status: "running" | "done" | "error";
+  patch: string;
+  error: string;
+}
+const tasks = new Map<number, TaskState>(); // message idx → isolated task result
+
+/** Generate the dxcode file content (one blocking call) and run it as an ISOLATED task: the
+ *  write is applied in a throwaway worktree of HEAD and the returned diff is shown for review
+ *  — the working tree is never touched. */
+async function runInIsolation(idx: number): Promise<void> {
+  const dir = parseCodeDirective(messages[idx]?.content ?? "");
+  const root = workspaceRoot();
+  if (!dir || !root || tasks.get(idx)?.status === "running") return;
+  tasks.set(idx, { status: "running", patch: "", error: "" });
+  renderMessages();
+  try {
+    // 1) Generate the full file content (blocking — we need it as a payload, not a stream).
+    const reply = await invoke<{ content: string }>("assistant_chat", {
+      messages: [
+        { role: "system", content: `You generate ONE complete ${dir.language} file. Output ONLY the file's code — no fences, no prose.` },
+        { role: "user", content: dir.instruction },
+      ],
+      model: null,
+    });
+    const content = stripFences(reply.content).trimEnd() + "\n";
+    // 2) Submit to the isolated executor and 3) poll until it collects a patch.
+    const id = await invoke<string>("agent_task_submit", { root, writes: [[dir.file, content]] });
+    for (let i = 0; i < 60; i++) {
+      const st = await invoke<TaskState | null>("agent_task_status", { id });
+      if (st && st.status !== "running") {
+        tasks.set(idx, st);
+        renderMessages();
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    tasks.set(idx, { status: "error", patch: "", error: "timed out waiting for the task" });
+    renderMessages();
+  } catch (e) {
+    tasks.set(idx, { status: "error", patch: "", error: String(e) });
+    renderMessages();
+  }
+}
+
 interface SymbolRange {
   name: string;
   kind: string;
@@ -1639,7 +1704,10 @@ function renderMessages(): void {
               (dirty
                 ? `<div class="as-action-sub">⚠ This file has unsaved changes — writing replaces them (undoable with Ctrl+Z).</div>`
                 : "") +
-              `<div class="as-action-btns"><button class="as-write" data-idx="${i}">Write in editor</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
+              `<div class="as-action-btns"><button class="as-write" data-idx="${i}">Write in editor</button>` +
+              `<button class="as-isolate" data-idx="${i}" title="Run in a throwaway worktree and show a patch — the working tree is not touched">Run in isolation</button>` +
+              `<button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
+              taskCard(i) +
               (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
               `</div>`;
           }
