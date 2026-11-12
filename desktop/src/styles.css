@@ -2389,6 +2389,20 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-role { font-size: 10px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.4px; }
 .as-msg.user .as-body { background: var(--bg-selected-inactive); }
 .as-body { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; color: var(--fg); }
+/* Workspace context chip (what grounding was sent) — inspectable, collapsed by default. */
+.as-context { margin: 2px 2px 8px; font-size: 11px; color: var(--fg-muted); }
+.as-context > summary { cursor: pointer; user-select: none; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); }
+.as-context > summary:hover { color: var(--fg); }
+.as-context pre { margin: 6px 0 0; max-height: 220px; overflow: auto; background: var(--bg-base); border: 1px solid var(--border); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; color: var(--fg-dim); }
+/* Proposed workspace action — an approval card under the assistant bubble. */
+.as-action { margin-top: 6px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)); display: flex; flex-direction: column; gap: 6px; }
+.as-action.done { border-color: var(--border); color: var(--ok, #3fb950); background: var(--bg-elevated); }
+.as-action-h code, .as-action.done code { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.as-action-btns { display: flex; gap: 8px; }
+.as-action-btns button { font: inherit; padding: 4px 12px; border-radius: 5px; border: 1px solid var(--border); cursor: pointer; }
+.as-action-btns .as-apply { background: var(--accent); color: #fff; border-color: var(--accent); }
+.as-action-btns .as-reject { background: transparent; color: var(--fg-dim); }
+.as-action-err { color: var(--err, #f85149); font-size: 12px; }
 .as-think { display: flex; align-items: center; gap: 8px; color: var(--fg-dim); }
 .as-think .rv-spin { width: 14px; height: 14px; }
 .assistant-compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); align-items: flex-end; }

@@ -15,9 +15,15 @@ The active mode (`localStorage["dxtutor.mode"]` → `Mode::parse`), the provider
 message history (without the empty streaming placeholder).
 
 ## Invariants you must preserve
+0. **Workspace-aware, not a generic chat.** In project mode the assistant is grounded in
+   the OPEN project: `buildWorkspaceContext()` sends root + `workspace_tree` + active file +
+   selection, and the context is inspectable (the chip). For file/folder actions it emits a
+   single ```dxaction``` block the user approves; the IDE performs it via `workspace_action`,
+   which is **contained under the workspace root** (`contained_path` refuses `../` escapes).
+   Never answer a "create a folder" request with OS shell instructions.
 1. **Policy is backend-decided.** `assistant_chat_stream` derives `policy_for(mode, step)`;
    in study mode it prepends the tutor directive and routes the chat as a tutor. Unknown
-   mode → study (fail closed).
+   mode → study (fail closed). Study mode does not offer dxactions (tutor routing).
 2. **Interruptibility.** Pause/cancel invalidates the generation; late fragments after a
    cancel are ignored (`requestId` guard). On resume, re-read the buffer and preserve
    manual edits. Distinguish a provider with remote cancellation from one interrupted

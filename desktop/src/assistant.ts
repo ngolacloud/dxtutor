@@ -5,10 +5,17 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { activeFilePath, activeSelection, revealPath, workspaceRoot } from "./workspace";
 
 interface ChatMsg {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+interface DxAction {
+  op: "createDir" | "createFile" | "writeFile";
+  path: string;
+  content?: string;
 }
 
 interface ProviderInfo {
@@ -25,6 +32,9 @@ let busy = false;
 let currentRequestId: string | null = null;
 let streamingIdx = -1; // index of the assistant message being streamed into
 let provider = "ollama"; // selected AI provider (only Ollama streams live today)
+let lastContext: string | null = null; // the workspace context sent with the last turn
+const appliedActions = new Set<number>(); // message indices whose dxaction was applied
+const actionErrors = new Map<number, string>(); // message index -> last apply error
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -36,7 +46,24 @@ export function initAssistant(): void {
   $("#assistant-clear").addEventListener("click", () => {
     if (busy) return;
     messages = [];
+    lastContext = null;
+    appliedActions.clear();
+    actionErrors.clear();
     renderMessages();
+  });
+  // Approve / dismiss a proposed workspace action (event delegation on the message list).
+  $("#assistant-messages").addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest("button");
+    if (!btn) return;
+    const idx = Number(btn.dataset.idx);
+    if (Number.isNaN(idx)) return;
+    if (btn.classList.contains("as-apply")) void applyAction(idx);
+    else if (btn.classList.contains("as-reject")) {
+      // Mark as handled so the card disappears: strip the action from the message.
+      messages[idx].content = messages[idx].content.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim();
+      actionErrors.delete(idx);
+      renderMessages();
+    }
   });
   // One button: Send while idle, Stop (cancel) while a stream is running.
   $("#assistant-send").addEventListener("click", () => {
@@ -222,6 +249,78 @@ async function refreshModel(): Promise<void> {
   }
 }
 
+/** Build the grounding context sent to the model in project mode: root, tree, active
+ *  file, selection, and the dxaction protocol so it acts through the IDE. */
+async function buildWorkspaceContext(): Promise<string | null> {
+  const root = workspaceRoot();
+  if (!root) return null;
+  let tree = "";
+  try {
+    tree = await invoke<string>("workspace_tree", { root, maxDepth: 2, maxEntries: 200 });
+  } catch {
+    /* tree is best-effort */
+  }
+  const active = activeFilePath();
+  const sel = activeSelection();
+  return [
+    `You are the dxtutor workspace assistant. You work INSIDE the user's open project — ` +
+      `not a generic chatbot. Ground every answer in THIS real workspace, by its actual paths.`,
+    `Workspace root: ${root}`,
+    active ? `Active file: ${active}` : `No file is currently open.`,
+    sel ? `Selected code:\n${sel.slice(0, 2000)}` : "",
+    `Project tree (depth-limited, build/VCS dirs skipped):\n${tree}`,
+    `When the user asks to create or modify files or folders, DO NOT give OS shell ` +
+      `instructions (mkdir, PowerShell, etc.). Act through the IDE: reply with one short ` +
+      `sentence, then EXACTLY ONE fenced block:\n` +
+      "```dxaction\n" +
+      `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to the workspace root>","content":"<for files>"}\n` +
+      "```\n" +
+      `The user approves it with one click and the IDE performs it inside the workspace. ` +
+      `The path must be relative to the root and must not escape it.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Extract the first dxaction block from an assistant message, if valid. */
+function parseAction(text: string): DxAction | null {
+  const m = text.match(/```dxaction\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1].trim());
+    if (
+      (obj.op === "createDir" || obj.op === "createFile" || obj.op === "writeFile") &&
+      typeof obj.path === "string"
+    ) {
+      return obj as DxAction;
+    }
+  } catch {
+    /* not valid JSON — no actionable proposal */
+  }
+  return null;
+}
+
+/** Perform a proposed action, scoped to the workspace, then reveal it in the Explorer. */
+async function applyAction(idx: number): Promise<void> {
+  const action = parseAction(messages[idx]?.content ?? "");
+  const root = workspaceRoot();
+  if (!action || !root) return;
+  actionErrors.delete(idx);
+  try {
+    const abs = await invoke<string>("workspace_action", {
+      root,
+      op: action.op,
+      path: action.path,
+      content: action.content ?? null,
+    });
+    await revealPath(abs, action.op === "createDir");
+    appliedActions.add(idx);
+  } catch (e) {
+    actionErrors.set(idx, String(e));
+  }
+  renderMessages();
+}
+
 async function send(): Promise<void> {
   if (busy) return;
   const ta = $("#assistant-input") as HTMLTextAreaElement;
@@ -236,6 +335,15 @@ async function send(): Promise<void> {
   setStreaming(true);
   renderMessages();
   try {
+    // Ground the assistant in the OPEN workspace (project mode): root, tree, active file
+    // and selection, plus the dxaction protocol so it can act through the IDE instead of
+    // answering like a generic chat. Built fresh each turn; inspectable via the context chip.
+    const mode = localStorage.getItem("dxtutor.mode") ?? "learning";
+    lastContext = mode === "workspace" ? await buildWorkspaceContext() : null;
+    const history = messages.slice(0, streamingIdx);
+    const outbound = lastContext
+      ? [{ role: "system", content: lastContext } as ChatMsg, ...history]
+      : history;
     // Returns immediately; completion/tokens arrive via llm:// events. Send the
     // history WITHOUT the empty assistant placeholder we just pushed.
     // P0-2: tell the backend the active mode so it can enforce the study contract.
@@ -243,11 +351,11 @@ async function send(): Promise<void> {
     // code generator — the student keeps authorship. The backend is the authority; this
     // is just the explicit Study/Project signal (`Mode::parse` maps workspace→Project).
     await invoke("assistant_chat_stream", {
-      messages: messages.slice(0, streamingIdx),
+      messages: outbound,
       provider,
       model: null,
       requestId: currentRequestId,
-      mode: localStorage.getItem("dxtutor.mode") ?? "learning",
+      mode,
       stepId: null,
     });
   } catch (e) {
@@ -273,15 +381,37 @@ function setStreaming(s: boolean): void {
 function renderMessages(): void {
   const host = $("#assistant-messages");
   if (messages.length === 0) {
-    host.innerHTML = `<div class="as-welcome">Ask the Dev Assistant anything — paste a review finding, the review's AI prompt, or code. Tokens stream live from your local model (Ollama). <b>Ctrl+Enter</b> to send, <b>Stop</b> to interrupt.<br><br>A provider picker and “Edit with me” build on this streaming transport next.</div>`;
+    host.innerHTML = `<div class="as-welcome">Ask the Dev Assistant anything about your open project. With a folder open it knows the workspace — its tree, the active file and your selection — and can create or edit files for you (you approve each action). Tokens stream live. <b>Ctrl+Enter</b> to send, <b>Stop</b> to interrupt.</div>`;
     return;
   }
-  host.innerHTML = messages
-    .map((m, i) => {
-      const streaming = busy && i === streamingIdx;
-      const body = esc(m.content) + (streaming ? '<span class="as-cursor">▍</span>' : "");
-      return `<div class="as-msg ${m.role}"><div class="as-role">${m.role === "user" ? "You" : "Assistant"}</div><div class="as-body">${body || (streaming ? '<span class="as-cursor">▍</span>' : "")}</div></div>`;
-    })
-    .join("");
+  // A small, inspectable chip showing the workspace context attached to the last turn.
+  const chip = lastContext
+    ? `<details class="as-context"><summary>🗂 workspace context attached — click to inspect</summary><pre>${esc(lastContext)}</pre></details>`
+    : "";
+  host.innerHTML =
+    chip +
+    messages
+      .map((m, i) => {
+        const streaming = busy && i === streamingIdx;
+        const action = m.role === "assistant" && !streaming ? parseAction(m.content) : null;
+        // Hide the raw dxaction JSON from the bubble; it's shown as an approval card.
+        const shown = action ? m.content.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim() : m.content;
+        const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
+        let card = "";
+        if (action) {
+          if (appliedActions.has(i)) {
+            card = `<div class="as-action done">✓ Applied: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>`;
+          } else {
+            const err = actionErrors.get(i);
+            card =
+              `<div class="as-action"><div class="as-action-h">Proposed: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>` +
+              `<div class="as-action-btns"><button class="as-apply" data-idx="${i}">Apply</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
+              (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
+              `</div>`;
+          }
+        }
+        return `<div class="as-msg ${m.role}"><div class="as-role">${m.role === "user" ? "You" : "Assistant"}</div><div class="as-body">${body || (streaming ? '<span class="as-cursor">▍</span>' : "")}</div>${card}</div>`;
+      })
+      .join("");
   host.scrollTop = host.scrollHeight;
 }

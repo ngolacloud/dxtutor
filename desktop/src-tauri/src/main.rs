@@ -1133,6 +1133,8 @@ fn main() {
             fsops::create_path,
             fsops::delete_path,
             fsops::rename_path,
+            fsops::workspace_tree,
+            fsops::workspace_action,
             run_path,
             get_sandbox_engine,
             set_sandbox_engine,

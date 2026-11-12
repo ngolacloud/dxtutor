@@ -31,6 +31,9 @@ tutor-core = { path = "../../crates/tutor-core" }
 tutor-eval = { path = "../../crates/tutor-eval" }
 tutor-llm = { path = "../../crates/tutor-llm" }
 
+[dev-dependencies]
+tempfile = "3"
+
 [features]
 # Kept so `cargo build` matches the Tauri v2 convention even without the CLI.
 default = ["custom-protocol"]

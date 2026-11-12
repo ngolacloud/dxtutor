@@ -762,6 +762,29 @@ export function workspaceRoot(): string | null {
   return rootPath;
 }
 
+/**
+ * Refresh the Explorer around a path created/changed OUTSIDE the tree UI (e.g. by a
+ * Dev Assistant action) and reveal it — expanding the parent and opening a new file.
+ */
+export async function revealPath(abs: string, isDir: boolean): Promise<void> {
+  const parent = parentOf(abs);
+  if (parent && parent !== rootPath && !expanded.has(parent)) {
+    expanded.add(parent);
+    saveExpanded();
+  }
+  childrenCache.delete(parent);
+  await refreshDir(parent);
+  if (!isDir) await openFile(abs);
+}
+
+/** The current editor selection (active workspace tab), or "" when nothing is selected. */
+export function activeSelection(): string {
+  const sel = wsEditor?.getSelection();
+  const model = wsEditor?.getModel();
+  if (!sel || !model || sel.isEmpty()) return "";
+  return model.getValueInRange(sel);
+}
+
 /** Absolute path of the file in the active workspace tab, if any. */
 export function activeFilePath(): string | null {
   return activeTabPath;

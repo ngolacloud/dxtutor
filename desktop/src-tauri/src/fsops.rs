@@ -480,3 +480,201 @@ fn unique_stamp() -> String {
         .unwrap_or(0);
     format!("{}-{}", std::process::id(), nanos)
 }
+
+// ── Workspace context + controlled actions (Dev Assistant) ───────────────────────
+
+/// Resolve `rel` (relative, or absolute-under-root) against `root` and REFUSE anything
+/// that escapes the workspace. This is the containment guard for assistant-driven file
+/// actions: the assistant can only touch the open project, never `../` or `/etc`.
+/// Lexical normalization (no symlink following, works for not-yet-existing paths).
+fn contained_path(root: &str, rel: &str) -> Result<PathBuf, String> {
+    let root = PathBuf::from(root);
+    if !root.is_absolute() {
+        return Err("workspace root must be an absolute path".into());
+    }
+    // Accept an absolute path only if it is already under root; otherwise treat as relative.
+    let candidate = {
+        let r = Path::new(rel);
+        if r.is_absolute() {
+            r.to_path_buf()
+        } else {
+            root.join(rel)
+        }
+    };
+    // Normalize lexically: resolve `.` and `..` without hitting the filesystem.
+    let mut out = PathBuf::new();
+    for comp in candidate.components() {
+        use std::path::Component::*;
+        match comp {
+            ParentDir => {
+                if !out.pop() {
+                    return Err("path escapes the workspace".into());
+                }
+            }
+            CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    if out == root || out.starts_with(&root) {
+        Ok(out)
+    } else {
+        Err("path escapes the workspace".into())
+    }
+}
+
+/// A compact text tree of the workspace (depth-limited, heavy dirs skipped, capped),
+/// used to GROUND the Dev Assistant in the real, active project instead of answering
+/// as a generic chat. Directories first, then files, each line indented by depth.
+#[tauri::command]
+pub fn workspace_tree(root: String, max_depth: u32, max_entries: u32) -> Result<String, String> {
+    let root_path = PathBuf::from(&root);
+    if !root_path.is_dir() {
+        return Err(format!("`{root}` is not a folder"));
+    }
+    let mut out = String::new();
+    let mut count = 0u32;
+    walk_tree(&root_path, 0, max_depth, max_entries, &mut count, &mut out);
+    if count >= max_entries {
+        out.push_str("… (truncated)\n");
+    }
+    Ok(out)
+}
+
+fn walk_tree(dir: &Path, depth: u32, max_depth: u32, cap: u32, count: &mut u32, out: &mut String) {
+    if depth > max_depth || *count >= cap {
+        return;
+    }
+    let mut entries: Vec<_> = match fs::read_dir(dir) {
+        Ok(rd) => rd.flatten().collect(),
+        Err(_) => return,
+    };
+    // Directories first, then files; each alphabetical — a stable, readable tree.
+    entries.sort_by_key(|e| {
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        (!is_dir, e.file_name())
+    });
+    for e in entries {
+        if *count >= cap {
+            return;
+        }
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') && name != ".github" && name != ".ai" {
+            continue; // hide dotfiles/dirs except a couple that matter for context
+        }
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir && HIDDEN_DIRS.contains(&name.as_str()) {
+            out.push_str(&format!("{}{}/  (skipped)\n", "  ".repeat(depth as usize), name));
+            continue;
+        }
+        *count += 1;
+        out.push_str(&format!(
+            "{}{}{}\n",
+            "  ".repeat(depth as usize),
+            name,
+            if is_dir { "/" } else { "" }
+        ));
+        if is_dir {
+            walk_tree(&e.path(), depth + 1, max_depth, cap, count, out);
+        }
+    }
+}
+
+/// Perform a controlled, user-approved filesystem action from the Dev Assistant, STRICTLY
+/// inside the open workspace. `op` is "createDir" | "createFile" | "writeFile"; `path` is
+/// relative to `root` (an absolute path is accepted only if it is already under root).
+/// Returns the absolute path acted on. The containment guard refuses any `../` escape.
+#[tauri::command]
+pub fn workspace_action(
+    root: String,
+    op: String,
+    path: String,
+    content: Option<String>,
+) -> Result<String, String> {
+    let target = contained_path(&root, &path)?;
+    match op.as_str() {
+        "createDir" => {
+            fs::create_dir_all(&target).map_err(|e| format!("cannot create dir: {e}"))?;
+        }
+        "createFile" => {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("cannot create parent: {e}"))?;
+            }
+            if target.exists() {
+                return Err(format!("`{}` already exists", target.display()));
+            }
+            fs::write(&target, content.unwrap_or_default())
+                .map_err(|e| format!("cannot create file: {e}"))?;
+        }
+        "writeFile" => {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("cannot create parent: {e}"))?;
+            }
+            fs::write(&target, content.unwrap_or_default())
+                .map_err(|e| format!("cannot write file: {e}"))?;
+        }
+        other => return Err(format!("unknown workspace action `{other}`")),
+    }
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contained_path_accepts_inside_and_refuses_escape() {
+        let root = if cfg!(windows) { "C:\\ws" } else { "/home/u/ws" };
+        // inside
+        assert!(contained_path(root, "examples/dxtutor").is_ok());
+        assert_eq!(
+            contained_path(root, "examples/dxtutor").unwrap(),
+            PathBuf::from(root).join("examples").join("dxtutor")
+        );
+        // the exact root is allowed
+        assert!(contained_path(root, ".").is_ok());
+        // escapes are refused
+        assert!(contained_path(root, "../secrets").is_err());
+        assert!(contained_path(root, "examples/../../etc/passwd").is_err());
+        let outside = if cfg!(windows) { "C:\\other" } else { "/etc/passwd" };
+        assert!(contained_path(root, outside).is_err());
+    }
+
+    #[test]
+    fn workspace_action_creates_dir_and_file_then_refuses_escape() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_string_lossy().to_string();
+
+        let made = workspace_action(root.clone(), "createDir".into(), "examples/dxtutor".into(), None)
+            .expect("createDir");
+        assert!(PathBuf::from(&made).is_dir());
+
+        let f = workspace_action(
+            root.clone(),
+            "createFile".into(),
+            "examples/dxtutor/notes.md".into(),
+            Some("hello".into()),
+        )
+        .expect("createFile");
+        assert_eq!(fs::read_to_string(&f).unwrap(), "hello");
+
+        // escape is refused — nothing is written outside the workspace
+        assert!(workspace_action(root, "createDir".into(), "../evil".into(), None).is_err());
+    }
+
+    #[test]
+    fn workspace_tree_lists_real_files_and_skips_heavy_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join("examples")).unwrap();
+        fs::write(root.join("examples/main.rs"), "fn main() {}").unwrap();
+        fs::create_dir_all(root.join("target/debug")).unwrap();
+        fs::write(root.join("target/debug/junk"), "x").unwrap();
+
+        let tree = workspace_tree(root.to_string_lossy().to_string(), 2, 100).unwrap();
+        assert!(tree.contains("examples/"), "tree: {tree}");
+        assert!(tree.contains("main.rs"), "tree: {tree}");
+        // the build dir is named but NOT walked into
+        assert!(tree.contains("target/  (skipped)"), "tree: {tree}");
+        assert!(!tree.contains("junk"), "heavy dir must be skipped: {tree}");
+    }
+}
