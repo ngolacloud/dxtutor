@@ -1178,6 +1178,33 @@ async fn git_commit(root: String, message: String) -> Result<(), String> {
     .map_err(|e| format!("git task failed: {e}"))?
 }
 
+#[tauri::command]
+async fn git_branches(root: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::branches(std::path::Path::new(&root))
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))
+}
+
+#[tauri::command]
+async fn git_checkout(root: String, branch: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::checkout(std::path::Path::new(&root), &branch)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn git_create_branch(root: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::create_branch(std::path::Path::new(&root), &name)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
 /// Section 5 (daily work): the current git branch at `root` (or a short commit when
 /// detached), for the status bar. `None` → not a repo.
 #[tauri::command]
@@ -1618,6 +1645,9 @@ fn main() {
             git_unstage,
             git_stage_all,
             git_commit,
+            git_branches,
+            git_checkout,
+            git_create_branch,
             git_branch,
             debug_capabilities,
             assistant_models,

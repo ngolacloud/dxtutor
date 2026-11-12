@@ -19,6 +19,7 @@ const esc = (s: string) =>
 let ensureWorkspaceMode: () => void = () => {};
 let changes: GitChange[] = [];
 let lastRoot = "";
+let curBranch: string | null = null;
 
 export function initGit(deps: { ensureWorkspaceMode: () => void }): void {
   ensureWorkspaceMode = deps.ensureWorkspaceMode;
@@ -26,6 +27,16 @@ export function initGit(deps: { ensureWorkspaceMode: () => void }): void {
   $("#git-refresh").addEventListener("click", () => void scan());
   $("#git-stageall").addEventListener("click", () => void stageAll());
   $("#git-commit-btn").addEventListener("click", () => void commit());
+  $("#git-branch").addEventListener("click", () => void toggleBranches());
+  $("#git-branches").addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    if (t.closest(".git-branch-new")) {
+      void createBranch();
+      return;
+    }
+    const item = t.closest(".git-branch-item") as HTMLElement | null;
+    if (item?.dataset.name) void checkout(item.dataset.name);
+  });
   $("#git-message").addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
@@ -137,8 +148,9 @@ function group(title: string, rows: string[], extra = ""): string {
 }
 
 function render(branch?: string | null): void {
-  const b = branch ? `⎇ ${branch} · ` : "";
-  $("#git-count").textContent = b + (changes.length ? `${changes.length} changed` : "clean");
+  curBranch = branch ?? null;
+  $("#git-branch").textContent = `⎇ ${branch ?? "—"}`;
+  $("#git-count").textContent = changes.length ? `${changes.length} changed` : "clean";
   const staged = changes.filter(isStaged);
   const unstaged = changes.filter(isUnstaged);
   ($("#git-commit-btn") as HTMLButtonElement).disabled = staged.length === 0;
@@ -156,6 +168,59 @@ function render(branch?: string | null): void {
       "Changes",
       unstaged.map((c) => row(c, false)),
     );
+}
+
+async function toggleBranches(): Promise<void> {
+  const panel = $("#git-branches");
+  if (!panel.classList.contains("hidden")) {
+    panel.classList.add("hidden");
+    return;
+  }
+  const root = lastRoot || workspaceRoot();
+  if (!root) return;
+  let names: string[] = [];
+  try {
+    names = await invoke<string[]>("git_branches", { root });
+  } catch {
+    /* not a repo */
+  }
+  panel.innerHTML =
+    names
+      .map(
+        (n) =>
+          `<div class="git-branch-item${n === curBranch ? " current" : ""}" data-name="${esc(n)}" role="option">${n === curBranch ? "● " : ""}${esc(n)}</div>`,
+      )
+      .join("") + `<div class="git-branch-new">＋ Create new branch…</div>`;
+  panel.classList.remove("hidden");
+}
+
+async function checkout(branch: string): Promise<void> {
+  const root = lastRoot || workspaceRoot();
+  if (!root || branch === curBranch) {
+    $("#git-branches").classList.add("hidden");
+    return;
+  }
+  try {
+    await invoke("git_checkout", { root, branch });
+    $("#git-branches").classList.add("hidden");
+    await scan();
+  } catch (e) {
+    flash(String(e));
+  }
+}
+
+async function createBranch(): Promise<void> {
+  const root = lastRoot || workspaceRoot();
+  if (!root) return;
+  const name = window.prompt("New branch name:")?.trim();
+  $("#git-branches").classList.add("hidden");
+  if (!name) return;
+  try {
+    await invoke("git_create_branch", { root, name });
+    await scan();
+  } catch (e) {
+    flash(String(e));
+  }
 }
 
 async function stage(path: string): Promise<void> {

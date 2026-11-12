@@ -2415,6 +2415,17 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .rundebug-link { color: var(--accent-hover, var(--accent)); cursor: pointer; }
 .rundebug-link:hover { text-decoration: underline; }
 
+/* Branch switcher (header button + dropdown). */
+.git-branch-btn { font: inherit; font-size: 11px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-elevated); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; cursor: pointer; }
+.git-branch-btn:hover { border-color: var(--accent); }
+.git-branches { position: relative; z-index: 42; max-height: 240px; overflow-y: auto; background: var(--bg-elevated); border-bottom: 1px solid var(--border-strong); }
+.git-branches.hidden { display: none; }
+.git-branch-item { padding: 6px 12px; font-size: 12px; color: var(--fg); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-branch-item:hover { background: var(--bg-hover); }
+.git-branch-item.current { color: var(--green, #4ec9b0); }
+.git-branch-new { padding: 7px 12px; font-size: 12px; color: var(--accent-hover, var(--accent)); cursor: pointer; border-top: 1px solid var(--seam); }
+.git-branch-new:hover { background: var(--bg-hover); }
+
 /* Commit box (VSCode SCM input). */
 .git-commit { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--seam, #2b2b2b); }
 .git-message { resize: none; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; font: inherit; font-size: 12px; }

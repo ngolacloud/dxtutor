@@ -87,6 +87,38 @@ pub fn changed_files(root: &Path) -> Vec<GitChange> {
         .collect()
 }
 
+/// Local branch names (`git branch`), current branch first. Empty when not a repo.
+pub fn branches(root: &Path) -> Vec<String> {
+    let out = match git(root, &["branch", "--format=%(refname:short)"]) {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+    let current = current_branch(root);
+    let mut names: Vec<String> = out
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    // Current branch to the front so the UI can mark it.
+    if let Some(c) = current {
+        names.sort_by_key(|n| if *n == c { 0 } else { 1 });
+    }
+    names
+}
+
+/// Switch to an existing branch (`git checkout <branch>`).
+pub fn checkout(root: &Path, branch: &str) -> Result<(), String> {
+    git_mutate(root, &["checkout", branch])
+}
+
+/// Create and switch to a new branch (`git checkout -b <branch>`).
+pub fn create_branch(root: &Path, name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("empty branch name".into());
+    }
+    git_mutate(root, &["checkout", "-b", name])
+}
+
 /// Stage a path (`git add -- <path>`). Returns `Err` with git's stderr on failure.
 pub fn stage(root: &Path, path: &str) -> Result<(), String> {
     git_mutate(root, &["add", "--", path])
@@ -279,6 +311,28 @@ mod tests {
         unstage(root, "a.txt").unwrap();
         let un = changed_files(root);
         assert!(un.iter().any(|c| c.path == "a.txt" && c.work == "M"), "{un:?}");
+    }
+
+    #[test]
+    fn branch_list_create_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        run(root, &["init", "-q"]);
+        run(root, &["config", "user.email", "t@t"]);
+        run(root, &["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        run(root, &["add", "a.txt"]);
+        run(root, &["commit", "-q", "-m", "init"]);
+
+        let base = current_branch(root).unwrap();
+        create_branch(root, "feature/x").unwrap();
+        assert_eq!(current_branch(root).as_deref(), Some("feature/x"));
+        let names = branches(root);
+        assert!(names.contains(&"feature/x".to_string()) && names.contains(&base), "{names:?}");
+        assert_eq!(names.first().unwrap(), "feature/x", "current branch first: {names:?}");
+
+        checkout(root, &base).unwrap();
+        assert_eq!(current_branch(root).as_deref(), Some(base.as_str()));
     }
 
     #[test]
