@@ -4,7 +4,7 @@
 // straight to that part of the code. Helps a dev understand third-party code fast.
 
 import { invoke } from "@tauri-apps/api/core";
-import { openFileAt, openExplainTab, closeExplainTab } from "./workspace";
+import { openExplainTab, closeExplainTab, revealLine } from "./workspace";
 
 interface ChatReply {
   content: string;
@@ -14,7 +14,6 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-let currentPath: string | null = null;
 let lastReq: { path: string; code: string; lang: string; name: string } | null = null;
 let busy = false;
 
@@ -23,21 +22,20 @@ export function initExplain(): void {
   $("#explain-refresh").addEventListener("click", () => {
     if (lastReq) void explainFile(lastReq.path, lastReq.code, lastReq.lang, lastReq.name);
   });
-  // Jump links: reveal the referenced line in the editor.
+  // Jump links: scroll the code (left pane) to the referenced line, keeping the split.
   $("#explain-body").addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest(".explain-jump") as HTMLElement | null;
-    if (a?.dataset.line && currentPath) void openFileAt(currentPath, Number(a.dataset.line), 1);
+    if (a?.dataset.line) revealLine(Number(a.dataset.line));
   });
 }
 
 /** Run an Explain pass on a file and render it into the parallel panel. */
 export async function explainFile(path: string, code: string, lang: string, name: string): Promise<void> {
   if (busy) return;
-  currentPath = path;
   lastReq = { path, code, lang, name };
   $("#explain-file").textContent = name;
   $("#explain-body").innerHTML = `<div class="explain-loading">Reading ${esc(name)} and writing a summary…</div>`;
-  openExplainTab(name); // open as a real tab in the editor area
+  openExplainTab(name, path); // open as a real tab that splits code | summary
 
   // Number the lines so the model can reference exact positions as [L<n>].
   const numbered = code

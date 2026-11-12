@@ -471,21 +471,30 @@ body.term-open #terminal-panel {
   display: grid;
 }
 
-/* Explain view: a read-first AI summary shown as a REAL tab — it occupies the editor area
-   (beside the code tabs), with [L<n>] links that jump to the code. */
+/* Explain view: a read-first AI summary shown as a REAL tab that SPLITS the editor — the
+   code on the left, the summary on the right, both visible. [L<n>] links scroll the code. */
 #ws-editor-region { position: relative; }
 .explain-panel {
   position: absolute;
   top: 35px; /* below the editor topbar */
-  left: 0;
+  left: 55%;
   right: 0;
   bottom: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-editor);
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-strong);
   z-index: 25;
 }
 .explain-panel.hidden { display: none; }
+/* In split mode the editor shrinks to the left pane; the summary takes the right. */
+#ws-editor-region.explain-split #ws-editor {
+  position: absolute;
+  top: 35px;
+  left: 0;
+  right: 45%;
+  bottom: 0;
+}
 /* Explain tab accent (lightbulb). */
 .ws-tab.explain-tab .ws-tab-name { font-style: italic; }
 

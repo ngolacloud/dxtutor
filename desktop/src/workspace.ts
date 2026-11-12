@@ -101,18 +101,27 @@ let applyingModel = false; // guard: suppress dirty updates during programmatic 
 // The Explain view is a REAL tab (sentinel path) that occupies the editor area when active,
 // sitting in the tab bar beside the file tabs. `explainTab` holds its label when present.
 const EXPLAIN_TAB = "__explain__";
-let explainTab: { name: string } | null = null;
+let explainTab: { name: string; path: string } | null = null;
 
-/** Open (or focus) the Explain tab, labelled for `name`. Called by the Explain action once
- *  the summary has been rendered into #explain-body. */
-export function openExplainTab(name: string): void {
-  explainTab = { name };
+/** Open (or focus) the Explain tab for the file at `path`. When active it SPLITS the editor
+ *  area: the file's code on the left, the summary on the right (both visible). */
+export function openExplainTab(name: string, path: string): void {
+  explainTab = { name, path };
   setActiveTab(EXPLAIN_TAB);
 }
 
 /** Close the Explain tab (from its panel header or the tab's ✕). */
 export function closeExplainTab(): void {
   closeTab(EXPLAIN_TAB);
+}
+
+/** Reveal a line in the workspace editor without changing tabs — used by the Explain jump
+ *  links so the code (left pane) scrolls beside the summary, keeping the split. */
+export function revealLine(line: number): void {
+  if (!wsEditor) return;
+  const ln = Math.max(1, line);
+  wsEditor.revealLineInCenter(ln);
+  wsEditor.setPosition({ lineNumber: ln, column: 1 });
 }
 
 // ── Breakpoints ────────────────────────────────────────────────────────────
@@ -476,21 +485,30 @@ async function restoreTabs(root: string) {
 }
 
 function setActiveTab(path: string) {
-  // Explain tab: take over the editor area (show the summary panel, hide Monaco).
+  // Explain tab: SPLIT the editor area — the explained file's code on the left, the summary
+  // on the right, both visible side by side.
   if (path === EXPLAIN_TAB) {
-    if (!explainTab) return;
+    if (!explainTab || !wsEditor) return;
     activeTabPath = EXPLAIN_TAB;
+    const fileTab = tabByPath(explainTab.path);
+    if (fileTab) {
+      applyingModel = true;
+      wsEditor.setModel(fileTab.model); // left pane shows the explained file
+      applyingModel = false;
+    }
     $("#ws-welcome").classList.add("hidden");
-    $("#ws-editor").classList.add("hidden");
+    $("#ws-editor-region").classList.add("explain-split");
     $("#explain-panel").classList.remove("hidden");
     renderTabs();
+    renderBreakpoints();
+    requestAnimationFrame(() => wsEditor?.layout());
     return;
   }
   const tab = tabByPath(path);
   if (!tab || !wsEditor) return;
   activeTabPath = path;
-  $("#explain-panel").classList.add("hidden"); // leaving Explain → show the code again
-  $("#ws-editor").classList.remove("hidden");
+  $("#ws-editor-region").classList.remove("explain-split"); // leaving split → code full width
+  $("#explain-panel").classList.add("hidden");
   applyingModel = true;
   wsEditor.setModel(tab.model);
   applyingModel = false;
@@ -528,16 +546,17 @@ async function openFile(path: string) {
 }
 
 function closeTab(path: string) {
-  // Close the Explain tab: drop it and fall back to a file tab (or empty).
+  // Close the Explain tab: drop it, leave the split, and fall back to a file tab.
   if (path === EXPLAIN_TAB) {
     explainTab = null;
     $("#explain-panel").classList.add("hidden");
+    $("#ws-editor-region").classList.remove("explain-split");
     if (activeTabPath === EXPLAIN_TAB) {
       activeTabPath = null;
       const next = tabs[tabs.length - 1];
       if (next) setActiveTab(next.path);
       else {
-        $("#ws-editor").classList.remove("hidden");
+        requestAnimationFrame(() => wsEditor?.layout());
         renderTabs();
       }
     } else {
