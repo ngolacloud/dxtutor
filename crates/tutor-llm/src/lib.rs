@@ -22,6 +22,9 @@ use anyhow::{anyhow, Result};
 /// Local Dev-Assistant chat (Ollama). Separate from the pedagogical hint providers.
 pub mod chat;
 
+/// Study-mode policy: the backend authority over what AI surfaces may do mid-exercise.
+pub mod policy;
+
 /// Modelo por omissão: Haiku 4.5 — barato e rápido, ideal para dicas curtas.
 /// (ID exacto confirmado via a skill `claude-api`.)
 pub const DEFAULT_MODEL: &str = "claude-haiku-4-5";

@@ -19,6 +19,7 @@ import {
   activeFilePath,
   applyReviewEdits,
   clearReviewMarkers,
+  contentVersion,
   currentFileContent,
   langForFile,
   openFileAt,
@@ -48,6 +49,7 @@ interface FixEdit {
   startCol: number;
   endLine: number;
   endCol: number;
+  expected?: string;
 }
 interface SuggestedFix {
   title: string;
@@ -77,6 +79,13 @@ interface ReviewReport {
   findings: Finding[];
   analyzers: AnalyzerRun[];
   version: string | null;
+  // content_version of each analyzed file at review time, keyed by the finding's path.
+  // A fix/marker is dropped when the live buffer no longer hashes to this (P0-3).
+  fileVersions: Record<string, string>;
+}
+interface FixVerification {
+  applicable: boolean;
+  reason: string;
 }
 interface AnalyzerInfo {
   id: string;
@@ -427,6 +436,16 @@ function navigate(f: Finding): void {
   const abs = resolvePath(f.primary.file, root);
   ensureWorkspaceMode();
   void openFileAt(abs, f.primary.startLine, f.primary.startCol).then(() => {
+    // P0-3: never paint a stale squiggle. If the live buffer no longer matches the
+    // revision the review analyzed, the line/column spans may point at moved code, so we
+    // clear markers and tell the developer to re-run instead of painting over new code.
+    const analyzedVersion = report.fileVersions?.[f.primary.file];
+    const live = currentFileContent(abs);
+    if (analyzedVersion && live != null && contentVersion(live) !== analyzedVersion) {
+      setReviewMarkers(abs, []);
+      setReviewGhost(f.primary.startLine, "this file changed — re-run Review to refresh");
+      return;
+    }
     // Paint every finding for this file as a marker so the evidence stays visible
     // (the squiggle colour IS the problem's severity colour).
     const markers = report.findings
@@ -493,6 +512,23 @@ async function applyFix(f: Finding): Promise<{ ok: boolean; reason?: string }> {
   if (!f.fix || f.fix.edits.length === 0) return { ok: false, reason: "no fix" };
   ensureWorkspaceMode();
   const abs = resolvePath(f.fix.edits[0].file || f.primary.file, lastRoot);
+
+  // P0-3 identity check — the authority is the backend. Verify the live buffer is still
+  // the exact revision this fix was computed against (and that the target snippet is
+  // unchanged) BEFORE touching the file; otherwise the developer's edits are preserved
+  // and they are told to re-run. The analyzed version comes from the report, keyed by
+  // the finding's own path string.
+  const analyzedVersion = lastReport?.fileVersions?.[f.primary.file];
+  const currentSource = currentFileContent(abs);
+  if (analyzedVersion && currentSource != null) {
+    const v = await invoke<FixVerification>("verify_review_fix", {
+      currentSource,
+      analyzedVersion,
+      fix: f.fix,
+    });
+    if (!v.applicable) return { ok: false, reason: v.reason };
+  }
+
   const res = await applyReviewEdits(
     abs,
     f.fix.edits.map((e) => ({
@@ -502,6 +538,7 @@ async function applyFix(f: Finding): Promise<{ ok: boolean; reason?: string }> {
       endCol: e.endCol,
       replacement: e.replacement,
     })),
+    analyzedVersion,
   );
   if (res.ok) setReviewGhost(null, ""); // code changed — re-run Review to refresh
   return res;

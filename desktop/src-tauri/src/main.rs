@@ -82,7 +82,10 @@ struct AssessmentDto {
     correctness: CorrectnessDto,
     complexity: Option<ComplexityDto>,
     expected: Option<String>,
-    gabarito: GabaritoDto,
+    /// The curated reference solution — **only present after the hidden tests pass**.
+    /// On a failed attempt this is `None`, so no application path can leak the answer
+    /// (P0 honesty contract). See [`reveal_gabarito`].
+    gabarito: Option<GabaritoDto>,
 }
 
 #[derive(Serialize)]
@@ -415,6 +418,24 @@ fn course_dto(c: &tutor_core::Course) -> CourseDto {
     }
 }
 
+/// Reveal the curated gabarito **only when the submission passed the hidden tests**.
+///
+/// This is the single decision that gates the reference solution: a failed attempt
+/// gets `None`, so the DTO that reaches the webview never carries the answer (nor its
+/// revealing justification). Pure and deterministic, so the harness can prove the
+/// contract at the real serialization boundary without building a `Phase`.
+fn reveal_gabarito(passed: bool, g: &tutor_core::Gabarito) -> Option<GabaritoDto> {
+    if !passed {
+        return None;
+    }
+    Some(GabaritoDto {
+        solution: g.solution.clone(),
+        time: g.time.clone(),
+        space: g.space.clone(),
+        justification: g.justification.clone(),
+    })
+}
+
 /// Build the assessment DTO from an evaluation plus the phase that was graded
 /// (the gabarito travels with the phase). Shared by `submit` and `submit_step`.
 fn assessment_dto(a: &Assessment, phase: &Phase) -> AssessmentDto {
@@ -426,12 +447,8 @@ fn assessment_dto(a: &Assessment, phase: &Phase) -> AssessmentDto {
         },
         complexity: a.complexity.as_ref().map(complexity_dto),
         expected: a.expected.as_ref().map(|c| c.big_o().to_string()),
-        gabarito: GabaritoDto {
-            solution: phase.gabarito.solution.clone(),
-            time: phase.gabarito.time.clone(),
-            space: phase.gabarito.space.clone(),
-            justification: phase.gabarito.justification.clone(),
-        },
+        // Honesty contract: no solution in the payload unless the tests passed.
+        gabarito: reveal_gabarito(a.correctness.passed, &phase.gabarito),
     }
 }
 
@@ -719,6 +736,19 @@ fn list_review_analyzers() -> Vec<tutor_eval::review::AnalyzerInfo> {
     tutor_eval::review::detect_analyzers()
 }
 
+/// P0-3: verify a review fix is still safe to apply to the CURRENT buffer. `currentSource`
+/// is the live editor content; `analyzedVersion` is the file's `content_version` captured
+/// when the review ran (from `ReviewReport.fileVersions`). Refuses — preserving the
+/// developer's edits — if the buffer drifted or the target snippet no longer matches.
+#[tauri::command]
+fn verify_review_fix(
+    current_source: String,
+    analyzed_version: String,
+    fix: tutor_eval::review::SuggestedFix,
+) -> tutor_eval::review::FixVerification {
+    tutor_eval::review::verify_fix(&current_source, &analyzed_version, &fix)
+}
+
 /// Dev Assistant: the locally-available Ollama models (empty if none/offline).
 #[tauri::command]
 fn assistant_models() -> Vec<String> {
@@ -773,6 +803,27 @@ fn save_providers_config(config: tutor_llm::chat::ProvidersConfig) -> Result<(),
     tutor_llm::chat::save_config(&config).map_err(|e| format!("{e}"))
 }
 
+/// Is `step_id` an autonomous-application exercise (a challenge the student must
+/// implement), as opposed to a transcription drill or concept? Unknown ids are treated
+/// as autonomous (fail closed toward the stricter contract).
+fn step_is_autonomous(step_id: Option<&str>) -> bool {
+    match step_id {
+        Some(id) => course_step(id)
+            .map(|(_, s)| matches!(s.kind, StepKind::Challenge))
+            .unwrap_or(true),
+        None => true,
+    }
+}
+
+/// The active study policy for the given mode + step. The frontend uses it to hide
+/// solution/buffer-writing surfaces while an exercise is open (defence in depth); the
+/// backend commands enforce the same policy regardless of what the UI shows.
+#[tauri::command]
+fn study_policy(mode: String, step_id: Option<String>) -> tutor_llm::policy::StudyPolicy {
+    use tutor_llm::policy::{policy_for, Mode};
+    policy_for(Mode::parse(&mode), step_is_autonomous(step_id.as_deref()))
+}
+
 #[tauri::command]
 fn assistant_chat_stream(
     app: tauri::AppHandle,
@@ -780,9 +831,34 @@ fn assistant_chat_stream(
     provider: Option<String>,
     model: Option<String>,
     request_id: String,
+    mode: Option<String>,
+    step_id: Option<String>,
 ) {
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
+    use tutor_llm::chat::ChatMsg;
+    use tutor_llm::policy::{policy_for, tutor_directive, Mode};
+
+    // P0-2: the backend — not the webview — decides the policy from the active mode and
+    // step. In study mode the chat is tutor-constrained: prepend the authoritative tutor
+    // directive so every provider (local or remote) is steered away from handing over the
+    // solution. This is the soft layer; the hard layer is that no command writes the
+    // student's buffer and solution/edit surfaces are gated off in study mode.
+    let policy = policy_for(
+        Mode::parse(mode.as_deref().unwrap_or("study")),
+        step_is_autonomous(step_id.as_deref()),
+    );
+    let messages: Vec<ChatMsg> = if policy.chat_is_tutor {
+        let mut m = Vec::with_capacity(messages.len() + 1);
+        m.push(ChatMsg {
+            role: "system".into(),
+            content: tutor_directive().into(),
+        });
+        m.extend(messages);
+        m
+    } else {
+        messages
+    };
 
     // ollama (local), claude, openai and gemini all have SSE streaming adapters. Any
     // other id fails honestly rather than silently doing nothing.
@@ -1029,6 +1105,8 @@ fn main() {
             get_diagnostics,
             review_code,
             list_review_analyzers,
+            verify_review_fix,
+            study_policy,
             symbol_relations,
             assistant_models,
             assistant_chat,
@@ -1064,4 +1142,65 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running dxtutor desktop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_gabarito() -> tutor_core::Gabarito {
+        tutor_core::Gabarito {
+            solution: "fn answer() -> u32 { 42 }".into(),
+            time: "O(1)".into(),
+            space: "O(1)".into(),
+            justification: "constant work".into(),
+        }
+    }
+
+    /// P0-1 regression: a FAILED attempt must never carry the reference solution.
+    /// Serialize the DTO (the exact payload the webview receives) and assert the
+    /// gabarito field is `null` and the solution text appears nowhere in the JSON.
+    #[test]
+    fn failed_attempt_hides_gabarito() {
+        let g = sample_gabarito();
+        assert!(reveal_gabarito(false, &g).is_none());
+
+        let dto = AssessmentDto {
+            correctness: CorrectnessDto {
+                passed: false,
+                summary: "1 test failed".into(),
+                raw: "assertion failed".into(),
+            },
+            complexity: None,
+            expected: None,
+            gabarito: reveal_gabarito(false, &g),
+        };
+        let json = serde_json::to_string(&dto).expect("serialize");
+        assert!(json.contains("\"gabarito\":null"), "gabarito must be null: {json}");
+        assert!(
+            !json.contains("fn answer") && !json.contains("constant work"),
+            "failed payload leaked the solution/justification: {json}"
+        );
+    }
+
+    /// A PASSED attempt unlocks the gabarito (the reward is real on success).
+    #[test]
+    fn passed_attempt_reveals_gabarito() {
+        let g = sample_gabarito();
+        let revealed = reveal_gabarito(true, &g).expect("passed → Some");
+        assert_eq!(revealed.solution, "fn answer() -> u32 { 42 }");
+
+        let dto = AssessmentDto {
+            correctness: CorrectnessDto {
+                passed: true,
+                summary: "ok".into(),
+                raw: String::new(),
+            },
+            complexity: None,
+            expected: None,
+            gabarito: reveal_gabarito(true, &g),
+        };
+        let json = serde_json::to_string(&dto).expect("serialize");
+        assert!(json.contains("fn answer"), "passed payload should include the solution: {json}");
+    }
 }

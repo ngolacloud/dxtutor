@@ -812,6 +812,25 @@ export async function openFileAt(path: string, line: number, col: number): Promi
   requestAnimationFrame(() => wsEditor?.layout());
 }
 
+/**
+ * Content-identity token for a buffer — an EXACT mirror of Rust `content_version`
+ * (FNV-1a, 64-bit, hex). Same input → same token on both sides, so the frontend can
+ * tell when a review result is stale for the live buffer (P0-3). Uses BigInt to keep
+ * the full 64-bit width JS numbers would lose.
+ */
+export function contentVersion(source: string): string {
+  const MASK = (1n << 64n) - 1n;
+  let h = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  // Hash the UTF-8 bytes (matches Rust's `source.as_bytes()`).
+  const bytes = new TextEncoder().encode(source);
+  for (const b of bytes) {
+    h = (h ^ BigInt(b)) & MASK;
+    h = (h * prime) & MASK;
+  }
+  return h.toString(16).padStart(16, "0");
+}
+
 /** Paint review findings as Monaco markers on `path` (owner "dxtutor-review"). */
 export function setReviewMarkers(path: string, markers: monaco.editor.IMarkerData[]): void {
   const tab = tabByPath(path);
@@ -836,13 +855,19 @@ export interface ReviewEdit {
 export async function applyReviewEdits(
   path: string,
   edits: ReviewEdit[],
+  analyzedVersion?: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   if (edits.length === 0) return { ok: false, reason: "nothing to apply" };
   await openFileAt(path, edits[0].startLine, edits[0].startCol);
   const tab = tabByPath(path);
   const model = wsEditor?.getModel();
   if (!wsEditor || !model || !tab) return { ok: false, reason: "could not open the file" };
-  if (model.getValue() !== tab.saved) {
+  // Identity gate (P0-3): the live buffer must still be the exact revision the review
+  // analyzed. We compare against the analyzed content version when we have it (survives
+  // a save), and always refuse if the buffer drifted — the developer's edits win, and a
+  // line-addressed fix never lands on code that moved.
+  const live = contentVersion(model.getValue());
+  if (analyzedVersion ? live !== analyzedVersion : model.getValue() !== tab.saved) {
     return { ok: false, reason: "file changed since the review — re-run Review" };
   }
   const ops = edits

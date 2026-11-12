@@ -238,11 +238,17 @@ async function send(): Promise<void> {
   try {
     // Returns immediately; completion/tokens arrive via llm:// events. Send the
     // history WITHOUT the empty assistant placeholder we just pushed.
+    // P0-2: tell the backend the active mode so it can enforce the study contract.
+    // In learning mode the backend prepends the tutor directive and refuses to be a free
+    // code generator — the student keeps authorship. The backend is the authority; this
+    // is just the explicit Study/Project signal (`Mode::parse` maps workspace→Project).
     await invoke("assistant_chat_stream", {
       messages: messages.slice(0, streamingIdx),
       provider,
       model: null,
       requestId: currentRequestId,
+      mode: localStorage.getItem("dxtutor.mode") ?? "learning",
+      stepId: null,
     });
   } catch (e) {
     if (streamingIdx >= 0) messages[streamingIdx].content = `⚠ ${String(e)}`;

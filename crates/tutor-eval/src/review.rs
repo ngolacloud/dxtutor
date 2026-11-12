@@ -16,7 +16,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::runner::{configure_cargo_env, run_guarded};
 
@@ -90,7 +90,7 @@ pub struct Finding {
 }
 
 /// One edit of a fix: replace the given span with `replacement` (empty = delete).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FixEdit {
     pub replacement: String,
@@ -99,17 +99,119 @@ pub struct FixEdit {
     pub start_col: u32,
     pub end_line: u32,
     pub end_col: u32,
+    /// The EXACT source text this edit expects to be replacing, captured when the
+    /// analyzer ran. Before applying, [`verify_fix`] re-reads the span and refuses if
+    /// it no longer matches — a line-addressed edit must never land on code that drifted
+    /// since the review. Empty when the analyzer did not report the original text.
+    #[serde(default)]
+    pub expected: String,
 }
 
 /// A machine-applicable fix: ALL its edits must be applied together (a partial apply
 /// can break the file). Only built from suggestions the analyzer marks safe to apply
 /// automatically (clippy `MachineApplicable`, Ruff `safe`).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuggestedFix {
     /// Human title, e.g. "replace with `x`", "remove this", or "apply 2 edits".
     pub title: String,
     pub edits: Vec<FixEdit>,
+}
+
+// ── Revision identity (P0: a stale fix must never touch other lines) ─────────────
+
+/// A stable, dependency-free content token for a buffer (FNV-1a, 64-bit, hex). Two
+/// buffers hashing equal are byte-identical; a fix computed against one is safe to
+/// apply to the other. The frontend mirrors this exact function so a result computed
+/// over revision *v* is dropped the moment the buffer is no longer *v*.
+pub fn content_version(source: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in source.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// Extract the text of a 1-based `[start..end]` span (end column exclusive) from
+/// `source`. Returns `None` when the span falls outside the buffer.
+fn span_text(source: &str, sl: u32, sc: u32, el: u32, ec: u32) -> Option<String> {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let (sli, eli) = (sl as usize, el as usize);
+    if sl == 0 || el == 0 || sli > lines.len() || eli > lines.len() || sl > el {
+        return None;
+    }
+    if sl == el {
+        let chars: Vec<char> = lines[sli - 1].chars().collect();
+        let a = (sc as usize).saturating_sub(1).min(chars.len());
+        let b = (ec as usize).saturating_sub(1).min(chars.len());
+        if b < a {
+            return None;
+        }
+        return Some(chars[a..b].iter().collect());
+    }
+    let mut out = String::new();
+    for l in sli..=eli {
+        let chars: Vec<char> = lines[l - 1].chars().collect();
+        if l == sli {
+            let a = (sc as usize).saturating_sub(1).min(chars.len());
+            out.extend(&chars[a..]);
+        } else if l == eli {
+            let b = (ec as usize).saturating_sub(1).min(chars.len());
+            out.push('\n');
+            out.extend(&chars[..b]);
+        } else {
+            out.push('\n');
+            out.extend(&chars[..]);
+        }
+    }
+    Some(out)
+}
+
+/// The verdict of checking a fix against the current buffer before applying it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FixVerification {
+    pub applicable: bool,
+    pub reason: String,
+}
+
+/// Verify a fix is still safe to apply to `current_source`, given the `analyzed_version`
+/// the review was computed against. The identity gate is byte-level: if the buffer no
+/// longer hashes to `analyzed_version` the fix is refused (its line/column spans may
+/// now point at unrelated code), so the developer's edits are preserved and they are
+/// asked to re-run. When spans still carry their expected snippet, each one is also
+/// re-checked as a defence in depth.
+pub fn verify_fix(
+    current_source: &str,
+    analyzed_version: &str,
+    fix: &SuggestedFix,
+) -> FixVerification {
+    if content_version(current_source) != analyzed_version {
+        return FixVerification {
+            applicable: false,
+            reason: "the buffer changed since the review ran — re-run Review".into(),
+        };
+    }
+    for e in &fix.edits {
+        if e.expected.is_empty() {
+            continue;
+        }
+        let actual = span_text(current_source, e.start_line, e.start_col, e.end_line, e.end_col);
+        if actual.as_deref() != Some(e.expected.as_str()) {
+            return FixVerification {
+                applicable: false,
+                reason: format!(
+                    "the code at {}:{} no longer matches the reviewed snippet — re-run Review",
+                    e.start_line, e.start_col
+                ),
+            };
+        }
+    }
+    FixVerification {
+        applicable: true,
+        reason: String::new(),
+    }
 }
 
 // ── Analyzer availability & run report ──────────────────────────────────────────
@@ -170,6 +272,11 @@ pub struct ReviewReport {
     pub analyzers: Vec<AnalyzerRun>,
     /// Echoed document/content version so a late result never paints over new code.
     pub version: Option<String>,
+    /// Content version ([`content_version`]) of each analyzed file, keyed by the SAME
+    /// path string the findings use. The frontend compares the live buffer against this
+    /// before painting a marker or applying a fix, so a result computed over an older
+    /// revision is dropped instead of landing on code that has since changed.
+    pub file_versions: std::collections::BTreeMap<String, String>,
 }
 
 // ── Availability detection ──────────────────────────────────────────────────────
@@ -270,11 +377,39 @@ pub fn review(root: &Path, scope: &ReviewScope, version: Option<String>) -> Resu
     }
 
     dedup_findings(&mut findings); // `--all-targets` lints lib+test → same finding twice
+
+    // Snapshot the on-disk content version of every file a finding points at (keyed by
+    // the finding's own path string), so the frontend can refuse a stale apply/paint.
+    let mut file_versions = std::collections::BTreeMap::new();
+    for f in &findings {
+        let key = f.primary.file.clone();
+        if file_versions.contains_key(&key) {
+            continue;
+        }
+        let abs = resolve_under(root, &key);
+        if let Ok(src) = std::fs::read_to_string(&abs) {
+            file_versions.insert(key, content_version(&src));
+        }
+    }
+
     Ok(ReviewReport {
         findings,
         analyzers,
         version,
+        file_versions,
     })
+}
+
+/// Resolve an analyzer-reported path (often relative like `src/x.rs` or `./x`) to an
+/// absolute path under `root`. Absolute paths are returned unchanged.
+fn resolve_under(root: &Path, file: &str) -> std::path::PathBuf {
+    let trimmed = file.strip_prefix("./").unwrap_or(file);
+    let p = Path::new(trimmed);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(trimmed)
+    }
 }
 
 /// Drop duplicate findings (same analyzer/rule/location/message), e.g. a lib warning
@@ -674,14 +809,42 @@ fn push_cargo_suggestion(m: &serde_json::Value, out: &mut Vec<FixEdit>) {
         for s in spans {
             if let Some(rep) = s.get("suggested_replacement").and_then(|r| r.as_str()) {
                 if let Some(span) = span_from_json(s) {
-                    out.push(fix_edit(rep, &span));
+                    out.push(fix_edit(rep, &span, span_original_text(s)));
                 }
             }
         }
     }
 }
 
-fn fix_edit(replacement: &str, span: &Span) -> FixEdit {
+/// The exact source text a cargo/clippy span points at (the bytes a fix replaces),
+/// reconstructed from the span's `text` rows (`highlight_start`/`highlight_end` are
+/// 1-based char columns, end exclusive). Empty when the span carries no text — the
+/// buffer-hash identity check in [`verify_fix`] still protects the apply.
+fn span_original_text(s: &serde_json::Value) -> String {
+    let rows = match s.get("text").and_then(|t| t.as_array()) {
+        Some(r) => r,
+        None => return String::new(),
+    };
+    let mut out = String::new();
+    for (i, row) in rows.iter().enumerate() {
+        let line = row.get("text").and_then(|t| t.as_str()).unwrap_or("");
+        let chars: Vec<char> = line.chars().collect();
+        let hs = row.get("highlight_start").and_then(|n| n.as_u64()).unwrap_or(1) as usize;
+        let he = row
+            .get("highlight_end")
+            .and_then(|n| n.as_u64())
+            .unwrap_or(chars.len() as u64 + 1) as usize;
+        let a = hs.saturating_sub(1).min(chars.len());
+        let b = he.saturating_sub(1).min(chars.len()).max(a);
+        if i > 0 {
+            out.push('\n');
+        }
+        out.extend(&chars[a..b]);
+    }
+    out
+}
+
+fn fix_edit(replacement: &str, span: &Span, expected: String) -> FixEdit {
     FixEdit {
         replacement: replacement.to_string(),
         file: span.file.clone(),
@@ -689,6 +852,7 @@ fn fix_edit(replacement: &str, span: &Span) -> FixEdit {
         start_col: span.start_col,
         end_line: span.end_line,
         end_col: span.end_col,
+        expected,
     }
 }
 
@@ -734,6 +898,9 @@ fn ruff_fix(item: &serde_json::Value) -> Option<SuggestedFix> {
             start_col: sc,
             end_line: er,
             end_col: ec,
+            // Ruff's JSON does not echo the original text; the buffer-hash gate in
+            // `verify_fix` still refuses the apply if the file drifted.
+            expected: String::new(),
         });
     }
     if edits.is_empty() {
@@ -1016,6 +1183,68 @@ fn first_nonempty_line(s: &str) -> Option<String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    fn fix_with(expected: &str, sl: u32, sc: u32, el: u32, ec: u32) -> SuggestedFix {
+        SuggestedFix {
+            title: "t".into(),
+            edits: vec![FixEdit {
+                replacement: "REPL".into(),
+                file: "a.rs".into(),
+                start_line: sl,
+                start_col: sc,
+                end_line: el,
+                end_col: ec,
+                expected: expected.into(),
+            }],
+        }
+    }
+
+    /// P0-3 regression: a fix computed over one revision must NOT apply to another.
+    /// The reproduction mirrors the owner's script — review, then the developer inserts
+    /// a line; the stale result must refuse to apply so their edit is preserved.
+    #[test]
+    fn stale_revision_fix_is_refused() {
+        let analyzed = "fn main() {\n    let x = 1;\n}\n";
+        let version = content_version(analyzed);
+        // Clippy would point at line 2; capture its exact snippet as `expected`.
+        let fix = fix_with("let x = 1;", 2, 5, 2, 15);
+        // Same buffer → applicable.
+        assert!(verify_fix(analyzed, &version, &fix).applicable);
+
+        // Developer inserts a line at the top; line 2 is now different code.
+        let edited = "// a new comment\nfn main() {\n    let x = 1;\n}\n";
+        let v = verify_fix(edited, &version, &fix);
+        assert!(!v.applicable, "a fix from an older revision must be refused");
+        assert!(v.reason.contains("re-run Review"), "reason: {}", v.reason);
+    }
+
+    /// Even when the whole-buffer hash somehow matched, a drifted snippet at the span is
+    /// a second line of defence (end column exclusive, 1-based).
+    #[test]
+    fn snippet_mismatch_is_refused() {
+        let src = "let y = 2;\n";
+        // Pretend the review was computed against this exact buffer…
+        let version = content_version(src);
+        // …but the fix expects different text at the span than what is there.
+        let fix = fix_with("let x = 1;", 1, 1, 1, 11);
+        let v = verify_fix(src, &version, &fix);
+        assert!(!v.applicable);
+        assert!(v.reason.contains("no longer matches"), "reason: {}", v.reason);
+    }
+
+    #[test]
+    fn content_version_is_stable_and_sensitive() {
+        assert_eq!(content_version("abc"), content_version("abc"));
+        assert_ne!(content_version("abc"), content_version("abc "));
+    }
+
+    #[test]
+    fn span_text_extracts_single_and_multi_line() {
+        let s = "alpha\nbravo\ncharlie\n";
+        assert_eq!(span_text(s, 2, 1, 2, 6).as_deref(), Some("bravo"));
+        assert_eq!(span_text(s, 1, 3, 2, 3).as_deref(), Some("pha\nbr"));
+        assert!(span_text(s, 9, 1, 9, 2).is_none());
+    }
 
     #[test]
     fn detects_at_least_cargo() {

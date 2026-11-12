@@ -127,7 +127,9 @@ interface AssessmentDto {
   correctness: CorrectnessDto;
   complexity: ComplexityDto | null;
   expected: string | null;
-  gabarito: GabaritoDto;
+  // Present ONLY after the tests pass — the backend sends null on a failed attempt so
+  // the solution can never leak into the webview (P0 honesty contract).
+  gabarito: GabaritoDto | null;
 }
 interface HintDto {
   text: string;
@@ -1762,14 +1764,15 @@ function renderAssessment(step: StepDto, a: AssessmentDto) {
   }
 
   html += `<div class="result-card"><h3>Gabarito (curated reference)</h3>`;
-  if (passed) {
+  if (passed && a.gabarito) {
+    const g = a.gabarito;
     html += `
-      <div class="kv"><span class="k">Reference time</span><span class="v good">${esc(a.gabarito.time)}</span></div>
-      <div class="kv"><span class="k">Reference space</span><span class="v good">${esc(a.gabarito.space)}</span></div>
+      <div class="kv"><span class="k">Reference time</span><span class="v good">${esc(g.time)}</span></div>
+      <div class="kv"><span class="k">Reference space</span><span class="v good">${esc(g.space)}</span></div>
       <h3 style="margin-top:10px">Reference solution</h3>
-      <pre class="gabarito-solution">${esc((a.gabarito.solution ?? "").trim())}</pre>
+      <pre class="gabarito-solution">${esc((g.solution ?? "").trim())}</pre>
       <h3 style="margin-top:10px">Why this complexity</h3>
-      <div class="markdown">${renderMarkdown(a.gabarito.justification)}</div>`;
+      <div class="markdown">${renderMarkdown(g.justification)}</div>`;
   } else {
     html += `<p class="gabarito-locked">&#128274; The reference solution unlocks once the tests
       pass. Keep going — ask for a Hint (F1) if you are stuck.</p>`;
