@@ -11,6 +11,7 @@ interface TestItem {
   file: string;
   line: number;
   ignored: boolean;
+  lang: string;
 }
 interface TestRun {
   ran: boolean;
@@ -90,11 +91,17 @@ function render(): void {
       const st = status.get(t.path);
       const dot = st === "passed" ? "ok" : st === "failed" ? "fail" : st === "running" ? "run" : "";
       const rel = relative(resolve(t.file));
+      const langTag = t.lang && t.lang !== "rust" ? ` <span class="test-ign">${esc(t.lang)}</span>` : "";
+      // run_test drives cargo; only Rust tests are runnable from here for now.
+      const runnable = t.lang === "rust";
+      const runBtn = runnable
+        ? `<button class="test-run" data-path="${esc(t.path)}" ${st === "running" ? "disabled" : ""}>Run</button>`
+        : `<button class="test-run" disabled title="Run ${esc(t.lang)} tests from the terminal (go test)">Run</button>`;
       return `<div class="test-row" data-path="${esc(t.path)}" title="${esc(t.path)}">
           <span class="test-dot ${dot}"></span>
-          <span class="test-name">${esc(t.name)}${t.ignored ? ' <span class="test-ign">ignored</span>' : ""}</span>
+          <span class="test-name">${esc(t.name)}${t.ignored ? ' <span class="test-ign">ignored</span>' : ""}${langTag}</span>
           <span class="test-loc">${esc(rel)}:${t.line}</span>
-          <button class="test-run" data-path="${esc(t.path)}" ${st === "running" ? "disabled" : ""}>Run</button>
+          ${runBtn}
         </div>`;
     })
     .join("");
