@@ -3459,6 +3459,18 @@ function wireChrome() {
         openAssistant();
         return;
       }
+      // Action icons (not views): Run and Hint trigger their topbar action so the
+      // activity-bar icon actually *does* its job rather than silently no-op.
+      if (view === "run") {
+        if (appMode === "workspace") ($("#ws-btn-run") as HTMLButtonElement).click();
+        else ($("#btn-run") as HTMLButtonElement).click();
+        return;
+      }
+      if (view === "hint") {
+        if (appMode !== "learning") setMode("learning");
+        void requestHint();
+        return;
+      }
       // Mode-owning buttons: Learning track (data-mode=learning) and the file
       // Explorer (data-mode=workspace) switch the whole surface.
       if (view === "workspace") {
