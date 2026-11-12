@@ -3284,7 +3284,34 @@ function closeMenus() {
   document.querySelectorAll(".menu span[data-menu]").forEach((s) => s.classList.remove("open"));
 }
 
-type MenuItem = { label: string; run: () => void } | "sep";
+type MenuItem = { label: string; key?: string; chev?: boolean; run: () => void } | "sep";
+
+let menuToastTimer: number | undefined;
+/** A small transient notice for menu items without a dedicated surface. */
+function menuToast(msg: string): void {
+  let el = document.getElementById("dx-toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "dx-toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add("show");
+  window.clearTimeout(menuToastTimer);
+  menuToastTimer = window.setTimeout(() => el?.classList.remove("show"), 1900);
+}
+
+/** The Monaco editor a menu command should act on: the focused one, else the first with a model. */
+function menuEditor(): monaco.editor.ICodeEditor | undefined {
+  const eds = monaco.editor.getEditors();
+  return eds.find((e) => e.hasTextFocus()) ?? eds.find((e) => e.getModel()) ?? eds[0];
+}
+const trig = (id: string) => menuEditor()?.trigger("menu", id, null);
+const clickBtn = (sel: string): boolean => {
+  const el = document.querySelector(sel) as HTMLButtonElement | null;
+  el?.click();
+  return !!el;
+};
 
 function openMenu(anchor: HTMLElement, items: MenuItem[]) {
   closeMenus();
@@ -3296,7 +3323,10 @@ function openMenu(anchor: HTMLElement, items: MenuItem[]) {
     .map((it, i) =>
       it === "sep"
         ? `<div class="menu-sep"></div>`
-        : `<button class="menu-item" data-i="${i}">${esc(it.label)}</button>`,
+        : `<button class="menu-item" data-i="${i}"><span class="mi-label">${esc(it.label)}</span>` +
+          (it.key ? `<span class="mi-key">${esc(it.key)}</span>` : "") +
+          (it.chev ? `<span class="mi-chev">›</span>` : "") +
+          `</button>`,
     )
     .join("");
   const rect = anchor.getBoundingClientRect();
@@ -3314,16 +3344,95 @@ function openMenu(anchor: HTMLElement, items: MenuItem[]) {
 }
 
 function wireMenus() {
-  // Built per-open so the labels always reflect the active locale.
+  // Full VSCode-style menu bar (File/Edit/Selection/View/Go/Run/Terminal/Help), matching the
+  // dxtutor-IDE prototype. Items wire to REAL actions where the app has them (save/open/run,
+  // debug, terminal, the Monaco editor commands and the activity views); items the app does
+  // not back yet show an honest toast rather than a dead click. Built per-open so labels
+  // follow the active locale.
+  const soon = (label: string) => menuToast(`${label} — ainda não disponível`);
   const buildMenus = (): Record<string, MenuItem[]> => ({
     file: [
-      { label: t("menu.newFile"), run: workspaceActions.newFile },
-      { label: t("menu.openFolder"), run: workspaceActions.openFolder },
+      { label: t("menu.newFile"), key: "Ctrl+N", run: workspaceActions.newFile },
+      { label: "New Window", key: "Ctrl+Shift+N", run: () => soon("New Window") },
       "sep",
-      { label: t("menu.save"), run: workspaceActions.save },
+      { label: "Open File…", key: "Ctrl+O", run: workspaceActions.openFolder },
+      { label: t("menu.openFolder"), run: workspaceActions.openFolder },
+      { label: "Open Recent", chev: true, run: () => soon("Open Recent") },
+      "sep",
+      { label: t("menu.save"), key: "Ctrl+S", run: workspaceActions.save },
+      { label: "Save As…", key: "Ctrl+Shift+S", run: () => soon("Save As") },
       { label: t("menu.saveAll"), run: workspaceActions.saveAll },
+      "sep",
+      { label: "Exit", key: "Ctrl+Q", run: () => soon("Exit") },
     ],
-    run: [{ label: t("menu.runFile"), run: workspaceActions.run }],
+    edit: [
+      { label: "Undo", key: "Ctrl+Z", run: () => trig("undo") },
+      { label: "Redo", key: "Ctrl+Y", run: () => trig("redo") },
+      "sep",
+      { label: "Cut", key: "Ctrl+X", run: () => trig("editor.action.clipboardCutAction") },
+      { label: "Copy", key: "Ctrl+C", run: () => trig("editor.action.clipboardCopyAction") },
+      { label: "Paste", key: "Ctrl+V", run: () => trig("editor.action.clipboardPasteAction") },
+      "sep",
+      { label: "Find", key: "Ctrl+F", run: () => trig("actions.find") },
+      { label: "Replace", key: "Ctrl+H", run: () => trig("editor.action.startFindReplaceAction") },
+      "sep",
+      { label: "Rename Symbol", key: "F2", run: () => trig("editor.action.rename") },
+      { label: "Format Document", key: "Shift+Alt+F", run: () => trig("editor.action.formatDocument") },
+    ],
+    selection: [
+      { label: "Select All", key: "Ctrl+A", run: () => trig("editor.action.selectAll") },
+      "sep",
+      { label: "Copy Line Down", key: "Ctrl+Shift+Alt+↓", run: () => trig("editor.action.copyLinesDownAction") },
+      { label: "Move Line Up", key: "Alt+↑", run: () => trig("editor.action.moveLinesUpAction") },
+      { label: "Move Line Down", key: "Alt+↓", run: () => trig("editor.action.moveLinesDownAction") },
+      "sep",
+      { label: "Add Cursor Above", key: "Ctrl+Alt+↑", run: () => trig("editor.action.insertCursorAbove") },
+      { label: "Add Cursor Below", key: "Ctrl+Alt+↓", run: () => trig("editor.action.insertCursorBelow") },
+    ],
+    view: [
+      { label: "Command Palette…", key: "Ctrl+Shift+P", run: () => trig("editor.action.quickCommand") },
+      "sep",
+      { label: "Explorer", run: () => { if (!clickBtn('.act[data-view="workspace"]')) setMode("workspace"); } },
+      { label: "Search", run: () => openSearch() },
+      { label: "Source Control", run: () => openGit() },
+      { label: "Testing", run: () => openTests() },
+      "sep",
+      { label: "Terminal", key: "Ctrl+`", run: () => toggleTerminal() },
+      { label: "Problems", run: () => soon("Problems") },
+    ],
+    go: [
+      { label: "Go to File…", key: "Ctrl+P", run: () => trig("editor.action.quickCommand") },
+      { label: "Go to Symbol…", key: "Ctrl+Shift+O", run: () => trig("editor.action.quickOutline") },
+      { label: "Go to Line/Column…", key: "Ctrl+G", run: () => trig("editor.action.gotoLine") },
+      "sep",
+      { label: "Go to Definition", key: "F12", run: () => trig("editor.action.revealDefinition") },
+      { label: "Go Back", key: "Alt+←", run: () => trig("editor.action.navigateBack") },
+      { label: "Go Forward", key: "Alt+→", run: () => trig("editor.action.navigateForward") },
+    ],
+    run: [
+      { label: "Start Debugging", key: "F5", run: () => clickBtn("#ws-btn-debug") },
+      { label: "Run Without Debugging", key: "Ctrl+F5", run: workspaceActions.run },
+      { label: "Stop", key: "Shift+F5", run: () => soon("Stop") },
+      "sep",
+      { label: "Toggle Breakpoint", key: "F9", run: () => soon("Toggle Breakpoint") },
+      "sep",
+      { label: "Run Task…", chev: true, run: () => soon("Run Task") },
+    ],
+    terminal: [
+      { label: "New Terminal", key: "Ctrl+Shift+`", run: () => toggleTerminal(true) },
+      { label: "Split Terminal", key: "Ctrl+Shift+5", run: () => soon("Split Terminal") },
+      "sep",
+      { label: "Run Task…", run: () => soon("Run Task") },
+      { label: "Run Build Task…", key: "Ctrl+Shift+B", run: workspaceActions.run },
+      "sep",
+      { label: "Clear", run: () => soon("Clear") },
+    ],
+    help: [
+      { label: "Welcome", run: () => soon("Welcome") },
+      { label: "Documentation", run: () => soon("Documentation") },
+      "sep",
+      { label: "About dxtutor", run: () => menuToast("dxtutor IDE — tutor de programação com LSP real") },
+    ],
   });
   document.querySelectorAll<HTMLElement>(".menu span[data-menu]").forEach((span) => {
     span.addEventListener("click", (e) => {

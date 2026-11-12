@@ -378,28 +378,48 @@ body.mode-workspace #workspace-sidebar.hidden { display: block; }
 .menu-dropdown {
   position: fixed;
   z-index: 10000;
-  min-width: 190px;
-  background: #252526;
+  min-width: 232px;
+  background: var(--bg-menu, #1d1d20);
   border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
-  padding: 4px;
+  border-radius: 9px;
+  box-shadow: var(--sh-pop, 0 10px 34px rgba(0, 0, 0, 0.55));
+  padding: 5px;
 }
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
   background: none;
   border: none;
   color: var(--fg);
   font-family: var(--font-ui);
-  font-size: 13px;
-  padding: 5px 12px;
-  border-radius: 3px;
+  font-size: 12.5px;
+  padding: 5px 9px;
+  border-radius: 6px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .menu-item:hover { background: var(--accent); color: #fff; }
-.menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+.menu-item .mi-label { flex: 1; }
+.menu-item .mi-key { margin-left: auto; color: var(--fg-muted); font-family: var(--font-mono); font-size: 11px; }
+.menu-item:hover .mi-key { color: rgba(255, 255, 255, 0.75); }
+.menu-item .mi-chev { margin-left: auto; color: var(--fg-muted); font-size: 13px; }
+.menu-item:hover .mi-chev { color: #fff; }
+.menu-item.has-key .mi-chev { margin-left: 8px; }
+.menu-sep { height: 1px; background: var(--border); margin: 5px 7px; }
+
+/* Transient menu toast (items the app does not back with a dedicated surface). */
+#dx-toast {
+  position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%) translateY(8px);
+  z-index: 10001; pointer-events: none;
+  background: var(--bg-menu, #1d1d20); color: var(--fg);
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 7px 14px; font-size: 12.5px; box-shadow: var(--sh-pop, 0 10px 34px rgba(0,0,0,.55));
+  opacity: 0; transition: opacity .15s, transform .15s;
+}
+#dx-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 @media (prefers-reduced-motion: reduce) {
   #ws-editor-stack { transition: none; }
