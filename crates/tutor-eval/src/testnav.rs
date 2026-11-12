@@ -133,6 +133,48 @@ pub(crate) fn suite_passed(output: &str) -> bool {
     output.contains("test result:") && !output.contains("FAILED") && !output.contains("error[")
 }
 
+/// Run a single Go test by name (`go test -run '^Name$' -v ./...`) in the module at
+/// `root`, with the hardened Go env and a wall-clock timeout. Never panics.
+pub fn run_go_test(root: &Path, name: &str) -> TestRun {
+    let scratch = match tempfile::tempdir() {
+        Ok(d) => d,
+        Err(e) => return TestRun { ran: false, passed: false, output: format!("scratch: {e}") },
+    };
+    let mut cmd = Command::new("go");
+    cmd.args(["test", "-run", &format!("^{name}$"), "-v", "./..."]);
+    cmd.current_dir(root);
+    crate::go_runner::configure_go_env(&mut cmd, scratch.path());
+    match run_guarded(cmd, scratch.path(), "gotest", TEST_TIMEOUT, None) {
+        Ok(o) if o.timed_out => TestRun {
+            ran: false,
+            passed: false,
+            output: format!("timed out after {}s", TEST_TIMEOUT.as_secs()),
+        },
+        Ok(o) => {
+            let combined = format!("{}{}", o.stdout, o.stderr);
+            match go_test_outcome(&combined, name) {
+                Outcome::Passed => TestRun { ran: true, passed: true, output: combined },
+                Outcome::Failed => TestRun { ran: true, passed: false, output: combined },
+                Outcome::DidNotRun => TestRun { ran: false, passed: false, output: combined },
+            }
+        }
+        Err(e) => TestRun { ran: false, passed: false, output: format!("spawn: {e}") },
+    }
+}
+
+/// Go test verdict from the per-test line `--- PASS: <name>` / `--- FAIL: <name>` (needs
+/// `go test -v`). Neither present ⇒ it did not run (build error, or no match). Testable
+/// without running Go.
+pub(crate) fn go_test_outcome(output: &str, name: &str) -> Outcome {
+    if output.contains(&format!("--- FAIL: {name}")) {
+        return Outcome::Failed;
+    }
+    if output.contains(&format!("--- PASS: {name}")) {
+        return Outcome::Passed;
+    }
+    Outcome::DidNotRun
+}
+
 /// What running one test actually did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Outcome {
@@ -394,6 +436,14 @@ mod tests {
     }
 
     #[test]
+    fn parser_do_resultado_go() {
+        assert_eq!(go_test_outcome("=== RUN   TestAdd\n--- PASS: TestAdd (0.00s)\nPASS\nok  demo", "TestAdd"), Outcome::Passed);
+        assert_eq!(go_test_outcome("--- FAIL: TestAdd (0.00s)\nFAIL", "TestAdd"), Outcome::Failed);
+        assert_eq!(go_test_outcome("testing: warning: no tests to run\nok  demo [no tests to run]", "TestAusente"), Outcome::DidNotRun);
+        assert_eq!(go_test_outcome("./x_test.go:3:1: expected declaration", "TestAdd"), Outcome::DidNotRun);
+    }
+
+    #[test]
     fn parser_da_suite_completa() {
         assert!(suite_passed("test result: ok. 3 passed; 0 failed"));
         assert!(!suite_passed("test foo ... FAILED\ntest result: FAILED. 2 passed; 1 failed"));
@@ -413,6 +463,26 @@ mod tests {
             "#[cfg(test)]\nmod tests {\n#[test]\nfn passa() { assert_eq!(2 + 2, 4); }\n#[test]\nfn falha() { assert_eq!(2 + 2, 5); }\n}\n",
         )
         .unwrap();
+    }
+
+    #[test]
+    #[ignore = "precisa da toolchain Go; corre com --ignored"]
+    fn corre_teste_go_passa_e_falha() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("go.mod"), "module demo\n\ngo 1.21\n").unwrap();
+        std::fs::write(
+            root.join("math_test.go"),
+            "package demo\nimport \"testing\"\n\
+             func TestPassa(t *testing.T) { if 2+2 != 4 { t.Fatal(\"?\") } }\n\
+             func TestFalha(t *testing.T) { t.Fatal(\"boom\") }\n",
+        )
+        .unwrap();
+
+        let ok = run_go_test(root, "TestPassa");
+        assert!(ok.ran && ok.passed, "TestPassa devia passar:\n{}", ok.output);
+        let bad = run_go_test(root, "TestFalha");
+        assert!(bad.ran && !bad.passed, "TestFalha devia falhar:\n{}", bad.output);
     }
 
     #[test]

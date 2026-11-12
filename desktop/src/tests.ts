@@ -92,16 +92,11 @@ function render(): void {
       const dot = st === "passed" ? "ok" : st === "failed" ? "fail" : st === "running" ? "run" : "";
       const rel = relative(resolve(t.file));
       const langTag = t.lang && t.lang !== "rust" ? ` <span class="test-ign">${esc(t.lang)}</span>` : "";
-      // run_test drives cargo; only Rust tests are runnable from here for now.
-      const runnable = t.lang === "rust";
-      const runBtn = runnable
-        ? `<button class="test-run" data-path="${esc(t.path)}" ${st === "running" ? "disabled" : ""}>Run</button>`
-        : `<button class="test-run" disabled title="Run ${esc(t.lang)} tests from the terminal (go test)">Run</button>`;
       return `<div class="test-row" data-path="${esc(t.path)}" title="${esc(t.path)}">
           <span class="test-dot ${dot}"></span>
           <span class="test-name">${esc(t.name)}${t.ignored ? ' <span class="test-ign">ignored</span>' : ""}${langTag}</span>
           <span class="test-loc">${esc(rel)}:${t.line}</span>
-          ${runBtn}
+          <button class="test-run" data-path="${esc(t.path)}" ${st === "running" ? "disabled" : ""}>Run</button>
         </div>`;
     })
     .join("");
@@ -132,14 +127,16 @@ async function runAll(): Promise<void> {
 async function runOne(path: string): Promise<void> {
   const root = lastRoot || workspaceRoot();
   if (!root) return;
+  const lang = items.find((t) => t.path === path)?.lang ?? "rust";
+  const cmd = lang === "go" ? `go test -run ^${path}$ -v ./...` : `cargo test ${path} -- --exact`;
   status.set(path, "running");
   render();
-  $("#tests-output").textContent = `$ cargo test ${path} -- --exact\nrunning…`;
+  $("#tests-output").textContent = `$ ${cmd}\nrunning…`;
   try {
-    const res = await invoke<TestRun>("run_test", { root, path });
+    const res = await invoke<TestRun>("run_test", { root, path, lang });
     status.set(path, res.ran && res.passed ? "passed" : "failed");
     const verdict = !res.ran ? "⚠ did not run" : res.passed ? "✓ passed" : "✗ failed";
-    $("#tests-output").textContent = `$ cargo test ${path} -- --exact   ${verdict}\n\n${res.output}`;
+    $("#tests-output").textContent = `$ ${cmd}   ${verdict}\n\n${res.output}`;
   } catch (e) {
     status.set(path, "failed");
     $("#tests-output").textContent = `run failed: ${String(e)}`;

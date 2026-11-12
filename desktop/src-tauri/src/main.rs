@@ -960,13 +960,21 @@ async fn list_tests(root: String) -> Result<Vec<tutor_eval::testnav::TestItem>, 
     .map_err(|e| format!("test discovery task failed: {e}"))
 }
 
-/// Section 5: run one test by its module-qualified `path` (from `list_tests`) in the
-/// project at `root`, returning pass/fail + the captured output for the test panel.
-/// Hardened + timed; runs off the UI thread.
+/// Section 5: run one test by its `path` (from `list_tests`) in the project at `root`,
+/// dispatching by `lang`: Rust via `cargo test --exact`, Go via `go test -run`. Returns
+/// pass/fail + the captured output. Hardened + timed; runs off the UI thread.
 #[tauri::command]
-async fn run_test(root: String, path: String) -> Result<tutor_eval::testnav::TestRun, String> {
+async fn run_test(
+    root: String,
+    path: String,
+    lang: Option<String>,
+) -> Result<tutor_eval::testnav::TestRun, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        tutor_eval::testnav::run_test(std::path::Path::new(&root), &path)
+        let root = std::path::Path::new(&root);
+        match lang.as_deref() {
+            Some("go") => tutor_eval::testnav::run_go_test(root, &path),
+            _ => tutor_eval::testnav::run_test(root, &path),
+        }
     })
     .await
     .map_err(|e| format!("run_test task failed: {e}"))

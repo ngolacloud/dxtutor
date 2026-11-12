@@ -427,7 +427,7 @@ fn run_go_container(dir: &Path, script: &str, timeout: Duration, network: bool) 
 /// Ambiente mínimo para a toolchain Go no host: limpo, com o `/usr/local/go/bin` no
 /// `PATH`, HOME/caches dentro do tempdir e sem descarga de toolchain. Mantém a rede
 /// (o host tem conectividade) para `go mod tidy`/`go get`.
-fn configure_go_env(cmd: &mut Command, home: &Path) {
+pub(crate) fn configure_go_env(cmd: &mut Command, home: &Path) {
     cmd.env_clear();
     cmd.env("PATH", "/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin");
     cmd.env("HOME", home);
