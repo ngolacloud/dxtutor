@@ -445,20 +445,26 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
   min-width: 0;
   min-height: 0;
 }
-#editor-stack.term-open {
-  grid-template-rows: minmax(0, 1fr) 240px;
-}
 
-/* Bottom terminal dock (hidden unless the stack is `.term-open`). */
+/* Bottom terminal dock. Positioned at #body level so it overlays the editor column
+   (clear of the activity bar + sidebar) in BOTH Learning and Workspace modes. Shown
+   when `body.term-open`. */
 #terminal-panel {
+  position: absolute;
+  left: calc(48px + var(--sidebar-w, 260px));
+  right: 0;
+  bottom: 0;
+  height: 280px;
+  max-height: 60%;
   display: none;
   grid-template-rows: 28px minmax(0, 1fr);
   border-top: 1px solid var(--seam);
   background: var(--bg-panel);
+  z-index: 30;
   min-height: 0;
   min-width: 0;
 }
-#editor-stack.term-open #terminal-panel {
+body.term-open #terminal-panel {
   display: grid;
 }
 #panel-terminal {

@@ -406,13 +406,16 @@ pub fn session_exec(name: &str, cmd: &str) -> Result<RunOutput> {
     })
 }
 
-/// `true` se a sessão `name` está em execução.
+/// `true` se a sessão `name` está em execução. Testa directamente a capacidade que nos
+/// interessa — conseguir fazer `exec` — em vez de depender de flags de `ps --filter/--format`
+/// (que variam entre docker/podman/delonix). `exec <name> true` só devolve 0 num container a
+/// correr.
 pub fn session_running(name: &str) -> bool {
     let bin = engine_bin(container_engine());
     Command::new(&bin)
-        .args(["ps", "--filter", &format!("name=^{name}$"), "--format", "{{.Names}}"])
+        .args(["exec", name, "true"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains(name))
+        .map(|o| o.status.success())
         .unwrap_or(false)
 }
 

@@ -2835,11 +2835,12 @@ function renderError(where: string, message: string) {
 }
 
 function toggleTerminal(force?: boolean) {
-  const stack = $("#editor-stack");
-  const open = force ?? !stack.classList.contains("term-open");
-  stack.classList.toggle("term-open", open);
+  // The dock lives at #body level and overlays the editor column in BOTH modes, so the
+  // terminal (and the session shell) are reachable from Learning and Workspace alike.
+  const open = force ?? !document.body.classList.contains("term-open");
+  document.body.classList.toggle("term-open", open);
   requestAnimationFrame(() => {
-    editor.layout();
+    editor?.layout();
     if (open) fitTerminal();
   });
 }
