@@ -97,6 +97,38 @@ pub fn run_test(root: &Path, path: &str) -> TestRun {
     }
 }
 
+/// Run the WHOLE test suite (`cargo test -- --nocapture`) in the project at `root`,
+/// returning the overall pass/fail and the captured output. Complements single-test runs.
+pub fn run_suite(root: &Path) -> TestRun {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["test", "--", "--nocapture"]);
+    cmd.current_dir(root);
+    configure_cargo_env(&mut cmd);
+
+    let scratch = match tempfile::tempdir() {
+        Ok(d) => d,
+        Err(e) => return TestRun { ran: false, passed: false, output: format!("scratch: {e}") },
+    };
+    match run_guarded(cmd, scratch.path(), "test-all", TEST_TIMEOUT, None) {
+        Ok(o) if o.timed_out => TestRun {
+            ran: false,
+            passed: false,
+            output: format!("timed out after {}s", TEST_TIMEOUT.as_secs()),
+        },
+        Ok(o) => {
+            let combined = format!("{}{}", o.stdout, o.stderr);
+            TestRun { ran: true, passed: suite_passed(&combined), output: combined }
+        }
+        Err(e) => TestRun { ran: false, passed: false, output: format!("spawn: {e}") },
+    }
+}
+
+/// Whole-suite verdict: it passed iff cargo reported a result and nothing failed or failed
+/// to compile. Any `FAILED` line (from any test binary) or `error[` fails the suite.
+pub(crate) fn suite_passed(output: &str) -> bool {
+    output.contains("test result:") && !output.contains("FAILED") && !output.contains("error[")
+}
+
 /// What running one test actually did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Outcome {
@@ -246,6 +278,14 @@ mod tests {
             Outcome::DidNotRun
         );
         assert_eq!(test_outcome("error[E0308]: mismatched types", p), Outcome::DidNotRun);
+    }
+
+    #[test]
+    fn parser_da_suite_completa() {
+        assert!(suite_passed("test result: ok. 3 passed; 0 failed"));
+        assert!(!suite_passed("test foo ... FAILED\ntest result: FAILED. 2 passed; 1 failed"));
+        assert!(!suite_passed("error[E0425]: cannot find value"));
+        assert!(!suite_passed("sem resultado")); // nada correu
     }
 
     fn write_project(root: &Path) {

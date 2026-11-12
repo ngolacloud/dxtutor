@@ -972,6 +972,17 @@ async fn run_test(root: String, path: String) -> Result<tutor_eval::testnav::Tes
     .map_err(|e| format!("run_test task failed: {e}"))
 }
 
+/// Section 5: run the WHOLE test suite in the project at `root` (the "Run all" button),
+/// returning the overall pass/fail + captured output. Hardened + timed; off the UI thread.
+#[tauri::command]
+async fn run_all_tests(root: String) -> Result<tutor_eval::testnav::TestRun, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::testnav::run_suite(std::path::Path::new(&root))
+    })
+    .await
+    .map_err(|e| format!("run_all_tests task failed: {e}"))
+}
+
 /// Section 5 (DAP): what the host can really do for debugging. Honest — `available` is
 /// true only when a real DAP adapter is installed; otherwise the note points at the
 /// instrumentation tracer (Visualize) as the fallback. Detection only, starts nothing.
@@ -1154,6 +1165,7 @@ fn main() {
             symbol_relations,
             list_tests,
             run_test,
+            run_all_tests,
             debug_capabilities,
             assistant_models,
             assistant_chat,

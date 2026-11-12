@@ -31,6 +31,7 @@ export function initTests(deps: { ensureWorkspaceMode: () => void }): void {
   ensureWorkspaceMode = deps.ensureWorkspaceMode;
   $("#tests-close").addEventListener("click", () => $("#tests-overlay").classList.add("hidden"));
   $("#tests-refresh").addEventListener("click", () => void scan());
+  $("#tests-runall").addEventListener("click", () => void runAll());
   // Row actions: click a test → open its location; "Run" → run it.
   $("#tests-list").addEventListener("click", (e) => {
     const btn = (e.target as HTMLElement).closest("button.test-run") as HTMLButtonElement | null;
@@ -102,6 +103,23 @@ function render(): void {
 function relative(abs: string): string {
   const r = (lastRoot || "").replace(/\/$/, "") + "/";
   return abs.startsWith(r) ? abs.slice(r.length) : abs;
+}
+
+async function runAll(): Promise<void> {
+  const root = lastRoot || workspaceRoot();
+  if (!root) return;
+  const btn = $("#tests-runall") as HTMLButtonElement;
+  btn.disabled = true;
+  $("#tests-output").textContent = `$ cargo test\nrunning the whole suite…`;
+  try {
+    const res = await invoke<TestRun>("run_all_tests", { root });
+    const verdict = !res.ran ? "⚠ did not run" : res.passed ? "✓ suite passed" : "✗ suite failed";
+    $("#tests-output").textContent = `$ cargo test   ${verdict}\n\n${res.output}`;
+  } catch (e) {
+    $("#tests-output").textContent = `run failed: ${String(e)}`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function runOne(path: string): Promise<void> {
