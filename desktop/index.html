@@ -650,10 +650,8 @@
     <aside id="assistant-overlay" class="assistant-drawer hidden" aria-label="Dev Assistant">
       <div id="assistant-resizer" title="Drag to resize"></div>
       <header class="assistant-hdr">
-        <span class="assistant-title">Dev Assistant</span>
+        <span class="assistant-title">Agent</span>
         <select id="assistant-project" class="assistant-provider assistant-project hidden" aria-label="Focused project" title="Project the assistant is focused on"></select>
-        <select id="assistant-provider" class="assistant-provider" aria-label="AI provider"></select>
-        <span id="assistant-model" class="assistant-model off">…</span>
         <span class="assistant-hdr-spacer"></span>
         <button id="assistant-new" class="assistant-iconbtn" title="New chat" aria-label="New chat"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <button id="assistant-history" class="assistant-iconbtn" title="Chat history" aria-label="Chat history"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></button>
@@ -664,9 +662,18 @@
       <div id="assistant-history-panel" class="assistant-history-panel hidden"></div>
       <div id="assistant-messages" class="assistant-messages"></div>
       <div class="assistant-compose">
-        <div id="assistant-templates" class="assistant-templates hidden" role="listbox" aria-label="Prompt templates"></div>
-        <textarea id="assistant-input" class="assistant-input" rows="3" placeholder="Ask anything — type / for guided prompt templates… (Ctrl+Enter to send)" aria-label="Message"></textarea>
-        <button id="assistant-send" class="btn btn-primary assistant-send">Send</button>
+        <div id="assistant-project-label" class="assistant-project-label hidden"></div>
+        <div class="composer">
+          <div id="assistant-templates" class="assistant-templates hidden" role="listbox" aria-label="Prompt templates"></div>
+          <textarea id="assistant-input" class="assistant-input" rows="2" placeholder="Ask anything — / for prompt templates…" aria-label="Message"></textarea>
+          <div class="composer-bar">
+            <select id="assistant-provider" class="composer-model" aria-label="AI provider"></select>
+            <span id="assistant-model" class="assistant-model off">…</span>
+            <span class="composer-spacer"></span>
+            <button id="assistant-send" class="composer-send" title="Send (Ctrl+Enter)" aria-label="Send"></button>
+          </div>
+        </div>
+        <div class="assistant-disclaimer">AI may make mistakes — you decide what to build; review every change.</div>
       </div>
     </aside>
     <!-- Edit with me: interruptible AI-assisted editing (P4 §6) -->

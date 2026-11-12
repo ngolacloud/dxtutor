@@ -403,6 +403,8 @@ export function initAssistant(): void {
     }
     finishStream();
   });
+
+  setStreaming(false); // render the circular send arrow at rest
 }
 
 export function openAssistant(): void {
@@ -425,6 +427,7 @@ async function refreshProjects(): Promise<void> {
     projects = [];
     focusedProject = null;
     sel.classList.add("hidden");
+    updateContextHint();
     return;
   }
   try {
@@ -437,6 +440,7 @@ async function refreshProjects(): Promise<void> {
   focusedProject =
     (saved && projects.some((p) => p.path === saved) && saved) ||
     (projects.length ? projects[0].path : null);
+  // The selector only appears when there's a real choice; the label always shows the focus.
   if (projects.length > 1) {
     sel.innerHTML = projects
       .map(
@@ -445,10 +449,10 @@ async function refreshProjects(): Promise<void> {
       )
       .join("");
     sel.classList.remove("hidden");
-    updateContextHint();
   } else {
     sel.classList.add("hidden");
   }
+  updateContextHint();
 }
 
 /** The effective root the Agent grounds on: the focused project, else the workspace root. */
@@ -459,11 +463,18 @@ function focusRoot(): string | null {
 /** Reflect the focused project in the input placeholder, so the dev sees the Agent's focus. */
 function updateContextHint(): void {
   const input = document.getElementById("assistant-input") as HTMLTextAreaElement | null;
-  if (!input) return;
+  const label = document.getElementById("assistant-project-label");
   const p = projects.find((x) => x.path === focusedProject);
-  input.placeholder = p
-    ? `Ask about ${p.name} (${p.kind})… — / for templates · Ctrl+Enter to send`
-    : "Ask anything — type / for guided prompt templates… (Ctrl+Enter to send)";
+  if (input) {
+    input.placeholder = p
+      ? `Ask about ${p.name}… — / for templates`
+      : "Ask anything — / for prompt templates…";
+  }
+  if (label) {
+    const name = p?.name ?? workspaceRoot()?.split(/[\\/]/).filter(Boolean).pop() ?? "";
+    label.textContent = name;
+    label.classList.toggle("hidden", !name);
+  }
 }
 
 // ── Guided prompt templates ("/") ──────────────────────────────────────────
@@ -1280,16 +1291,19 @@ function finishStream(): void {
   renderMessages();
 }
 
+const SEND_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
+const STOP_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 function setStreaming(s: boolean): void {
   const b = $("#assistant-send") as HTMLButtonElement;
-  b.textContent = s ? "Stop" : "Send";
+  b.innerHTML = s ? STOP_ICON : SEND_ICON;
+  b.title = s ? "Stop" : "Send (Ctrl+Enter)";
   b.classList.toggle("stop", s);
 }
 
 function renderMessages(): void {
   const host = $("#assistant-messages");
   if (messages.length === 0) {
-    host.innerHTML = `<div class="as-welcome">Ask the Dev Assistant anything about your open project. With a folder open it knows the workspace — its tree, the active file and your selection — and can create or edit files for you (you approve each action). Tokens stream live. <b>Ctrl+Enter</b> to send, <b>Stop</b> to interrupt.</div>`;
+    host.innerHTML = `<div class="as-welcome">I'm your project-focused Agent. I know this project — its tree, the active file and your selection — and I assist the build <b>you</b> direct (you approve every change). Type <b>/</b> for guided prompt templates, <b>Ctrl+Enter</b> to send.</div>`;
     return;
   }
   // A small, inspectable chip showing the workspace context attached to the last turn.
