@@ -3485,6 +3485,35 @@ function wireChrome() {
       el.classList.add("active");
     }),
   );
+
+  initActiveViewIndicators();
+}
+
+// VSCode/Antigravity-style active-view accent bar: light the activity-bar icon of
+// whichever overlay panel is currently visible. Driven by observing each overlay's
+// `hidden` class, so it stays correct no matter how the panel is opened or closed
+// (icon, shortcut, or its own close button) without touching every call site.
+function initActiveViewIndicators() {
+  const map: Record<string, string> = {
+    git: "#git-overlay",
+    search: "#search-overlay",
+    tests: "#tests-overlay",
+    review: "#review-overlay",
+    debug: "#debug-overlay",
+    assistant: "#assistant-overlay",
+    glossary: "#glossary-overlay",
+    underhood: "#underhood-overlay",
+    visualize: "#visualize-overlay",
+    settings: "#settings-overlay",
+  };
+  for (const [view, sel] of Object.entries(map)) {
+    const overlay = document.querySelector(sel);
+    const icon = document.querySelector(`.act[data-view="${view}"]`);
+    if (!overlay || !icon) continue;
+    const sync = () => icon.classList.toggle("view-open", !overlay.classList.contains("hidden"));
+    new MutationObserver(sync).observe(overlay, { attributes: true, attributeFilter: ["class"] });
+    sync();
+  }
 }
 
 // ── Resizable sidebar ────────────────────────────────────────────────────────

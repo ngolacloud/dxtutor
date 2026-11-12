@@ -195,6 +195,9 @@ body.resizing-sidebar { cursor: col-resize; user-select: none; }
 .act:hover { color: var(--fg-bright); }
 .act.active { color: var(--fg-bright); }
 .act.active::before { background: var(--fg-bright); }
+/* An overlay panel bound to this icon is open (VSCode/Antigravity accent bar). */
+.act.view-open { color: var(--fg-bright); }
+.act.view-open::before { background: var(--accent-hover, var(--accent)); }
 .act:focus-visible { outline: 1px solid var(--focus); outline-offset: -3px; }
 .act-spacer { flex: 1; }
 
