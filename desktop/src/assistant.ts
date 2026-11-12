@@ -104,6 +104,60 @@ const reviews = new Map<number, DiffLine[]>();
 // Per-review set of accepted add/del line indices (default: all → "accept all").
 const reviewSel = new Map<number, Set<number>>();
 
+// Agent plan (observe→plan→act→verify): a titled checklist the Agent emits via `dxplan`,
+// rendered as a live progress card. Steps advance as the Agent's actions complete.
+interface Plan {
+  title: string;
+  steps: string[];
+  current: number; // index of the running step (steps before it are done)
+  done: boolean;
+}
+const plans = new Map<number, Plan>(); // message idx → plan
+let activePlanIdx = -1;
+
+/** Extract a `dxplan` directive ({title, steps[]}) from an assistant message, if valid. */
+function parsePlanDirective(text: string): { title: string; steps: string[] } | null {
+  const m = text.match(/```dxplan\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1].trim());
+    if (Array.isArray(obj.steps) && obj.steps.length) {
+      return { title: typeof obj.title === "string" ? obj.title : "Plan", steps: obj.steps.map(String) };
+    }
+  } catch {
+    /* malformed */
+  }
+  return null;
+}
+
+/** Advance the active plan one step (the current step is now done). */
+function advancePlan(): void {
+  const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
+  if (!p || p.done) return;
+  p.current += 1;
+  if (p.current >= p.steps.length) p.done = true;
+  renderMessages();
+}
+
+/** Render the plan progress card (title · N/M · step checklist), Antigravity-CLI style. */
+function planCard(p: Plan): string {
+  const total = p.steps.length;
+  const doneN = p.done ? total : p.current;
+  const pct = Math.round((doneN / total) * 100);
+  const rows = p.steps
+    .map((s, i) => {
+      const state = p.done || i < p.current ? "done" : i === p.current ? "run" : "todo";
+      const glyph = state === "done" ? "✓" : state === "run" ? "▶" : "·";
+      return `<div class="as-plan-step ${state}"><span class="as-plan-glyph">${glyph}</span><span class="as-plan-label">${esc(s)}</span></div>`;
+    })
+    .join("");
+  return (
+    `<div class="as-plan"><div class="as-plan-h"><span class="as-plan-title">${esc(p.title)}</span>` +
+    `<span class="as-plan-count">${doneN}/${total}${p.done ? " ✓" : ""}</span></div>` +
+    `<div class="as-plan-bar"><span style="width:${pct}%"></span></div>${rows}</div>`
+  );
+}
+
 /** Build the block text from a diff, keeping only the accepted changes: context stays;
  *  an added line is kept iff selected; a deleted line is kept (i.e. NOT removed) iff its
  *  deletion is NOT selected. */
@@ -335,6 +389,7 @@ export function initAssistant(): void {
         // developer Accept or Reject it.
         const info = enterRangeReview();
         writeState.delete(ls.idx);
+        advancePlan(); // an edit/continue step completed
         if (info) {
           void invoke<DiffLine[]>("diff_lines", { old: info.original, new: info.proposed })
             .then((d) => {
@@ -368,6 +423,7 @@ export function initAssistant(): void {
       } else {
         endEditorStream();
         writeState.set(cs.idx, "done");
+        advancePlan(); // a code-write step completed
         // Shrink guard: if a substantial file was replaced with far less content, the
         // model may have returned a partial — flag it so the developer reviews (undoable).
         if (cs.original.trim().length > 200 && produced.length < cs.original.length * 0.4) {
@@ -386,6 +442,13 @@ export function initAssistant(): void {
       // control. EXCEPTION: if the target file has unsaved edits, don't silently overwrite
       // them — fall through to the button so the developer decides.
       if (idx < 0 || writeState.has(idx)) return;
+      // A plan sets up the execution checklist; later actions tick its steps.
+      const plan = parsePlanDirective(messages[idx]?.content ?? "");
+      if (plan) {
+        plans.set(idx, { title: plan.title, steps: plan.steps, current: 0, done: false });
+        activePlanIdx = idx;
+        renderMessages();
+      }
       // Continue/complete an existing file (append) — for "continue where it stopped".
       const cont = parseContinueDirective(messages[idx]?.content ?? "");
       if (cont) {
@@ -944,6 +1007,13 @@ async function buildWorkspaceContext(): Promise<string | null> {
       `into that editor tab. NEVER paste the code in the chat and NEVER say you "will" create ` +
       `it later — emit the block now. Use dxcode only for a NEW file or a deliberate full ` +
       `rewrite; to change one method, use dxedit.`,
+    `• For a MULTI-STEP task (several files or edits), FIRST emit a plan so the user sees ` +
+      `the whole execution, then carry it out step by step:\n` +
+      "```dxplan\n" +
+      `{"title":"<short goal>","steps":["<step 1>","<step 2>","…"]}\n` +
+      "```\n" +
+      `The UI renders it as a live checklist and ticks each step as your following actions ` +
+      `(dxcode/dxedit/dxcontinue) complete. Use a plan only when there IS more than one step.`,
     `• To CONTINUE or COMPLETE an existing, unfinished file (the user says "continue", ` +
       `"finish", "complete", "it's incomplete") WITHOUT rewriting it, reply with a SHORT note ` +
       `then EXACTLY ONE:\n` +
@@ -1480,9 +1550,13 @@ function renderMessages(): void {
         if (code) shown = shown.replace(/```dxcode\s*\n[\s\S]*?```/, "").trim();
         shown = shown.replace(/```dxedit\s*\n[\s\S]*?```/, "").trim();
         shown = shown.replace(/```dxcontinue\s*\n[\s\S]*?```/, "").trim();
+        shown = shown.replace(/```dxplan\s*\n[\s\S]*?```/, "").trim();
         const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
         const err = actionErrors.get(i);
         let card = "";
+        // Agent plan progress (execution checklist) — rendered above any action card.
+        const plan = plans.get(i);
+        if (plan) card += planCard(plan);
         // Code tasks win over a bare folder action: the code is the point, and a dxcode
         // path creates any missing folders on its own.
         if (code) {

@@ -2791,6 +2791,21 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-context > summary:hover { color: var(--fg); }
 .as-context pre { margin: 6px 0 0; max-height: 220px; overflow: auto; background: var(--bg-base); border: 1px solid var(--border); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; color: var(--fg-dim); }
 /* Proposed workspace action — an approval card under the assistant bubble. */
+/* Agent plan progress card (execution checklist, CLI-dashboard style). */
+.as-plan { margin: 6px 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg-elevated); font-family: var(--font-mono); }
+.as-plan-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
+.as-plan-title { font-size: 12px; font-weight: 600; color: var(--fg-bright); font-family: inherit; }
+.as-plan-count { font-size: 11px; color: var(--orange, #e0a05a); }
+.as-plan-bar { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin-bottom: 8px; }
+.as-plan-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--green, #4ec9b0), var(--orange, #e0a05a)); transition: width 0.3s ease; }
+.as-plan-step { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 11.5px; }
+.as-plan-glyph { flex: none; width: 12px; text-align: center; }
+.as-plan-step.done .as-plan-glyph { color: var(--green, #4ec9b0); }
+.as-plan-step.done .as-plan-label { color: var(--fg-dim); }
+.as-plan-step.run .as-plan-glyph { color: var(--orange, #e0a05a); }
+.as-plan-step.run .as-plan-label { color: var(--fg-bright); font-weight: 600; }
+.as-plan-step.todo { color: var(--fg-muted); }
+
 .as-action { margin-top: 6px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)); display: flex; flex-direction: column; gap: 6px; }
 .as-action.done { border-color: var(--border); color: var(--ok, #3fb950); background: var(--bg-elevated); }
 .as-action-h code, .as-action.done code { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
