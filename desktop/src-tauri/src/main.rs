@@ -1140,6 +1140,44 @@ async fn git_changes(root: String) -> Result<Vec<tutor_eval::git::GitChange>, St
     .map_err(|e| format!("git task failed: {e}"))
 }
 
+/// SCM write ops (stage / unstage / stage-all / commit). Each runs off the UI thread and
+/// surfaces git's stderr on failure so the Git view can report it.
+#[tauri::command]
+async fn git_stage(root: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::stage(std::path::Path::new(&root), &path)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn git_unstage(root: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::unstage(std::path::Path::new(&root), &path)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn git_stage_all(root: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::stage_all(std::path::Path::new(&root))
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn git_commit(root: String, message: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::commit(std::path::Path::new(&root), &message)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
 /// Section 5 (daily work): the current git branch at `root` (or a short commit when
 /// detached), for the status bar. `None` → not a repo.
 #[tauri::command]
@@ -1154,9 +1192,17 @@ async fn git_branch(root: String) -> Result<Option<String>, String> {
 /// Section 5 (daily work): a unified diff of the working tree vs HEAD, optionally scoped to
 /// `file`. Read-only; empty when there is nothing to show or it is not a repo.
 #[tauri::command]
-async fn git_diff(root: String, file: Option<String>) -> Result<String, String> {
+async fn git_diff(
+    root: String,
+    file: Option<String>,
+    staged: Option<bool>,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        tutor_eval::git::diff(std::path::Path::new(&root), file.as_deref())
+        tutor_eval::git::diff(
+            std::path::Path::new(&root),
+            file.as_deref(),
+            staged.unwrap_or(false),
+        )
     })
     .await
     .map_err(|e| format!("git task failed: {e}"))
@@ -1401,6 +1447,10 @@ fn main() {
             git_changes,
             git_diff,
             git_clone,
+            git_stage,
+            git_unstage,
+            git_stage_all,
+            git_commit,
             git_branch,
             debug_capabilities,
             assistant_models,

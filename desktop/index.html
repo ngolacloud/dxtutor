@@ -559,14 +559,19 @@
       <pre id="tests-output" class="tests-output" aria-label="Test output"></pre>
     </aside>
     <!-- Git: working-tree changes + unified diff (read-only) -->
-    <aside id="git-overlay" class="codemap-drawer hidden" aria-label="Git changes">
+    <aside id="git-overlay" class="codemap-drawer hidden" aria-label="Source Control">
       <header class="codemap-hdr">
-        <span class="codemap-label">Git</span>
+        <span class="codemap-label">Source Control</span>
         <span id="git-count" class="codemap-title"></span>
+        <button id="git-stageall" class="assistant-iconbtn" title="Stage all changes" aria-label="Stage all changes">&#43;</button>
         <button id="git-refresh" class="assistant-iconbtn" title="Refresh" aria-label="Refresh git changes">&#8635;</button>
-        <button id="git-close" class="review-close" title="Close" aria-label="Close Git">&times;</button>
+        <button id="git-close" class="review-close" title="Close" aria-label="Close Source Control">&times;</button>
       </header>
-      <div id="git-list" class="tests-list"></div>
+      <div class="git-commit">
+        <textarea id="git-message" class="git-message" rows="2" placeholder="Message (Ctrl+Enter to commit)" aria-label="Commit message"></textarea>
+        <button id="git-commit-btn" class="git-commit-btn" title="Commit staged changes (Ctrl+Enter)">&#10003; Commit</button>
+      </div>
+      <div id="git-list" class="tests-list git-scm"></div>
       <pre id="git-diff" class="git-diff" aria-label="Diff"></pre>
     </aside>
     <!-- Global search: find literal text across the open project -->
