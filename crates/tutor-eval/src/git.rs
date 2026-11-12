@@ -56,7 +56,10 @@ pub fn current_branch(root: &Path) -> Option<String> {
 /// The working-tree changes (`git status --porcelain`): modified, added, deleted and
 /// untracked paths. Empty when clean or not a repo.
 pub fn changed_files(root: &Path) -> Vec<GitChange> {
-    let out = match git(root, &["status", "--porcelain"]) {
+    // `--untracked-files=all` expands untracked DIRECTORIES into their individual files, so
+    // every entry is a real file the UI can open/diff (a bare `dir/` entry would otherwise
+    // fail `read_text_file`/`git diff` with "Is a directory").
+    let out = match git(root, &["status", "--porcelain", "--untracked-files=all"]) {
         Some(o) => o,
         None => return Vec::new(),
     };
@@ -125,9 +128,16 @@ mod tests {
         // Modify tracked + add untracked.
         std::fs::write(root.join("a.txt"), "one\ntwo\n").unwrap();
         std::fs::write(root.join("b.txt"), "new\n").unwrap();
+        // An untracked DIRECTORY must be expanded into its files (not a bare `dir/` entry),
+        // so the UI can open/diff each one.
+        std::fs::create_dir_all(root.join("newdir")).unwrap();
+        std::fs::write(root.join("newdir/inside.txt"), "x\n").unwrap();
+
         let changes = changed_files(root);
         assert!(changes.iter().any(|c| c.path == "a.txt" && c.status == "M"), "{changes:?}");
         assert!(changes.iter().any(|c| c.path == "b.txt" && c.status == "??"), "{changes:?}");
+        assert!(changes.iter().any(|c| c.path == "newdir/inside.txt"), "untracked dir expanded: {changes:?}");
+        assert!(!changes.iter().any(|c| c.path.ends_with('/')), "no bare directory entries: {changes:?}");
 
         let d = diff(root, Some("a.txt"));
         assert!(d.contains("+two"), "diff should show the added line:\n{d}");
