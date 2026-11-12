@@ -205,6 +205,28 @@ pub fn symbol_ranges(code: &str, name: &str) -> Vec<SymbolRange> {
         .collect()
 }
 
+/// The full outline of a Rust file: every function/method with its line span, in file order.
+/// Powers a precise, LSP-grade Explain (real anchors instead of model-guessed line numbers).
+/// Empty when `code` doesn't parse as Rust.
+pub fn file_outline(code: &str) -> Vec<SymbolRange> {
+    let idx = match index_file("", code) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    let mut out: Vec<SymbolRange> = idx
+        .fns
+        .into_iter()
+        .map(|f| SymbolRange {
+            name: f.name,
+            kind: f.kind,
+            start_line: f.start_line,
+            end_line: f.end_line,
+        })
+        .collect();
+    out.sort_by_key(|s| s.start_line);
+    out
+}
+
 /// for a workspace "go to symbol" palette. Capped; sorted by name then file.
 pub fn all_symbols(root: &Path, max: usize) -> Vec<SymbolRef> {
     let mut out = Vec::new();

@@ -984,6 +984,15 @@ async fn symbol_ranges(
         .map_err(|e| format!("symbol_ranges task failed: {e}"))
 }
 
+/// The full symbol outline of a Rust file (every fn/method + line span, in order), for a
+/// precise Explain anchored to real lines. Empty for non-Rust / unparseable code.
+#[tauri::command]
+async fn file_outline(code: String) -> Result<Vec<tutor_eval::codemap::SymbolRange>, String> {
+    tauri::async_runtime::spawn_blocking(move || tutor_eval::codemap::file_outline(&code))
+        .await
+        .map_err(|e| format!("file_outline task failed: {e}"))
+}
+
 /// Section 5 (daily work): every symbol definition across the project at `root` (Rust via
 /// `syn`; Go/Python syntactic), for a "go to symbol" palette. Runs off the UI thread.
 #[tauri::command]
@@ -1976,6 +1985,7 @@ fn main() {
             symbol_relations,
             list_symbols,
             symbol_ranges,
+            file_outline,
             diff_lines,
             propose_entrypoint,
             resolve_definition,

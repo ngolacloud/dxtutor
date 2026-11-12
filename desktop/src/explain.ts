@@ -97,6 +97,25 @@ export async function explainFile(path: string, code: string, lang: string, name
     .split("\n")
     .map((l, i) => `${String(i + 1).padStart(4)}: ${l}`)
     .join("\n");
+
+  // Ground the model in the REAL symbol outline (exact line spans from the parser) so the
+  // sections and [L<n>] anchors are precise, not guessed. Best-effort (Rust today).
+  let outlineBlock = "";
+  try {
+    const outline = await invoke<Array<{ name: string; kind: string; startLine: number; endLine: number }>>(
+      "file_outline",
+      { code },
+    );
+    if (outline.length) {
+      outlineBlock =
+        "\n\nAuthoritative symbol outline (name — kind — lines; use these EXACT lines for the " +
+        "section headings and [L<n>] anchors):\n" +
+        outline.map((s) => `- ${s.name} — ${s.kind} — L${s.startLine}-${s.endLine}`).join("\n");
+    }
+  } catch {
+    /* outline is best-effort; fall back to line numbers in the listing */
+  }
+
   const system =
     "You explain existing code to a developer reading it for the FIRST time, so they " +
     "understand third-party code fast. You do NOT rewrite or judge the code — you clarify " +
@@ -108,8 +127,10 @@ export async function explainFile(path: string, code: string, lang: string, name
     "Begin each with a heading naming it and its line, e.g. `### parse_reference [L12]`. " +
     "In 1–4 sentences explain its logic, inputs/outputs and any side effects.\n\n" +
     "Whenever you mention a specific part, cite its line as `[L<number>]` so the reader can " +
-    "jump there. Use the line numbers shown in the listing. Do not repeat the code verbatim.\n\n" +
-    `\`\`\`${lang}\n${numbered}\n\`\`\``;
+    "jump there. Use the EXACT line numbers from the outline/listing. Do not repeat the code " +
+    "verbatim." +
+    outlineBlock +
+    `\n\n\`\`\`${lang}\n${numbered}\n\`\`\``;
 
   folderSources = [];
   await runExplain(system, user);
