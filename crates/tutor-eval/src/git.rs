@@ -72,15 +72,32 @@ pub fn changed_files(root: &Path) -> Vec<GitChange> {
         .collect()
 }
 
-/// A unified diff of the working tree against HEAD (optionally scoped to `file`). Empty
-/// when there is nothing to show or it is not a repo.
+/// Like [`git`] but returns stdout even on a non-zero exit — needed for `git diff
+/// --no-index`, which exits 1 precisely when the files differ.
+fn git_allow_fail(root: &Path, args: &[&str]) -> Option<String> {
+    let out = Command::new("git").arg("-C").arg(root).args(args).output().ok()?;
+    Some(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// A unified diff of the working tree against HEAD (optionally scoped to `file`). For an
+/// untracked file (no diff vs HEAD) it shows the whole file as additions, so the Git view
+/// isn't blank for a brand-new file. Empty when there's nothing to show or it's not a repo.
 pub fn diff(root: &Path, file: Option<&str>) -> String {
     let mut args = vec!["diff", "HEAD"];
     if let Some(f) = file {
         args.push("--");
         args.push(f);
     }
-    git(root, &args).unwrap_or_default()
+    let tracked = git(root, &args).unwrap_or_default();
+    if !tracked.is_empty() {
+        return tracked;
+    }
+    // Untracked file: diff against /dev/null to render its content as additions.
+    if let Some(f) = file {
+        return git_allow_fail(root, &["diff", "--no-index", "--", "/dev/null", f])
+            .unwrap_or_default();
+    }
+    tracked
 }
 
 #[cfg(test)]
@@ -118,6 +135,10 @@ mod tests {
         // Branch name (git's default may be master or main depending on config).
         let branch = current_branch(root).expect("a branch");
         assert!(branch == "main" || branch == "master", "unexpected branch: {branch}");
+
+        // An untracked file shows its whole content as additions (not blank).
+        let du = diff(root, Some("b.txt"));
+        assert!(du.contains("+new"), "untracked diff should show the content:\n{du}");
     }
 
     #[test]
