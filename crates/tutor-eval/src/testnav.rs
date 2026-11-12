@@ -102,11 +102,23 @@ pub(crate) fn test_passed(output: &str) -> bool {
         && !output.contains("error[")
 }
 
+/// Does this attribute mark a test? Matches `#[test]` and the common async variants
+/// whose LAST path segment is `test` — `#[tokio::test]`, `#[async_std::test]` — which
+/// cargo runs and lists just like a plain test. Custom macros like `#[rstest]` (last
+/// segment `rstest`) are intentionally not matched here.
+fn attr_is_test(a: &syn::Attribute) -> bool {
+    a.path()
+        .segments
+        .last()
+        .map(|s| s.ident == "test")
+        .unwrap_or(false)
+}
+
 fn collect_tests(items: &[syn::Item], file: &str, module: &str, out: &mut Vec<TestItem>) {
     for item in items {
         match item {
             syn::Item::Fn(f) => {
-                let is_test = f.attrs.iter().any(|a| a.path().is_ident("test"));
+                let is_test = f.attrs.iter().any(attr_is_test);
                 if is_test {
                     let ignored = f.attrs.iter().any(|a| a.path().is_ident("ignore"));
                     let name = f.sig.ident.to_string();
@@ -173,6 +185,28 @@ mod tests {
         assert!(simples.file.ends_with("lib.rs"));
         // The path is module-qualified so --exact addresses exactly this test.
         assert_eq!(simples.path, "tests::soma_simples");
+    }
+
+    #[test]
+    fn descobre_variantes_async_de_test() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "#[cfg(test)]\nmod tests {\n\
+             #[tokio::test]\nasync fn async_tokio() {}\n\
+             #[async_std::test]\nasync fn async_std_t() {}\n\
+             #[rstest]\nfn nao_e_test() {}\n\
+             }\n",
+        )
+        .unwrap();
+
+        let found = discover_tests(root);
+        let names: Vec<&str> = found.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"async_tokio"), "tokio::test deve contar: {names:?}");
+        assert!(names.contains(&"async_std_t"), "async_std::test deve contar: {names:?}");
+        assert!(!names.contains(&"nao_e_test"), "#[rstest] não é #[test]: {names:?}");
     }
 
     #[test]
