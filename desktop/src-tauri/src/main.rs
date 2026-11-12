@@ -1495,6 +1495,7 @@ async fn detect_projects(root: String) -> Result<Vec<ProjectInfo>, String> {
 struct DevcontainerInfo {
     present: bool,
     name: Option<String>,
+    image: Option<String>,
     path: Option<String>,
 }
 
@@ -1506,21 +1507,30 @@ async fn devcontainer_info(root: String) -> Result<DevcontainerInfo, String> {
             let p = base.join(rel);
             if p.is_file() {
                 // devcontainer.json is JSONC; strip // and /* */ comments before parsing so
-                // a commented template still yields its name. Best-effort (None on failure).
-                let name = std::fs::read_to_string(&p).ok().and_then(|s| {
-                    let stripped = strip_jsonc_comments(&s);
-                    serde_json::from_str::<serde_json::Value>(&stripped)
-                        .ok()
-                        .and_then(|v| v.get("name").and_then(|n| n.as_str().map(String::from)))
+                // a commented template still yields its fields. Best-effort (None on failure).
+                let v = std::fs::read_to_string(&p).ok().and_then(|s| {
+                    serde_json::from_str::<serde_json::Value>(&strip_jsonc_comments(&s)).ok()
+                });
+                let field = |k: &str| {
+                    v.as_ref()
+                        .and_then(|v| v.get(k).and_then(|n| n.as_str().map(String::from)))
+                };
+                // Prefer the explicit image; fall back to a dockerfile reference for display.
+                let image = field("image").or_else(|| {
+                    v.as_ref()
+                        .and_then(|v| v.get("build"))
+                        .and_then(|b| b.get("dockerfile"))
+                        .and_then(|d| d.as_str().map(|s| format!("Dockerfile: {s}")))
                 });
                 return DevcontainerInfo {
                     present: true,
-                    name,
+                    name: field("name"),
+                    image,
                     path: Some(p.to_string_lossy().into_owned()),
                 };
             }
         }
-        DevcontainerInfo { present: false, name: None, path: None }
+        DevcontainerInfo { present: false, name: None, image: None, path: None }
     })
     .await
     .map_err(|e| format!("devcontainer task failed: {e}"))

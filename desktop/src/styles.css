@@ -2397,6 +2397,16 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .remote-note code { font-family: var(--font-mono); font-size: 10px; }
 .remote-create { margin: 6px 12px; font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
 .remote-create:hover { background: var(--bg-selected-inactive); }
+/* Dev Container card (VSCode-style, with a prominent Reopen action). */
+.remote-card { margin: 4px 12px 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); display: flex; flex-direction: column; gap: 8px; }
+.remote-card-top { display: flex; align-items: center; gap: 8px; }
+.remote-card-sub { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-reopen { font: inherit; font-size: 12px; padding: 7px 10px; border-radius: 6px; border: 1px solid transparent; background: var(--accent); color: #fff; cursor: pointer; text-align: center; }
+.remote-reopen:hover { filter: brightness(1.08); }
+.remote-reopen.done { background: transparent; border-color: var(--green, #4ec9b0); color: var(--green, #4ec9b0); cursor: default; }
+.remote-empty { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
+.remote-empty .remote-reopen { align-self: flex-start; background: var(--bg-elevated); border-color: var(--border); color: var(--fg); }
+.remote-empty .remote-reopen:hover { background: var(--bg-selected-inactive); filter: none; }
 
 /* Run and Debug empty-state (VSCode-style sidebar view). */
 .rundebug-empty { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; }

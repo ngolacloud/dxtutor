@@ -7,6 +7,7 @@ import { workspaceRoot, openFileAt, createDevcontainer } from "./workspace";
 interface DevcontainerInfo {
   present: boolean;
   name: string | null;
+  image: string | null;
   path: string | null;
 }
 
@@ -26,7 +27,19 @@ export function initRemote(deps: { ensureWorkspaceMode: () => void }): void {
     const act = btn.dataset.act;
     if (act === "create") void create();
     else if (act === "open" && btn.dataset.path) void openFileAt(btn.dataset.path, 1, 1);
+    else if (act === "reopen") void reopenInContainer();
   });
+}
+
+/** "Reopen in Container": switch the sandbox engine to Delonix so this project's code runs
+ *  inside the container, mirroring VSCode's Dev Containers reopen. */
+async function reopenInContainer(): Promise<void> {
+  try {
+    await invoke<string>("set_sandbox_engine", { engine: "delonix" });
+  } catch {
+    /* keep going — scan reflects the real state */
+  }
+  await scan();
 }
 
 export function openRemote(): void {
@@ -56,25 +69,38 @@ async function scan(): Promise<void> {
       <div class="remote-note">Open a folder to detect its Dev Container.</div>`;
     return;
   }
-  let dc: DevcontainerInfo = { present: false, name: null, path: null };
+  let dc: DevcontainerInfo = { present: false, name: null, image: null, path: null };
   try {
     dc = await invoke<DevcontainerInfo>("devcontainer_info", { root });
   } catch {
     /* treat as absent */
   }
+  const inContainer = engine !== "host";
   body.innerHTML = `
     ${engineBlock(engine)}
     <div class="remote-group">Dev Containers</div>
     ${
       dc.present
-        ? `<div class="remote-row">
-             <span class="remote-dot ok"></span>
-             <span class="remote-name">${esc(dc.name ?? "devcontainer")}</span>
-             <button class="remote-link" data-act="open" data-path="${esc(dc.path ?? "")}">open config</button>
+        ? `<div class="remote-card">
+             <div class="remote-card-top">
+               <span class="remote-dot ok"></span>
+               <span class="remote-name">${esc(dc.name ?? "devcontainer")}</span>
+               <button class="remote-link" data-act="open" data-path="${esc(dc.path ?? "")}">config</button>
+             </div>
+             ${dc.image ? `<div class="remote-card-sub">${esc(dc.image)}</div>` : ""}
+             <button class="remote-reopen${inContainer ? " done" : ""}" data-act="reopen">
+               ${inContainer ? "✓ Running in container" : "⟲ Reopen in Container"}
+             </button>
            </div>
-           <div class="remote-note">This folder reopens in a container with the Delonix sandbox engine.</div>`
-        : `<div class="remote-note">No <code>.devcontainer/devcontainer.json</code> in this folder.</div>
-           <button class="remote-create" data-act="create">＋ Create Dev Container</button>`
+           <div class="remote-note">${
+             inContainer
+               ? `Your code runs inside the <b>${esc(engine)}</b> sandbox.`
+               : "Reopen to run this project's code inside the Delonix container defined above."
+           }</div>`
+        : `<div class="remote-empty">
+             <p class="remote-note">No Dev Container yet. Add one to run this project in a reproducible, isolated environment.</p>
+             <button class="remote-reopen" data-act="create">＋ Create Dev Container</button>
+           </div>`
     }`;
 }
 
