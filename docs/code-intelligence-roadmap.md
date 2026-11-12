@@ -174,10 +174,30 @@ A mandatory failure fails the process; an absent tool/credential is reported *no
 never a silent pass. Distinguish **simulated** (offline/fake), **validated with a real
 tool**, and **demonstrated through the IDE** when reporting.
 
+## Section 5 — delivered (professional flow)
+
+Shipped incrementally, each with tests and a green `scripts/verify.sh`:
+
+- **Dev delegate** (assistant writes code live into the editor tab): grounding on the real
+  workspace (root + tree + active file + selection), approved file actions contained under
+  the root (`workspace_resolve`/`workspace_action`), live code stream with dirty-guard,
+  empty-output restore and a shrink warning.
+- **Navigation**: CodeMap go-to-definition for **Rust** (defs/refs/callers, homonyms flagged
+  `ambiguous`) and **Go/Python** (syntactic definitions); workspace **go-to-symbol**
+  (`list_symbols`, Ctrl+Shift+O).
+- **Tests**: discover + run individual tests and whole suites for **Rust, Go and Python**
+  (`testnav`), with an honest per-test verdict (Passed/Failed/DidNotRun) and a Tests panel.
+- **Daily work**: global search (`search_project`), quick-open (Ctrl+P, `list_files`),
+  go-to-symbol (Ctrl+Shift+O), and a read-only **Git** panel (changes + unified diff,
+  untracked content, branch indicator).
+- **DAP**: honest capability detection (`debug_capabilities`) + a status chip — real
+  step-debugging is gated on installing a DAP adapter (lldb-dap/codelldb + lldb) on the host.
+
 ## Still to validate (conditions)
 
 - **P0-2 live**: exercise the Dev Assistant chat in study mode against a real provider
   (Ollama/Qwen3 first) — needs `npm run tauri dev` + a display + a pulled model.
 - **P0-3 through the IDE**: drive review→insert→apply-refused live — needs a display.
-- Per-language semantic navigation (rust-analyzer / gopls) and DAP debug: see §4 phases
-  P2–P3; gopls and provider keys were absent on the audited host.
+- **Semantic navigation via LSP** (rust-analyzer resolved refs; gopls for Go) and **DAP
+  debug**: need the servers/adapter installed on the host (today navigation is syntactic/
+  inferred, and debugging falls back to the instrumentation tracer).
