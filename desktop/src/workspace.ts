@@ -45,7 +45,40 @@ const LS = {
   folder: "dxtutor.ws.folder", // last opened root
   expanded: "dxtutor.ws.expanded", // array of expanded dir paths
   tabs: "dxtutor.ws.tabs", // {folder, paths[], active} — reopened on restart
+  recents: "dxtutor.ws.recents", // array of recently opened root paths (most-recent first)
 } as const;
+
+const RECENTS_MAX = 8;
+
+/** Recently opened folders, most-recent first. Powers the Welcome screen list. */
+function recentFolders(): string[] {
+  try {
+    const a = JSON.parse(localStorage.getItem(LS.recents) ?? "[]");
+    return Array.isArray(a) ? (a as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecent(path: string): void {
+  const list = [path, ...recentFolders().filter((p) => p !== path)].slice(0, RECENTS_MAX);
+  localStorage.setItem(LS.recents, JSON.stringify(list));
+}
+
+/** Render the Welcome screen's recent-workspaces list (basename + dim path, click = mount). */
+function renderRecents(): void {
+  const host = document.getElementById("ws-recents-list");
+  const empty = document.getElementById("ws-recents-empty");
+  if (!host || !empty) return;
+  const list = recentFolders();
+  empty.classList.toggle("hidden", list.length > 0);
+  host.innerHTML = list
+    .map((p) => {
+      const name = p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+      return `<button class="ws-recent" data-path="${esc(p)}"><span class="ws-recent-name">${esc(name)}</span><span class="ws-recent-path">${esc(p)}</span></button>`;
+    })
+    .join("");
+}
 
 let wsEditor: monaco.editor.IStandaloneCodeEditor | null = null;
 let rootPath: string | null = null;
@@ -635,9 +668,42 @@ async function openFolder() {
   await mountRoot(picked);
 }
 
+/** Clone the URL from the Welcome form into a user-picked parent folder, then mount it. */
+async function cloneRepo() {
+  if (!hasTauri) {
+    writeOutput("Clone unavailable", "Cloning is only available in the desktop app.", "info");
+    return;
+  }
+  const input = $("#ws-clone-url") as HTMLInputElement;
+  const url = input.value.trim();
+  if (!url) return;
+  let parent: string | null = null;
+  try {
+    parent = await cmdPickFolder();
+  } catch (err) {
+    writeOutput("Clone failed", String(err), "err");
+    return;
+  }
+  if (!parent) return;
+  const go = $("#ws-clone-go") as HTMLButtonElement;
+  go.disabled = true;
+  try {
+    const dir = await invoke<string>("git_clone", { url, parentDir: parent });
+    input.value = "";
+    $("#ws-clone-form").classList.add("hidden");
+    await mountRoot(dir);
+  } catch (err) {
+    writeOutput("Clone failed", String(err), "err");
+  } finally {
+    go.disabled = false;
+  }
+}
+
 async function mountRoot(path: string) {
   rootPath = path;
   localStorage.setItem(LS.folder, path);
+  pushRecent(path);
+  renderRecents();
   childrenCache.clear();
   // Keep only expanded dirs that are under the new root.
   for (const p of [...expanded]) {
@@ -781,6 +847,24 @@ export function initWorkspace() {
   });
   $("#ws-open-folder-empty").addEventListener("click", () => void openFolder());
   $("#ws-welcome-open").addEventListener("click", () => void openFolder());
+
+  // Welcome: Clone Repository (reveal URL field → git clone into a picked parent → mount).
+  $("#ws-welcome-clone").addEventListener("click", () => {
+    const form = $("#ws-clone-form");
+    form.classList.toggle("hidden");
+    if (!form.classList.contains("hidden")) ($("#ws-clone-url") as HTMLInputElement).focus();
+  });
+  $("#ws-clone-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    void cloneRepo();
+  });
+
+  // Welcome: recent workspaces — click a row to mount that folder.
+  renderRecents();
+  $("#ws-recents-list").addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest(".ws-recent") as HTMLElement | null;
+    if (row?.dataset.path) void mountRoot(row.dataset.path);
+  });
 
   // Topbar actions.
   $("#ws-btn-save").addEventListener("click", () => void saveActive());

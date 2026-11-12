@@ -103,6 +103,31 @@ pub fn diff(root: &Path, file: Option<&str>) -> String {
     tracked
 }
 
+/// Clone `url` into `parent_dir`, returning the path of the freshly created repository
+/// directory on success (so the caller can mount it). The destination name is derived by
+/// `git` from the URL; we discover it by reading the parent dir before/after the clone.
+/// Returns `Err` with git's stderr when the clone fails.
+pub fn clone_repo(url: &str, parent_dir: &Path) -> Result<std::path::PathBuf, String> {
+    let before: std::collections::HashSet<std::path::PathBuf> = std::fs::read_dir(parent_dir)
+        .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(parent_dir)
+        .args(["clone", url])
+        .output()
+        .map_err(|e| format!("could not start git: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    // The new directory is the one that appeared.
+    std::fs::read_dir(parent_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.is_dir() && !before.contains(p))
+        .ok_or_else(|| "clone succeeded but the new folder was not found".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

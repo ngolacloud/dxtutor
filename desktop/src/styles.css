@@ -2479,6 +2479,52 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .assistant-iconbtn { background: none; border: none; color: var(--fg-dim); font-size: 16px; cursor: pointer; padding: 0 6px; }
 .assistant-iconbtn:hover { color: var(--fg-bright); }
 .assistant-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+/* ── Welcome / start screen (Antigravity-style) ──────────────────────────── */
+.ws-welcome {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg-editor);
+  overflow-y: auto;
+}
+.ws-welcome.hidden { display: none; }
+.ws-welcome-inner { width: min(420px, 82%); display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 24px 0; }
+.ws-welcome-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 18px; }
+.ws-welcome-mark { color: var(--accent); }
+.ws-welcome-title { font-size: 22px; font-weight: 300; letter-spacing: 0.4px; color: var(--fg); }
+.ws-welcome-actions { display: flex; flex-direction: column; gap: 8px; }
+.welcome-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 9px 14px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; border: 1px solid transparent; transition: background 0.1s ease, border-color 0.1s ease;
+}
+.welcome-btn .btn-ic { width: 16px; height: 16px; flex: none; }
+.welcome-btn-primary { background: var(--accent); color: #fff; }
+.welcome-btn-primary:hover { background: var(--accent-hover, var(--accent)); filter: brightness(1.08); }
+.welcome-btn-secondary { background: var(--bg-elevated); color: var(--fg); border-color: var(--border); }
+.welcome-btn-secondary:hover { background: var(--bg-selected-inactive); }
+.ws-clone-form { display: flex; gap: 6px; }
+.ws-clone-form.hidden { display: none; }
+.ws-clone-url {
+  flex: 1; min-width: 0; background: var(--bg-input); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px;
+}
+.ws-clone-url:focus { outline: none; border-color: var(--accent); }
+.ws-clone-go { width: auto; flex: none; padding: 8px 16px; }
+.ws-welcome-recents { margin-top: 20px; }
+.ws-recents-title { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; color: var(--fg-dim); margin-bottom: 8px; padding-left: 2px; }
+.ws-recents-list { display: flex; flex-direction: column; }
+.ws-recent {
+  display: flex; flex-direction: column; gap: 1px; text-align: left; width: 100%;
+  background: none; border: none; border-radius: 6px; padding: 8px 10px; cursor: pointer;
+}
+.ws-recent:hover { background: var(--bg-elevated); }
+.ws-recent-name { font-size: 13px; color: var(--fg); }
+.ws-recent-path { font-size: 11px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-recents-empty { font-size: 12px; color: var(--fg-muted); padding: 4px 2px; }
+.ws-recents-empty.hidden { display: none; }
+
 .as-welcome { color: var(--fg-dim); line-height: 1.6; padding: 8px; }
 .as-msg { display: flex; flex-direction: column; gap: 3px; }
 .as-role { font-size: 10px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.4px; }

@@ -1162,6 +1162,18 @@ async fn git_diff(root: String, file: Option<String>) -> Result<String, String> 
     .map_err(|e| format!("git task failed: {e}"))
 }
 
+/// Clone a git repository `url` into `parent_dir`, returning the new repo's path so the
+/// workspace can mount it. Runs off the UI thread; errors carry git's stderr.
+#[tauri::command]
+async fn git_clone(url: String, parent_dir: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::clone_repo(&url, std::path::Path::new(&parent_dir))
+            .map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
 /// Section 5 (daily work): global literal search across the project at `root`. Returns up
 /// to `max` hits (file-relative). Offline, bounded; runs off the UI thread.
 #[tauri::command]
@@ -1388,6 +1400,7 @@ fn main() {
             list_files,
             git_changes,
             git_diff,
+            git_clone,
             git_branch,
             debug_capabilities,
             assistant_models,

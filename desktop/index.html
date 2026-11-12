@@ -214,10 +214,23 @@
               <div id="ws-editor" class="editor"></div>
               <div id="ws-welcome" class="ws-welcome">
                 <div class="ws-welcome-inner">
-                  <div class="ws-welcome-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="48" height="48"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg></div>
-                  <h1 data-i18n="ws.welcomeTitle">Workspace</h1>
-                  <p data-i18n="ws.welcomeText">Open a folder and build a real project with the skills from your Learning track.</p>
-                  <button id="ws-welcome-open" class="btn btn-primary">&#128194;&nbsp;<span data-i18n="ws.openFolder">Open Folder</span></button>
+                  <div class="ws-welcome-brand">
+                    <svg class="ws-welcome-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true" width="56" height="56"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z" fill="currentColor"/><path d="M24 20l-5 10h10l-5-10Z" fill="var(--bg-editor)"/></svg>
+                    <div class="ws-welcome-title">Delonix Tutor</div>
+                  </div>
+                  <div class="ws-welcome-actions">
+                    <button id="ws-welcome-open" class="welcome-btn welcome-btn-primary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg><span data-i18n="ws.openFolder">Open Folder</span></button>
+                    <button id="ws-welcome-clone" class="welcome-btn welcome-btn-secondary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg><span data-i18n="ws.cloneRepo">Clone Repository</span></button>
+                  </div>
+                  <form id="ws-clone-form" class="ws-clone-form hidden">
+                    <input id="ws-clone-url" class="ws-clone-url" type="text" autocomplete="off" placeholder="https://github.com/org/repo.git" aria-label="Repository URL" />
+                    <button type="submit" class="welcome-btn welcome-btn-primary ws-clone-go"><span data-i18n="ws.clone">Clone</span></button>
+                  </form>
+                  <div class="ws-welcome-recents">
+                    <div class="ws-recents-title" data-i18n="ws.workspaces">Workspaces</div>
+                    <div id="ws-recents-list" class="ws-recents-list"></div>
+                    <div id="ws-recents-empty" class="ws-recents-empty hidden" data-i18n="ws.noRecents">No recent folders yet.</div>
+                  </div>
                 </div>
               </div>
             </section>

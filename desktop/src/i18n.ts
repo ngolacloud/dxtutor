@@ -75,6 +75,10 @@ const en: Record<string, string> = {
   "ws.runTitle": "Run the active file",
   "ws.welcomeTitle": "Workspace",
   "ws.welcomeText": "Open a folder and build a real project with the skills from your Learning track.",
+  "ws.cloneRepo": "Clone Repository",
+  "ws.clone": "Clone",
+  "ws.workspaces": "Workspaces",
+  "ws.noRecents": "No recent folders yet.",
 
   // Editor topbar
   "btn.underhood": "Under the hood",
@@ -268,6 +272,10 @@ const ptAO: Record<string, string> = {
   "ws.welcomeTitle": "Espaço de trabalho",
   "ws.welcomeText":
     "Abre uma pasta e constrói um projecto real com as competências do teu percurso de aprendizagem.",
+  "ws.cloneRepo": "Clonar repositório",
+  "ws.clone": "Clonar",
+  "ws.workspaces": "Espaços de trabalho",
+  "ws.noRecents": "Ainda não há pastas recentes.",
 
   "btn.underhood": "Nos bastidores",
   "btn.underhood.title":
