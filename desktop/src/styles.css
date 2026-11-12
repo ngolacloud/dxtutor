@@ -473,11 +473,11 @@ body.term-open #terminal-panel {
 
 /* Explain view: a read-first AI summary shown as a REAL tab that SPLITS the editor — the
    code on the left, the summary on the right, both visible. [L<n>] links scroll the code. */
-#ws-editor-region { position: relative; }
+#ws-editor-region { position: relative; --explain-split: 55%; }
 .explain-panel {
   position: absolute;
   top: 35px; /* below the editor topbar */
-  left: 55%;
+  left: var(--explain-split, 55%);
   right: 0;
   bottom: 0;
   display: flex;
@@ -487,14 +487,28 @@ body.term-open #terminal-panel {
   z-index: 25;
 }
 .explain-panel.hidden { display: none; }
-/* In split mode the editor shrinks to the left pane; the summary takes the right. */
+/* In split mode the editor shrinks to the left pane; the summary takes the right, and a
+   drag handle on the seam resizes the ratio (persisted). */
 #ws-editor-region.explain-split #ws-editor {
   position: absolute;
   top: 35px;
   left: 0;
-  right: 45%;
+  right: calc(100% - var(--explain-split, 55%));
   bottom: 0;
 }
+.explain-splitter { display: none; }
+#ws-editor-region.explain-split .explain-splitter {
+  display: block;
+  position: absolute;
+  top: 35px;
+  bottom: 0;
+  left: var(--explain-split, 55%);
+  width: 7px;
+  margin-left: -3px;
+  cursor: col-resize;
+  z-index: 26;
+}
+.explain-splitter:hover { background: var(--accent); opacity: 0.4; }
 /* Explain tab accent (lightbulb). */
 .ws-tab.explain-tab .ws-tab-name { font-style: italic; }
 

@@ -4,11 +4,8 @@
 // straight to that part of the code. Helps a dev understand third-party code fast.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openExplainTab, closeExplainTab, revealLine } from "./workspace";
-
-interface ChatReply {
-  content: string;
-}
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const esc = (s: string) =>
@@ -16,6 +13,18 @@ const esc = (s: string) =>
 
 let lastReq: { path: string; code: string; lang: string; name: string } | null = null;
 let busy = false;
+let reqId: string | null = null; // the in-flight streaming request
+let accum = ""; // tokens accumulated so far
+let painting = false; // rAF throttle for markdown rendering
+
+function paint(): void {
+  if (painting) return;
+  painting = true;
+  requestAnimationFrame(() => {
+    painting = false;
+    $("#explain-body").innerHTML = renderMarkdown(accum || "…");
+  });
+}
 
 export function initExplain(): void {
   $("#explain-close").addEventListener("click", () => closeExplainTab());
@@ -26,6 +35,49 @@ export function initExplain(): void {
   $("#explain-body").addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest(".explain-jump") as HTMLElement | null;
     if (a?.dataset.line) revealLine(Number(a.dataset.line));
+  });
+
+  // Draggable splitter between the code (left) and the summary (right).
+  const region = $("#ws-editor-region");
+  const saved = localStorage.getItem("dxtutor.explainSplit");
+  if (saved) region.style.setProperty("--explain-split", saved);
+  const splitter = $("#explain-splitter");
+  let dragging = false;
+  splitter.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    splitter.setPointerCapture(e.pointerId);
+  });
+  splitter.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const r = region.getBoundingClientRect();
+    const pct = Math.max(25, Math.min(75, ((e.clientX - r.left) / r.width) * 100));
+    region.style.setProperty("--explain-split", `${pct.toFixed(1)}%`);
+  });
+  splitter.addEventListener("pointerup", (e) => {
+    dragging = false;
+    splitter.releasePointerCapture(e.pointerId);
+    localStorage.setItem(
+      "dxtutor.explainSplit",
+      getComputedStyle(region).getPropertyValue("--explain-split").trim(),
+    );
+  });
+  // Live token stream for the Explain summary (own request id — ignores assistant streams).
+  void listen<{ requestId: string; delta: string }>("llm://token", (e) => {
+    if (e.payload.requestId !== reqId) return;
+    accum += e.payload.delta;
+    paint();
+  });
+  void listen<{ requestId: string }>("llm://done", (e) => {
+    if (e.payload.requestId !== reqId) return;
+    reqId = null;
+    busy = false;
+    $("#explain-body").innerHTML = renderMarkdown(accum || "_(empty response)_");
+  });
+  void listen<{ requestId: string; error: string }>("llm://error", (e) => {
+    if (e.payload.requestId !== reqId) return;
+    reqId = null;
+    busy = false;
+    if (!accum) $("#explain-body").innerHTML = `<div class="explain-err">Explain failed: ${esc(e.payload.error)}</div>`;
   });
 }
 
@@ -57,19 +109,26 @@ export async function explainFile(path: string, code: string, lang: string, name
     `\`\`\`${lang}\n${numbered}\n\`\`\``;
 
   busy = true;
+  accum = "";
+  reqId = crypto.randomUUID();
   try {
-    const reply = await invoke<ChatReply>("assistant_chat", {
+    // Stream live into the panel. mode "workspace" keeps the policy non-tutor (it must
+    // actually explain, not withhold). Tokens arrive via llm://token (handled in init).
+    await invoke("assistant_chat_stream", {
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
+      provider: null,
       model: null,
+      requestId: reqId,
+      mode: "workspace",
+      stepId: null,
     });
-    $("#explain-body").innerHTML = renderMarkdown(reply.content || "_(empty response)_");
   } catch (e) {
-    $("#explain-body").innerHTML = `<div class="explain-err">Explain failed: ${esc(String(e))}</div>`;
-  } finally {
+    reqId = null;
     busy = false;
+    $("#explain-body").innerHTML = `<div class="explain-err">Explain failed: ${esc(String(e))}</div>`;
   }
 }
 
