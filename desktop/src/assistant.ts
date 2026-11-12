@@ -144,17 +144,20 @@ export function initAssistant(): void {
       e.preventDefault();
     });
   })();
-  $("#assistant-clear").addEventListener("click", () => {
-    if (busy) return;
-    messages = [];
-    lastContext = null;
-    appliedActions.clear();
-    actionErrors.clear();
-    writeState.clear();
-    shrinkWarn.clear();
-    reviews.clear();
-    reviewSel.clear();
-    renderMessages();
+  // New chat archives the current session to history first, then clears.
+  $("#assistant-new").addEventListener("click", newChat);
+  // Chat history: toggle the dropdown; restore or delete an entry.
+  $("#assistant-history").addEventListener("click", toggleHistory);
+  $("#assistant-history-panel").addEventListener("click", (e) => {
+    const del = (e.target as HTMLElement).closest("[data-del]") as HTMLElement | null;
+    if (del) {
+      e.stopPropagation();
+      saveHistory(loadHistory().filter((x) => x.id !== del.dataset.del));
+      renderHistory();
+      return;
+    }
+    const item = (e.target as HTMLElement).closest(".as-hist-item") as HTMLElement | null;
+    if (item?.dataset.id) restoreChat(item.dataset.id);
   });
   // Approve / dismiss a proposed workspace action (event delegation on the message list).
   $("#assistant-messages").addEventListener("click", (e) => {
@@ -377,6 +380,94 @@ function syncDock(): void {
   drawer.classList.toggle("docked", docked);
   document.getElementById("assistant-dock")?.classList.toggle("is-docked", docked);
   document.getElementById("body")?.classList.toggle("dock-open", docked && open);
+}
+
+// ── Chat history (Agent-panel style) ──────────────────────────────────────
+// Past chats are archived to localStorage when a new chat starts, and can be
+// restored or deleted from the history dropdown.
+interface ChatHistoryEntry {
+  id: string;
+  title: string;
+  ts: number;
+  messages: ChatMsg[];
+}
+const HIST_KEY = "dxtutor.assistant.history";
+const HIST_MAX = 25;
+function loadHistory(): ChatHistoryEntry[] {
+  try {
+    const a = JSON.parse(localStorage.getItem(HIST_KEY) ?? "[]");
+    return Array.isArray(a) ? (a as ChatHistoryEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+function saveHistory(h: ChatHistoryEntry[]): void {
+  localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, HIST_MAX)));
+}
+/** Archive the current session (unless it's empty / system-only). */
+function archiveCurrent(): void {
+  if (messages.filter((m) => m.role !== "system").length === 0) return;
+  const firstUser = messages.find((m) => m.role === "user")?.content.trim() ?? "";
+  const title = (firstUser.split("\n")[0] || "Conversa").slice(0, 60);
+  const h = loadHistory();
+  h.unshift({ id: `c${Date.now()}`, title, ts: Date.now(), messages: [...messages] });
+  saveHistory(h);
+}
+function clearSession(): void {
+  messages = [];
+  lastContext = null;
+  appliedActions.clear();
+  actionErrors.clear();
+  writeState.clear();
+  shrinkWarn.clear();
+  reviews.clear();
+  reviewSel.clear();
+  renderMessages();
+}
+function newChat(): void {
+  if (busy) return;
+  archiveCurrent();
+  clearSession();
+  hideHistory();
+}
+function restoreChat(id: string): void {
+  if (busy) return;
+  const h = loadHistory();
+  const i = h.findIndex((e) => e.id === id);
+  if (i < 0) return;
+  archiveCurrent(); // keep the chat being replaced
+  const [entry] = h.splice(i, 1);
+  saveHistory(h);
+  clearSession();
+  messages = [...entry.messages];
+  renderMessages();
+  hideHistory();
+}
+function renderHistory(): void {
+  const panel = document.getElementById("assistant-history-panel");
+  if (!panel) return;
+  const h = loadHistory();
+  panel.innerHTML = h.length
+    ? h
+        .map(
+          (e) =>
+            `<button class="as-hist-item" data-id="${e.id}"><span class="as-hist-title">${esc(e.title)}</span><span class="as-hist-del" data-del="${e.id}" title="Delete">&times;</span></button>`,
+        )
+        .join("")
+    : `<div class="as-hist-empty">No past chats yet.</div>`;
+}
+function toggleHistory(): void {
+  const panel = document.getElementById("assistant-history-panel");
+  if (!panel) return;
+  if (panel.classList.contains("hidden")) {
+    renderHistory();
+    panel.classList.remove("hidden");
+  } else {
+    panel.classList.add("hidden");
+  }
+}
+function hideHistory(): void {
+  document.getElementById("assistant-history-panel")?.classList.add("hidden");
 }
 
 /** The AI provider the user has selected (so Edit-with-me / Ask AI use the same one). */

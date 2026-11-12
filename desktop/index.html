@@ -610,11 +610,14 @@
         <span class="assistant-title">Dev Assistant</span>
         <select id="assistant-provider" class="assistant-provider" aria-label="AI provider"></select>
         <span id="assistant-model" class="assistant-model off">…</span>
+        <span class="assistant-hdr-spacer"></span>
+        <button id="assistant-new" class="assistant-iconbtn" title="New chat" aria-label="New chat"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button id="assistant-history" class="assistant-iconbtn" title="Chat history" aria-label="Chat history"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></button>
         <button id="assistant-dock" class="assistant-iconbtn" title="Dock / float panel" aria-label="Dock or float the panel">&#9707;</button>
         <button id="assistant-settings" class="assistant-iconbtn" title="AI providers &amp; keys" aria-label="AI settings">&#9881;</button>
-        <button id="assistant-clear" class="assistant-iconbtn" title="New chat" aria-label="New chat">+</button>
         <button id="assistant-close" class="review-close" title="Close" aria-label="Close assistant">&times;</button>
       </header>
+      <div id="assistant-history-panel" class="assistant-history-panel hidden"></div>
       <div id="assistant-messages" class="assistant-messages"></div>
       <div class="assistant-compose">
         <textarea id="assistant-input" class="assistant-input" rows="3" placeholder="Ask anything — paste a finding or prompt… (Ctrl+Enter to send)" aria-label="Message"></textarea>

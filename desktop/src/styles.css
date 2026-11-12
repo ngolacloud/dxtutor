@@ -2467,7 +2467,34 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 }
 #assistant-resizer:hover { background: var(--accent); opacity: 0.35; }
 #assistant-dock.is-docked { color: var(--accent); }
-.assistant-hdr { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.assistant-hdr { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.assistant-hdr-spacer { flex: 1; }
+/* Chat-history dropdown (Agent-panel style). */
+.assistant-history-panel {
+  position: absolute;
+  top: calc(var(--titlebar-h, 36px) + 40px);
+  right: 8px;
+  left: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 44;
+  padding: 4px;
+}
+.assistant-history-panel.hidden { display: none; }
+.as-hist-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; border-radius: 4px; padding: 7px 8px;
+  cursor: pointer; text-align: left; color: var(--fg);
+}
+.as-hist-item:hover { background: var(--bg-selected-inactive); }
+.as-hist-title { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-hist-del { flex: none; color: var(--fg-muted); font-size: 14px; padding: 0 4px; border-radius: 3px; }
+.as-hist-del:hover { color: var(--fg-bright); background: rgba(255, 255, 255, 0.08); }
+.as-hist-empty { font-size: 12px; color: var(--fg-muted); padding: 10px 8px; text-align: center; }
 .assistant-title { font-weight: 600; letter-spacing: 0.3px; }
 .assistant-provider {
   appearance: none; -webkit-appearance: none;
