@@ -2818,6 +2818,32 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-task.err { color: var(--red); }
 .as-patch { margin: 5px 0 0; max-height: 220px; overflow: auto; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; white-space: pre; color: var(--fg); }
 
+/* Architecture Studio */
+.arch-card { width: min(1100px, 94vw); height: min(760px, 92vh); display: flex; flex-direction: column; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; }
+.arch-body { flex: 1; display: grid; grid-template-columns: 380px 1fr; min-height: 0; }
+.arch-left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); padding: 12px; gap: 8px; }
+.arch-label { font-size: 11px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+.arch-spec { flex: 1; min-height: 120px; resize: none; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+.arch-spec:focus { outline: none; border-color: var(--accent); }
+.arch-findings { max-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.arch-f { font-size: 11.5px; padding: 5px 8px; border-radius: 5px; background: var(--bg-input); }
+.arch-f.ok { color: var(--green, #4ec9b0); }
+.arch-f.warn { color: var(--orange, #e0a05a); border-left: 2px solid var(--orange, #e0a05a); }
+.arch-f.err { color: var(--red); border-left: 2px solid var(--red); }
+.arch-diagram { overflow: auto; padding: 18px; background: var(--bg); background-image: radial-gradient(circle, color-mix(in srgb, var(--fg) 8%, transparent) 1px, transparent 1px); background-size: 20px 20px; }
+.arch-node rect { fill: var(--bg-elevated); stroke: var(--border-strong); stroke-width: 1.2; }
+.arch-node.service rect { stroke: #6aa0ff; }
+.arch-node.store rect { stroke: #4ec9b0; }
+.arch-node.broker rect { stroke: #e0a05a; }
+.arch-node.consumer rect { stroke: #b48ead; }
+.arch-node.relay rect { stroke: #9d9d9d; }
+.arch-node.bad rect { stroke: var(--red); stroke-width: 2; }
+.arch-node-name { fill: var(--fg-bright); font-size: 11px; font-weight: 600; text-anchor: middle; font-family: var(--font-mono); }
+.arch-node-kind { fill: var(--fg-muted); font-size: 9px; text-anchor: middle; font-family: var(--font-mono); }
+.arch-edge { stroke: var(--fg-muted); stroke-width: 1.3; }
+.arch-arrowhead { fill: var(--fg-muted); }
+.arch-edge-label { fill: var(--orange, #e0a05a); font-size: 9px; text-anchor: middle; font-family: var(--font-mono); }
+
 .as-action { margin-top: 6px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)); display: flex; flex-direction: column; gap: 6px; }
 .as-action.done { border-color: var(--border); color: var(--ok, #3fb950); background: var(--bg-elevated); }
 .as-action-h code, .as-action.done code { background: var(--bg-base); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }

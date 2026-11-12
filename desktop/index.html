@@ -386,6 +386,25 @@
       </div>
     </div>
 
+    <!-- Architecture Studio overlay (System Design + live validation + scaffold) -->
+    <div id="arch-overlay" class="overlay hidden">
+      <div class="arch-card">
+        <div class="gloss-head">
+          <div class="gloss-title">⬡ <span>Architecture Studio</span></div>
+          <button id="arch-scaffold" class="btn btn-secondary" title="Generate a project scaffold from a valid design">Generate scaffold</button>
+          <button id="arch-close" class="icon-btn" title="Close (Esc)">&#10005;</button>
+        </div>
+        <div class="arch-body">
+          <div class="arch-left">
+            <label class="arch-label" for="arch-spec">Design spec (components + connections)</label>
+            <textarea id="arch-spec" class="arch-spec" spellcheck="false" aria-label="Architecture design spec"></textarea>
+            <div id="arch-findings" class="arch-findings"></div>
+          </div>
+          <div id="arch-diagram" class="arch-diagram" aria-label="Architecture diagram"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Glossary overlay (reserved-word reference) -->
     <div id="glossary-overlay" class="overlay hidden">
       <div class="gloss-card">

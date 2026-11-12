@@ -37,6 +37,7 @@ import { initQuickOpen } from "./quickopen";
 import { initGit, openGit, refreshGitBranch } from "./git";
 import { initRemote, openRemote, setSessionChangeHandler } from "./remote";
 import { initExplain, explainFile, explainFolder } from "./explain";
+import { initArch, openArch } from "./arch";
 import { workspaceRoot, showTestOutput } from "./workspace";
 import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint, setSettingsHandler, activeModelLabel, setPlanCompleteHandler } from "./assistant";
 import { initEdit, startEdit } from "./edit";
@@ -3722,6 +3723,7 @@ async function main() {
       { label: "Explorer: Open folder view", hint: "View", run: () => setMode("workspace") },
       { label: "Run / Submit", hint: "Action", run: () => (appMode === "workspace" ? $("#ws-btn-run") : $("#btn-run")).click() },
       { label: "Run project tests", hint: "Action", run: () => runProjectTestsRef() },
+      { label: "Architecture Studio", hint: "Design", run: () => openArch() },
       { label: "Request a hint", hint: "Action", run: () => { if (appMode !== "learning") setMode("learning"); void requestHint(); } },
       { label: "Search in project", hint: "View", run: () => openSearch() },
       { label: "Source Control (Git)", hint: "View", run: () => openGit() },
@@ -3742,6 +3744,7 @@ async function main() {
     openSessionTerminal: (root) => void attachSessionTerminal(root),
   }); // Remote / Dev Containers
   initExplain(); // AI code-summary panel
+  initArch(); // Architecture Studio (System Design + validation + scaffold)
 
   // Workspace editor actions: Explain (AI summary), Review, Debug.
   const explainActive = () => {

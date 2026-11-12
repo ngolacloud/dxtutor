@@ -1276,6 +1276,38 @@ async fn arch_validate(
     Ok(arch.validate())
 }
 
+/// Generate a project scaffold from a VALID System Design: writes a folder per live component
+/// plus ARCHITECTURE.md under `root` (never overwriting existing files). Returns the relative
+/// paths written. Errors if the design is invalid.
+#[tauri::command]
+async fn arch_scaffold(
+    root: String,
+    arch: tutor_eval::arch::Architecture,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let files = arch.scaffold();
+        if files.is_empty() {
+            return Err("design has errors — fix them before scaffolding".to_string());
+        }
+        let base = std::path::Path::new(&root);
+        let mut written = Vec::new();
+        for (rel, content) in files {
+            let p = base.join(&rel);
+            if p.exists() {
+                continue; // never overwrite an existing file
+            }
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&p, content).map_err(|e| e.to_string())?;
+            written.push(rel);
+        }
+        Ok(written)
+    })
+    .await
+    .map_err(|e| format!("scaffold task failed: {e}"))?
+}
+
 /// Run a delegated task in an isolated git worktree of HEAD: apply `writes` ([relPath,
 /// content] pairs) there and return the unified diff, WITHOUT touching the working tree
 /// (RF-AG-01/05). The caller reviews the patch before anything lands.
@@ -2153,6 +2185,7 @@ fn main() {
             agent_task_status,
             agent_task_cancel,
             arch_validate,
+            arch_scaffold,
             run_tests,
             git_log,
             git_show,

@@ -186,6 +186,56 @@ impl Architecture {
     pub fn is_valid(&self) -> bool {
         !self.validate().iter().any(|f| f.severity == Severity::Error)
     }
+
+    /// Esqueleto do projecto a partir do desenho: uma pasta por componente «vivo»
+    /// (service/consumer/relay/gateway) com um stub, e um `ARCHITECTURE.md` com o fluxo de
+    /// eventos. Devolve (caminho relativo → conteúdo). Vazio se a arquitectura tem erros.
+    pub fn scaffold(&self) -> Vec<(String, String)> {
+        if !self.is_valid() {
+            return Vec::new();
+        }
+        let slug = |s: &str| s.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect::<String>();
+        let mut out = Vec::new();
+
+        for c in &self.components {
+            let dir = match c.kind {
+                Kind::Service | Kind::Gateway => "services",
+                Kind::Consumer => "consumers",
+                Kind::Relay => "relays",
+                _ => continue, // stores/brokers são infra, não geram pasta de código
+            };
+            let name = slug(&c.id);
+            let publishes: Vec<&str> = self.connections.iter()
+                .filter(|cn| cn.from == c.id && cn.relation == Relation::Publishes && !cn.event.is_empty())
+                .map(|cn| cn.event.as_str()).collect();
+            let consumes: Vec<&str> = self.connections.iter()
+                .filter(|cn| cn.from == c.id && cn.relation == Relation::Consumes && !cn.event.is_empty())
+                .map(|cn| cn.event.as_str()).collect();
+            let mut body = format!("// {} ({:?}) — generated from the Architecture Studio design.\n", c.name, c.kind);
+            if !publishes.is_empty() {
+                body.push_str(&format!("// publishes: {}\n", publishes.join(", ")));
+            }
+            if !consumes.is_empty() {
+                body.push_str(&format!("// consumes: {}\n", consumes.join(", ")));
+            }
+            body.push_str("\n// TODO: implement.\n");
+            out.push((format!("{dir}/{name}/README.md"), format!("# {}\n\n`{:?}` component.\n", c.name, c.kind)));
+            out.push((format!("{dir}/{name}/main.rs"), body));
+        }
+
+        // ARCHITECTURE.md — o fluxo de eventos legível.
+        let mut md = String::from("# Architecture\n\nGenerated from the Architecture Studio design.\n\n## Components\n\n");
+        for c in &self.components {
+            md.push_str(&format!("- **{}** (`{:?}`{})\n", c.name, c.kind, if c.outbox { ", outbox" } else { "" }));
+        }
+        md.push_str("\n## Event flow\n\n");
+        for cn in &self.connections {
+            let ev = if cn.event.is_empty() { String::new() } else { format!(" `{}`", cn.event) };
+            md.push_str(&format!("- `{}` → `{}` ({:?}{})\n", cn.from, cn.to, cn.relation, ev));
+        }
+        out.push(("ARCHITECTURE.md".into(), md));
+        out
+    }
 }
 
 #[cfg(test)]
@@ -245,6 +295,28 @@ mod tests {
         let f = a.validate();
         assert!(f.iter().any(|x| x.rule == "orphan-subscription"), "{f:?}"); // nothing publishes order.cancelled
         assert!(f.iter().any(|x| x.rule == "orphan-event"), "{f:?}"); // order.placed now has no consumer
+    }
+
+    #[test]
+    fn scaffold_emits_folders_and_architecture_md() {
+        let files = ok_arch().scaffold();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(paths.contains(&"services/svc/main.rs"), "{paths:?}");
+        assert!(paths.contains(&"relays/relay/main.rs"), "{paths:?}");
+        assert!(paths.contains(&"consumers/worker/main.rs"), "{paths:?}");
+        assert!(paths.contains(&"ARCHITECTURE.md"), "{paths:?}");
+        // No code folder for infra (store/broker).
+        assert!(!paths.iter().any(|p| p.contains("/db/") || p.contains("/mq/")), "{paths:?}");
+        // The relay's stub names the event it publishes.
+        let relay = files.iter().find(|(p, _)| p == "relays/relay/main.rs").unwrap();
+        assert!(relay.1.contains("order.placed"), "{}", relay.1);
+    }
+
+    #[test]
+    fn scaffold_refuses_an_invalid_design() {
+        let mut a = ok_arch();
+        a.connections.retain(|c| c.relation != Relation::Reads); // outbox-without-relay = error
+        assert!(a.scaffold().is_empty());
     }
 
     #[test]
