@@ -170,6 +170,9 @@ export function initAssistant(): void {
   });
   void listen<{ requestId: string; error: string }>("llm://error", (e) => {
     if (codeStream && e.payload.requestId === codeStream.requestId) {
+      // A mid-stream provider failure must not leave a partial/empty buffer — restore the
+      // file to what it was before the generation started.
+      pushEditorStream(codeStream.original);
       endEditorStream();
       actionErrors.set(codeStream.idx, e.payload.error);
       writeState.delete(codeStream.idx);
