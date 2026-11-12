@@ -947,12 +947,13 @@ async fn list_tests(root: String) -> Result<Vec<tutor_eval::testnav::TestItem>, 
     .map_err(|e| format!("test discovery task failed: {e}"))
 }
 
-/// Section 5: run one test by name in the project at `root`, returning pass/fail + the
-/// captured output for the test panel. Hardened + timed; runs off the UI thread.
+/// Section 5: run one test by its module-qualified `path` (from `list_tests`) in the
+/// project at `root`, returning pass/fail + the captured output for the test panel.
+/// Hardened + timed; runs off the UI thread.
 #[tauri::command]
-async fn run_test(root: String, name: String) -> Result<tutor_eval::testnav::TestRun, String> {
+async fn run_test(root: String, path: String) -> Result<tutor_eval::testnav::TestRun, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        tutor_eval::testnav::run_test(std::path::Path::new(&root), &name)
+        tutor_eval::testnav::run_test(std::path::Path::new(&root), &path)
     })
     .await
     .map_err(|e| format!("run_test task failed: {e}"))

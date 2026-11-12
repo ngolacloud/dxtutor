@@ -21,8 +21,11 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(180);
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TestItem {
-    /// The function name — what `cargo test <name>` filters on.
+    /// The leaf function name (for display).
     pub name: String,
+    /// The module-qualified path cargo addresses it by, e.g. `tests::falha`. This is what
+    /// `run_test` passes with `--exact` so exactly this test runs.
+    pub path: String,
     pub file: String,
     pub line: u32,
     /// Carries `#[ignore]` (won't run without `--ignored`).
@@ -44,7 +47,7 @@ pub fn discover_tests(root: &Path) -> Vec<TestItem> {
             Err(_) => continue,
         };
         let file = display_path(&path, root);
-        collect_tests(&ast.items, &file, &mut out);
+        collect_tests(&ast.items, &file, "", &mut out);
     }
     out.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
     out
@@ -61,14 +64,14 @@ pub struct TestRun {
     pub output: String,
 }
 
-/// Run a single test by name in the project at `root`
-/// (`cargo test <name> -- --nocapture`), with a wall-clock timeout and the hardened cargo
-/// environment. The name filters by substring on the full test path (cargo's `--exact`
-/// would need the module-qualified path, which syntactic discovery does not track yet),
-/// so the leaf name reliably runs the intended test. Never panics.
-pub fn run_test(root: &Path, name: &str) -> TestRun {
+/// Run a single test in the project at `root`
+/// (`cargo test <path> -- --exact --nocapture`), with a wall-clock timeout and the
+/// hardened cargo environment. `path` is the module-qualified path from discovery
+/// (e.g. `tests::falha`), so `--exact` runs exactly that test. A bare leaf name still
+/// works, falling back to a substring match. Never panics.
+pub fn run_test(root: &Path, path: &str) -> TestRun {
     let mut cmd = Command::new("cargo");
-    cmd.args(["test", name, "--", "--nocapture"]);
+    cmd.args(["test", path, "--", "--exact", "--nocapture"]);
     cmd.current_dir(root);
     configure_cargo_env(&mut cmd);
 
@@ -99,15 +102,22 @@ pub(crate) fn test_passed(output: &str) -> bool {
         && !output.contains("error[")
 }
 
-fn collect_tests(items: &[syn::Item], file: &str, out: &mut Vec<TestItem>) {
+fn collect_tests(items: &[syn::Item], file: &str, module: &str, out: &mut Vec<TestItem>) {
     for item in items {
         match item {
             syn::Item::Fn(f) => {
                 let is_test = f.attrs.iter().any(|a| a.path().is_ident("test"));
                 if is_test {
                     let ignored = f.attrs.iter().any(|a| a.path().is_ident("ignore"));
+                    let name = f.sig.ident.to_string();
+                    let path = if module.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{module}::{name}")
+                    };
                     out.push(TestItem {
-                        name: f.sig.ident.to_string(),
+                        name,
+                        path,
                         file: file.to_string(),
                         line: f.sig.ident.span().start().line as u32,
                         ignored,
@@ -116,7 +126,12 @@ fn collect_tests(items: &[syn::Item], file: &str, out: &mut Vec<TestItem>) {
             }
             syn::Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
-                    collect_tests(items, file, out);
+                    let inner = if module.is_empty() {
+                        m.ident.to_string()
+                    } else {
+                        format!("{module}::{}", m.ident)
+                    };
+                    collect_tests(items, file, &inner, out);
                 }
             }
             _ => {}
@@ -156,6 +171,8 @@ mod tests {
         let simples = found.iter().find(|t| t.name == "soma_simples").unwrap();
         assert!(!simples.ignored);
         assert!(simples.file.ends_with("lib.rs"));
+        // The path is module-qualified so --exact addresses exactly this test.
+        assert_eq!(simples.path, "tests::soma_simples");
     }
 
     #[test]
@@ -186,10 +203,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_project(dir.path());
 
-        let ok = run_test(dir.path(), "passa");
+        let ok = run_test(dir.path(), "tests::passa");
         assert!(ok.ran && ok.passed, "o teste 'passa' devia passar:\n{}", ok.output);
 
-        let bad = run_test(dir.path(), "falha");
+        let bad = run_test(dir.path(), "tests::falha");
         assert!(bad.ran && !bad.passed, "o teste 'falha' devia falhar:\n{}", bad.output);
     }
 }
