@@ -3419,6 +3419,25 @@ function wireChrome() {
   document.querySelectorAll(".act").forEach((el) =>
     el.addEventListener("click", () => {
       const view = (el as HTMLElement).dataset.view;
+
+      // Left-docked views replace the sidebar (VSCode-style) and are mutually
+      // exclusive: clicking an open view closes it; opening one closes the others.
+      const LEFT_VIEWS: Record<string, string> = {
+        git: "#git-overlay",
+        search: "#search-overlay",
+        tests: "#tests-overlay",
+      };
+      if (view && view in LEFT_VIEWS) {
+        const target = document.querySelector(LEFT_VIEWS[view])!;
+        const wasOpen = !target.classList.contains("hidden");
+        Object.values(LEFT_VIEWS).forEach((s) => document.querySelector(s)?.classList.add("hidden"));
+        if (wasOpen) return; // toggle off → sidebar returns
+        if (view === "git") openGit();
+        else if (view === "search") openSearch();
+        else openTests();
+        return;
+      }
+
       if (view === "settings") {
         openSettings();
         return;
@@ -3526,16 +3545,15 @@ const SIDEBAR_MIN = 180;
 const sidebarMax = () => Math.min(560, Math.round(window.innerWidth * 0.5));
 
 function applySidebarWidth(px: number) {
-  const body = document.getElementById("body");
-  if (!body) return;
   const clamped = Math.max(SIDEBAR_MIN, Math.min(sidebarMax(), Math.round(px)));
-  body.style.setProperty("--sidebar-w", `${clamped}px`);
+  // Set on :root so BOTH the #body grid and the left-docked view panels
+  // (.codemap-drawer) read the same width — the panels replace the sidebar
+  // column exactly, VSCode-style, and resize live with it.
+  document.documentElement.style.setProperty("--sidebar-w", `${clamped}px`);
 }
 
 function currentSidebarWidth(): number {
-  const body = document.getElementById("body");
-  if (!body) return 260;
-  return parseInt(getComputedStyle(body).getPropertyValue("--sidebar-w"), 10) || 260;
+  return parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"), 10) || 260;
 }
 
 function initSidebarResizer() {

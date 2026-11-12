@@ -3,6 +3,10 @@
    The whole page is a deliberate dark-only commit (it is a code editor). */
 
 :root {
+  /* Sidebar width — on :root so the #body grid AND the left-docked view panels
+     (.codemap-drawer) share it; the resizer live-updates it here. */
+  --sidebar-w: 260px;
+
   /* ── Surfaces ── */
   --bg-editor: #1e1e1e;        /* editor + panel body (matches Monaco theme) */
   --bg-elevated: #252526;      /* sidebar / tab bar / cards */
@@ -135,7 +139,7 @@ body {
 /* The sidebar width is a custom property so a drag handle can live-resize it
    without rebuilding the grid; main.ts persists it to localStorage. */
 #body {
-  --sidebar-w: 260px;
+  /* --sidebar-w is inherited from :root so the left-docked view panels match. */
   position: relative;
   display: grid;
   grid-template-columns: 48px var(--sidebar-w) minmax(0, 1fr);
@@ -2314,18 +2318,20 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 }
 
 /* ── CodeMap panel (P3) ──────────────────────────────────────────────────────── */
+/* Left-docked view panels (Git / Search / Tests / Debug / CodeMap). They occupy the
+   sidebar column exactly — same left edge and width as #sidebar — so clicking an
+   activity-bar icon reads as *replacing* the sidebar (VSCode/Antigravity), not a
+   floating drawer. The editor never shifts; the panel sits over the mode sidebar. */
 .codemap-drawer {
   position: fixed;
   top: var(--titlebar-h, 36px);
   left: 48px; /* clear of the activity bar */
   bottom: var(--statusbar-h, 24px);
-  width: 360px;
-  max-width: 80vw;
+  width: var(--sidebar-w, 260px);
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border-strong);
-  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.3);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--seam);
   z-index: 41;
   font-size: 12px;
 }
