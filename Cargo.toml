@@ -6,6 +6,7 @@ members = [
     "crates/tutor-llm",
     "crates/tutor-tui",
     "crates/tutor-cli",
+    "crates/tutor-track",
 ]
 
 [workspace.package]

@@ -1019,6 +1019,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tutor-track"
+version = "0.0.1"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "tutor-tui"
 version = "0.0.1"
 dependencies = [
