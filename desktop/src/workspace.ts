@@ -667,6 +667,17 @@ export function initWorkspace() {
   // Ctrl+S inside the editor saves the active tab.
   wsEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void saveActive());
 
+  // "Go to Definition" (F12): resolve via rust-analyzer and jump to the exact symbol;
+  // fall back to the syntactic CodeMap when it can't resolve (absent/unindexed/non-Rust).
+  wsEditor.addAction({
+    id: "dxtutor.goToDefinition",
+    label: "Go to Definition",
+    contextMenuGroupId: "navigation",
+    contextMenuOrder: 1.4,
+    keybindings: [monaco.KeyCode.F12],
+    run: (ed) => void goToDefinition(ed),
+  });
+
   // "Show in CodeMap" on the symbol under the cursor (context menu + Alt+F12).
   wsEditor.addAction({
     id: "dxtutor.showInCodeMap",
@@ -866,6 +877,36 @@ export function editorStreamPath(): string | null {
 /** Absolute path of the file in the active workspace tab, if any. */
 export function activeFilePath(): string | null {
   return activeTabPath;
+}
+
+interface ResolvedDef {
+  file: string;
+  line: number;
+  col: number;
+}
+
+/** Go to Definition: ask rust-analyzer for the resolved location and jump there; on no
+ *  answer, fall back to the syntactic CodeMap for the word under the cursor. */
+async function goToDefinition(ed: monaco.editor.ICodeEditor): Promise<void> {
+  const pos = ed.getPosition();
+  const model = ed.getModel();
+  if (!pos || !model || !rootPath || !activeTabPath) return;
+  const word = model.getWordAtPosition(pos)?.word ?? null;
+  try {
+    const def = await invoke<ResolvedDef | null>("resolve_definition", {
+      root: rootPath,
+      file: activeTabPath,
+      line: pos.lineNumber,
+      col: pos.column,
+    });
+    if (def) {
+      await openFileAt(def.file, def.line, def.col);
+      return;
+    }
+  } catch {
+    /* rust-analyzer not available / errored — fall through to the syntactic map */
+  }
+  if (word && codeMapHandler) codeMapHandler(word); // honest fallback
 }
 
 /** Register the handler that opens the CodeMap for a symbol (wired by main.ts). */
