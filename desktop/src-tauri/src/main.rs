@@ -1006,6 +1006,27 @@ async fn run_all_tests(root: String) -> Result<tutor_eval::testnav::TestRun, Str
     .map_err(|e| format!("run_all_tests task failed: {e}"))
 }
 
+/// Section 5 (daily work): the working-tree changes in the git repo at `root` (read-only).
+#[tauri::command]
+async fn git_changes(root: String) -> Result<Vec<tutor_eval::git::GitChange>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::changed_files(std::path::Path::new(&root))
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))
+}
+
+/// Section 5 (daily work): a unified diff of the working tree vs HEAD, optionally scoped to
+/// `file`. Read-only; empty when there is nothing to show or it is not a repo.
+#[tauri::command]
+async fn git_diff(root: String, file: Option<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::diff(std::path::Path::new(&root), file.as_deref())
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))
+}
+
 /// Section 5 (daily work): global literal search across the project at `root`. Returns up
 /// to `max` hits (file-relative). Offline, bounded; runs off the UI thread.
 #[tauri::command]
@@ -1218,6 +1239,8 @@ fn main() {
             run_all_tests,
             search_project,
             list_files,
+            git_changes,
+            git_diff,
             debug_capabilities,
             assistant_models,
             assistant_chat,
