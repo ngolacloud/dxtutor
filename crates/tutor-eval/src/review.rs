@@ -1218,6 +1218,33 @@ mod tests {
         assert!(v.reason.contains("re-run Review"), "reason: {}", v.reason);
     }
 
+    /// Isolates the buffer-hash gate: a fix with NO expected snippet (as Ruff produces)
+    /// is protected ONLY by the content version. If the buffer drifts it must still be
+    /// refused — reverting the hash gate makes this fail.
+    #[test]
+    fn stale_buffer_without_snippet_relies_on_hash() {
+        let analyzed = "import os\nx = 1\n";
+        let version = content_version(analyzed);
+        let fix = SuggestedFix {
+            title: "remove unused import".into(),
+            edits: vec![FixEdit {
+                replacement: String::new(),
+                file: "a.py".into(),
+                start_line: 1,
+                start_col: 1,
+                end_line: 2,
+                end_col: 1,
+                expected: String::new(), // Ruff gives no original text
+            }],
+        };
+        assert!(verify_fix(analyzed, &version, &fix).applicable);
+        let edited = "import os\nimport sys\nx = 1\n";
+        assert!(
+            !verify_fix(edited, &version, &fix).applicable,
+            "a snippet-less fix must still be refused when the buffer changed"
+        );
+    }
+
     /// Even when the whole-buffer hash somehow matched, a drifted snippet at the span is
     /// a second line of defence (end column exclusive, 1-based).
     #[test]
