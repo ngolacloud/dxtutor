@@ -33,6 +33,8 @@ const EXAMPLE: Architecture = {
 
 const KIND_COL: Record<string, number> = { gateway: 0, service: 1, store: 2, relay: 2, broker: 3, consumer: 4 };
 
+let connectFrom: string | null = null; // node selected as the source of a new connection
+
 export function initArch(): void {
   $("#arch-close").addEventListener("click", () => $("#arch-overlay").classList.add("hidden"));
   $("#arch-overlay").addEventListener("click", (e) => {
@@ -40,6 +42,73 @@ export function initArch(): void {
   });
   $("#arch-spec").addEventListener("input", () => void validate());
   $("#arch-scaffold").addEventListener("click", () => void scaffold());
+  // Palette: add a component of the chosen kind.
+  $("#arch-overlay").querySelectorAll<HTMLElement>(".arch-add").forEach((b) =>
+    b.addEventListener("click", () => addComponent(b.dataset.kind!)),
+  );
+  // Click a node, then another, to connect them (relation inferred from the two kinds).
+  $("#arch-diagram").addEventListener("click", (e) => {
+    const g = (e.target as HTMLElement).closest(".arch-node") as HTMLElement | null;
+    if (g?.dataset.id) onNodeClick(g.dataset.id);
+  });
+}
+
+/** Mutate the design in place, write it back to the spec, and re-validate (which re-renders). */
+function setArch(a: Architecture): void {
+  ($("#arch-spec") as HTMLTextAreaElement).value = JSON.stringify(a, null, 2);
+  void validate();
+}
+
+function addComponent(kind: string): void {
+  const a = currentArch();
+  if (!a) return;
+  const n = a.components.filter((c) => c.kind === kind).length + 1;
+  const id = `${kind}${n}`;
+  const name = kind.charAt(0).toUpperCase() + kind.slice(1) + ` ${n}`;
+  a.components.push({ id, name, kind, ...(kind === "store" ? { outbox: false } : {}) });
+  setArch(a);
+}
+
+/** Default relation between two components, so connecting is one click each (no form). */
+function inferRelation(from: string, to: string, a: Architecture): { relation: string; event?: string } | null {
+  const fk = a.components.find((c) => c.id === from)?.kind;
+  const tk = a.components.find((c) => c.id === to)?.kind;
+  if (!fk || !tk) return null;
+  if (tk === "store") return { relation: fk === "relay" ? "reads" : "writes" };
+  if (tk === "broker") {
+    const event = (window.prompt("Event name (routing key):", "order.placed") ?? "").trim();
+    if (!event) return null;
+    return { relation: fk === "consumer" ? "consumes" : "publishes", event };
+  }
+  if (fk === "broker" && tk === "consumer") return { relation: "routesTo" };
+  return { relation: "writes" }; // generic fallback
+}
+
+function onNodeClick(id: string): void {
+  if (connectFrom === null) {
+    connectFrom = id;
+    $("#arch-hint").textContent = `Connecting from "${id}" — click the target (or this node to cancel).`;
+    $("#arch-diagram").querySelectorAll(".arch-node").forEach((g) =>
+      g.classList.toggle("sel", (g as HTMLElement).dataset.id === id),
+    );
+    return;
+  }
+  const from = connectFrom;
+  connectFrom = null;
+  $("#arch-hint").textContent = "Click a node, then another, to connect them.";
+  if (from === id) {
+    void validate(); // clicked the same node → cancel selection
+    return;
+  }
+  const a = currentArch();
+  if (!a) return;
+  const rel = inferRelation(from, id, a);
+  if (!rel) {
+    void validate();
+    return;
+  }
+  a.connections.push({ from, to: id, relation: rel.relation, ...(rel.event ? { event: rel.event } : {}) });
+  setArch(a);
 }
 
 export function openArch(): void {
@@ -117,9 +186,9 @@ function renderDiagram(arch: Architecture, findings: Finding[]): void {
   const nodes = arch.components
     .map((c) => {
       const p = pos.get(c.id)!;
-      const cls = `arch-node ${c.kind}${bad.has(c.id) ? " bad" : ""}`;
+      const cls = `arch-node ${c.kind}${bad.has(c.id) ? " bad" : ""}${connectFrom === c.id ? " sel" : ""}`;
       return (
-        `<g class="${cls}"><rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="7"/>` +
+        `<g class="${cls}" data-id="${esc(c.id)}"><rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="7"/>` +
         `<text x="${p.x + NW / 2}" y="${p.y + 17}" class="arch-node-name">${esc(c.name)}</text>` +
         `<text x="${p.x + NW / 2}" y="${p.y + 32}" class="arch-node-kind">${esc(c.kind)}${c.outbox ? " · outbox" : ""}</text></g>`
       );

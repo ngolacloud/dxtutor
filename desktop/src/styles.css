@@ -2838,6 +2838,15 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .arch-node.consumer rect { stroke: #b48ead; }
 .arch-node.relay rect { stroke: #9d9d9d; }
 .arch-node.bad rect { stroke: var(--red); stroke-width: 2; }
+.arch-node { cursor: pointer; }
+.arch-node.sel rect { stroke: var(--accent); stroke-width: 2.5; }
+.arch-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.arch-tb-add { font-size: 11px; color: var(--fg-dim); }
+.arch-add { font-family: var(--font-mono); font-size: 11px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+.arch-add:hover { border-color: var(--accent); color: var(--fg-bright); }
+.arch-hint { font-size: 11px; color: var(--fg-muted); margin-left: auto; }
+.arch-right { display: flex; flex-direction: column; min-height: 0; }
+.arch-right .arch-diagram { flex: 1; }
 .arch-node-name { fill: var(--fg-bright); font-size: 11px; font-weight: 600; text-anchor: middle; font-family: var(--font-mono); }
 .arch-node-kind { fill: var(--fg-muted); font-size: 9px; text-anchor: middle; font-family: var(--font-mono); }
 .arch-edge { stroke: var(--fg-muted); stroke-width: 1.3; }

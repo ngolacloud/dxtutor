@@ -400,7 +400,18 @@
             <textarea id="arch-spec" class="arch-spec" spellcheck="false" aria-label="Architecture design spec"></textarea>
             <div id="arch-findings" class="arch-findings"></div>
           </div>
-          <div id="arch-diagram" class="arch-diagram" aria-label="Architecture diagram"></div>
+          <div class="arch-right">
+            <div class="arch-toolbar">
+              <span class="arch-tb-add">Add:</span>
+              <button class="arch-add" data-kind="service">+ Service</button>
+              <button class="arch-add" data-kind="store">+ Store</button>
+              <button class="arch-add" data-kind="relay">+ Relay</button>
+              <button class="arch-add" data-kind="broker">+ Broker</button>
+              <button class="arch-add" data-kind="consumer">+ Consumer</button>
+              <span id="arch-hint" class="arch-hint">Click a node, then another, to connect them.</span>
+            </div>
+            <div id="arch-diagram" class="arch-diagram" aria-label="Architecture diagram"></div>
+          </div>
         </div>
       </div>
     </div>
