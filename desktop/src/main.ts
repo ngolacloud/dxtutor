@@ -3559,7 +3559,7 @@ async function main() {
   initSearch({ ensureWorkspaceMode: () => setMode("workspace") }); // Search panel
   initQuickOpen({ ensureWorkspaceMode: () => setMode("workspace") }); // Ctrl+P quick-open
   initGit({ ensureWorkspaceMode: () => setMode("workspace") }); // Git panel
-  setCodeMapHandler((symbol) => void openCodeMap(symbol)); // editor → CodeMap
+  setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing
   setEditHandler((path, content, lang) => startEdit(path, content, lang)); // editor → Edit with AI

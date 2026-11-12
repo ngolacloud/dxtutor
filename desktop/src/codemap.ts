@@ -38,18 +38,70 @@ export function initCodeMap(deps: { ensureWorkspaceMode: () => void }): void {
   $("#codemap-close").addEventListener("click", () => $("#codemap-overlay").classList.add("hidden"));
 }
 
-export async function openCodeMap(symbol: string): Promise<void> {
+interface ResolvedDef {
+  file: string;
+  line: number;
+  col: number;
+}
+
+export async function openCodeMap(
+  symbol: string,
+  pos?: { file: string; line: number; col: number },
+): Promise<void> {
   const root = workspaceRoot();
   if (!root) return;
   $("#codemap-overlay").classList.remove("hidden");
   $("#codemap-title").textContent = symbol;
   $("#codemap-body").innerHTML = `<div class="cm-note">Mapping <code>${esc(symbol)}</code>…</div>`;
+
+  // When we have a cursor position, try rust-analyzer first for a RESOLVED map; fall back
+  // to the syntactic (inferred) map when it can't resolve (absent/unindexed/non-Rust).
+  if (pos) {
+    try {
+      const resolved = await resolvedMap(symbol, root, pos);
+      if (resolved) {
+        render(resolved, root);
+        return;
+      }
+    } catch {
+      /* fall through to syntactic */
+    }
+  }
   try {
     const rel = await invoke<Relations>("symbol_relations", { root, symbol });
     render(rel, root);
   } catch (e) {
     $("#codemap-body").innerHTML = `<div class="cm-note err">CodeMap failed: ${esc(String(e))}</div>`;
   }
+}
+
+/** Build a resolved Relations from rust-analyzer's definition + references, or null when
+ *  nothing resolves (so the caller uses the syntactic map). */
+async function resolvedMap(
+  symbol: string,
+  root: string,
+  pos: { file: string; line: number; col: number },
+): Promise<Relations | null> {
+  const toRef = (d: ResolvedDef): SymbolRef => ({
+    name: symbol,
+    kind: "other",
+    file: d.file,
+    line: d.line,
+    col: d.col,
+  });
+  const [def, refs] = await Promise.all([
+    invoke<ResolvedDef | null>("resolve_definition", { root, file: pos.file, line: pos.line, col: pos.col }),
+    invoke<ResolvedDef[]>("resolve_references", { root, file: pos.file, line: pos.line, col: pos.col }),
+  ]);
+  if (!def && (!refs || refs.length === 0)) return null;
+  return {
+    symbol,
+    resolution: "resolved",
+    definitions: def ? [toRef(def)] : [],
+    references: (refs ?? []).map(toRef),
+    callers: [],
+    ambiguous: false,
+  };
 }
 
 function render(rel: Relations, root: string): void {
