@@ -177,6 +177,23 @@ body {
 .menu span { cursor: default; }
 .menu span:hover { color: var(--fg-bright); }
 .title-center { color: var(--fg-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Title-bar right extras (prototype parity): update pill + layout/assistant/account icons. */
+.tb-extras { display: flex; align-items: center; gap: 3px; -webkit-app-region: no-drag; flex: none; }
+.tb-update {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--accent-soft); color: var(--accent-hover);
+  border: 1px solid rgba(224, 108, 59, 0.35); border-radius: 7px;
+  padding: 3px 10px; font-family: var(--font-ui); font-size: 11.5px; font-weight: 500; cursor: pointer;
+}
+.tb-update:hover { background: rgba(224, 108, 59, 0.2); }
+.tb-ic {
+  width: 30px; height: 24px; display: grid; place-items: center;
+  background: none; border: none; color: var(--fg-muted); border-radius: 6px; cursor: pointer;
+}
+.tb-ic:hover { background: var(--bg-hover); color: var(--fg); }
+.tb-ic.on { color: var(--accent-hover); }
+.tb-xic { width: 15px; height: 15px; display: block; }
+.tb-update .tb-xic { width: 13px; height: 13px; }
 .title-right { display: flex; align-items: stretch; gap: 0; -webkit-app-region: no-drag; margin-right: -10px; }
 /* Real window controls (minimize / maximize·restore / close), IDE-style. */
 .win-ctrl {

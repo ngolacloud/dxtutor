@@ -3544,6 +3544,14 @@ function wireChrome() {
   // Keep the Problems count + list in sync as diagnostics change.
   monaco.editor.onDidChangeMarkers(() => renderProblems());
   renderProblems(); // initial count
+  // Title-bar right extras (prototype parity).
+  document.getElementById("tb-update")?.addEventListener("click", () => menuToast("Já tens a versão mais recente ✓"));
+  document.getElementById("tb-toggle-panel")?.addEventListener("click", () => toggleTerminal());
+  document.getElementById("tb-toggle-agent")?.addEventListener("click", (e) => {
+    (e.currentTarget as HTMLElement).classList.toggle("on");
+    clickBtn('.act[data-view="assistant"]');
+  });
+  document.getElementById("tb-account")?.addEventListener("click", () => menuToast("angolar.devops — Plano Max"));
   $("#btn-reset-profile").addEventListener("click", (e) => {
     e.stopPropagation(); // don't also toggle the section header underneath
     resetProfile();
