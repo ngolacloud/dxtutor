@@ -142,3 +142,42 @@ repo's own Rust files before the panel and the other languages are added.
 - A delayed result must never paint over already-fixed code (version association).
 - Provider availability affects only the actions that depend on it; the primary review
   and local navigation must work with AI off and the network down.
+
+## 7. Trust contracts (P0) — done
+
+The three confidence-affecting regressions from the audit are closed and guarded by named
+regression tests. Each test fails on the pre-fix behaviour and passes with the fix.
+
+| P0 | Fix | Named regression test | Revert to see it fail |
+|----|-----|-----------------------|-----------------------|
+| Solution leak in a failed assessment | `reveal_gabarito(passed, …)` gates the gabarito; failed → `gabarito: null` | `dxtutor-desktop` `tests::failed_attempt_hides_gabarito` | make `reveal_gabarito` always `Some` |
+| Generic chat bypasses the study contract | `tutor-llm::policy` is the backend authority; study-mode chat is tutor-routed, mode fails closed | `tutor-llm` `policy::tests::study_mode_forbids_solution_and_buffer_writes` | make `policy_for(Study, …)` return `OPEN` |
+| Stale fix hits other lines | `content_version` + `verify_fix`; frontend verifies identity before paint and apply | `tutor-eval` `review::tests::stale_buffer_without_snippet_relies_on_hash` (hash gate) and `stale_revision_fix_is_refused` (snippet gate) | remove the hash gate in `verify_fix` |
+
+**Revert recipe (prove a regression):** commit first, then revert the single fix, run the
+named test (it fails), restore with `git checkout`. An uncommitted change is discarded by
+the checkout — always commit before a destructive proof.
+
+## Harness
+
+`scripts/verify.sh` is the reproducible verification entry — same command, no mutation of
+the example project, no dependence on a prior run.
+
+| Lane | Runs | Evidence |
+|------|------|----------|
+| `contracts` | the three P0 regression suites (tutor-eval, tutor-llm, dxtutor-desktop) | tests at the real serialization / apply boundaries |
+| `editor` | `tsc --noEmit` + `vite build` | the concurrency/apply logic compiles |
+| `workspace` | `cargo test --workspace` | all crate tests |
+| `integration` (`--all`) | analyzer-backed e2e (clippy/go/ruff) | real diagnostics, or **not executed (missing tool)** |
+
+A mandatory failure fails the process; an absent tool/credential is reported *not executed*,
+never a silent pass. Distinguish **simulated** (offline/fake), **validated with a real
+tool**, and **demonstrated through the IDE** when reporting.
+
+## Still to validate (conditions)
+
+- **P0-2 live**: exercise the Dev Assistant chat in study mode against a real provider
+  (Ollama/Qwen3 first) — needs `npm run tauri dev` + a display + a pulled model.
+- **P0-3 through the IDE**: drive review→insert→apply-refused live — needs a display.
+- Per-language semantic navigation (rust-analyzer / gopls) and DAP debug: see §4 phases
+  P2–P3; gopls and provider keys were absent on the audited host.
