@@ -1225,6 +1225,21 @@ async fn git_show(root: String, hash: String) -> Result<String, String> {
     .map_err(|e| format!("git task failed: {e}"))
 }
 
+/// Run a delegated task in an isolated git worktree of HEAD: apply `writes` ([relPath,
+/// content] pairs) there and return the unified diff, WITHOUT touching the working tree
+/// (RF-AG-01/05). The caller reviews the patch before anything lands.
+#[tauri::command]
+async fn agent_isolated_patch(
+    root: String,
+    writes: Vec<(String, String)>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::worktree_patch(std::path::Path::new(&root), &writes)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))?
+}
+
 #[tauri::command]
 async fn git_branches(root: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -2026,6 +2041,7 @@ fn main() {
             git_branches,
             git_checkout,
             git_create_branch,
+            agent_isolated_patch,
             git_log,
             git_show,
             git_branch,

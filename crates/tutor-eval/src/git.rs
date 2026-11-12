@@ -143,6 +143,38 @@ pub fn show(root: &Path, hash: &str) -> String {
     git(root, &["show", "--no-color", "--stat", "--patch", hash]).unwrap_or_default()
 }
 
+/// Run an isolated task in a throwaway **git worktree** of HEAD: apply `writes` (relative
+/// path → content) there and return the unified diff — WITHOUT touching the working tree
+/// (RF-AG-01/05). The worktree is always removed afterwards. `Err` on git failure.
+pub fn worktree_patch(root: &Path, writes: &[(String, String)]) -> Result<String, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = std::env::temp_dir().join(format!(
+        "dxtutor-wt-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let tmp_s = tmp.to_string_lossy().into_owned();
+    git_mutate(root, &["worktree", "add", "--detach", &tmp_s, "HEAD"])?;
+
+    let result = (|| -> Result<String, String> {
+        for (rel, content) in writes {
+            let p = tmp.join(rel);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&p, content).map_err(|e| e.to_string())?;
+        }
+        git_mutate(&tmp, &["add", "-A"])?;
+        Ok(git(&tmp, &["diff", "--cached"]).unwrap_or_default())
+    })();
+
+    // Always clean up the worktree (best-effort), then also prune its admin entry.
+    let _ = git_mutate(root, &["worktree", "remove", "--force", &tmp_s]);
+    let _ = git_mutate(root, &["worktree", "prune"]);
+    result
+}
+
 /// Local branch names (`git branch`), current branch first. Empty when not a repo.
 pub fn branches(root: &Path) -> Vec<String> {
     let out = match git(root, &["branch", "--format=%(refname:short)"]) {
@@ -417,6 +449,31 @@ mod tests {
 
         let patch = show(root, &commits[0].hash);
         assert!(patch.contains("+two"), "{patch}");
+    }
+
+    #[test]
+    fn worktree_patch_isolates_the_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        run(root, &["init", "-q"]);
+        run(root, &["config", "user.email", "t@t"]);
+        run(root, &["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        run(root, &["add", "a.txt"]);
+        run(root, &["commit", "-q", "-m", "init"]);
+
+        let patch = worktree_patch(
+            root,
+            &[("a.txt".into(), "one\ntwo\n".into()), ("new.txt".into(), "hi\n".into())],
+        )
+        .unwrap();
+        assert!(patch.contains("+two"), "patch shows the edit:\n{patch}");
+        assert!(patch.contains("new.txt"), "patch shows the new file:\n{patch}");
+
+        // The real working tree is UNTOUCHED (no two, no new file, tree clean).
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one\n");
+        assert!(!root.join("new.txt").exists());
+        assert!(changed_files(root).is_empty(), "working tree stayed clean");
     }
 
     #[test]
