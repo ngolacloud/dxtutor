@@ -949,6 +949,20 @@ async fn symbol_relations(
     .map_err(|e| format!("codemap failed: {e}"))
 }
 
+/// Section 5 (daily work): every symbol definition across the project at `root` (Rust via
+/// `syn`; Go/Python syntactic), for a "go to symbol" palette. Runs off the UI thread.
+#[tauri::command]
+async fn list_symbols(
+    root: String,
+    max: Option<usize>,
+) -> Result<Vec<tutor_eval::codemap::SymbolRef>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::codemap::all_symbols(std::path::Path::new(&root), max.unwrap_or(5000))
+    })
+    .await
+    .map_err(|e| format!("list_symbols task failed: {e}"))
+}
+
 /// Section 5: discover the `#[test]` functions under `root` so the UI can list them and
 /// run one individually. Syntactic (`syn`); notes `#[ignore]`. Runs off the UI thread.
 #[tauri::command]
@@ -1198,6 +1212,7 @@ fn main() {
             verify_review_fix,
             study_policy,
             symbol_relations,
+            list_symbols,
             list_tests,
             run_test,
             run_all_tests,

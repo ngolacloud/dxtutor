@@ -171,6 +171,66 @@ pub fn symbol_relations(root: &Path, symbol: &str) -> Result<Relations> {
     })
 }
 
+/// Every top-level symbol definition across the project (Rust via `syn`: fns, methods,
+/// types, consts/statics/type-aliases; Go and Python via their syntactic line scanners),
+/// for a workspace "go to symbol" palette. Capped; sorted by name then file.
+pub fn all_symbols(root: &Path, max: usize) -> Vec<SymbolRef> {
+    let mut out = Vec::new();
+
+    // Rust (precise, from the AST).
+    for path in rust_files(root) {
+        if out.len() >= max {
+            break;
+        }
+        let code = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let file = display_path(&path, root);
+        if let Some(idx) = index_file(&file, &code) {
+            for f in idx.fns {
+                out.push(SymbolRef {
+                    name: f.name,
+                    kind: f.kind,
+                    file: file.clone(),
+                    line: f.def_line,
+                    col: f.def_col,
+                });
+            }
+            out.extend(idx.types);
+        }
+    }
+
+    // Go and Python (syntactic, by line).
+    for (ext, name_of) in [("go", go_def_name as fn(&str) -> Option<&str>), ("py", python_def_name)] {
+        for path in files_with_ext(root, ext) {
+            if out.len() >= max {
+                break;
+            }
+            let code = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let file = display_path(&path, root);
+            for (i, line) in code.lines().enumerate() {
+                if let Some(n) = name_of(line) {
+                    out.push(SymbolRef {
+                        name: n.to_string(),
+                        kind: SymbolKind::Other,
+                        file: file.clone(),
+                        line: (i + 1) as u32,
+                        col: 1,
+                    });
+                }
+            }
+        }
+    }
+
+    out.sort_by(|a, b| a.name.cmp(&b.name).then(a.file.cmp(&b.file)));
+    out.truncate(max);
+    out
+}
+
 // ── Indexing ─────────────────────────────────────────────────────────────────────
 
 fn index_file(file: &str, code: &str) -> Option<FileIndex> {
@@ -472,6 +532,26 @@ mod tests {
         assert_eq!(rel.definitions.len(), 2, "defs: {:?}", rel.definitions);
         assert!(rel.ambiguous, "two same-named defs must be ambiguous");
         assert_eq!(rel.resolution, Resolution::Inferred);
+    }
+
+    #[test]
+    fn all_symbols_reune_rust_go_python() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/lib.rs"), "pub fn rust_fn() {}\npub struct RustType;\n").unwrap();
+        fs::write(root.join("srv.go"), "package d\nfunc GoFunc() {}\ntype GoType struct{}\n").unwrap();
+        fs::write(root.join("app.py"), "class PyClass:\n    def py_method(self):\n        pass\n").unwrap();
+
+        let syms = all_symbols(root, 1000);
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        for want in ["rust_fn", "RustType", "GoFunc", "GoType", "PyClass", "py_method"] {
+            assert!(names.contains(&want), "faltou {want} em {names:?}");
+        }
+        // Ordenado por nome (palette estável).
+        let mut sorted = syms.clone();
+        sorted.sort_by(|a, b| a.name.cmp(&b.name).then(a.file.cmp(&b.file)));
+        assert_eq!(syms.iter().map(|s| &s.name).collect::<Vec<_>>(), sorted.iter().map(|s| &s.name).collect::<Vec<_>>());
     }
 
     #[test]
