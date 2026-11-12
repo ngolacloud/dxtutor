@@ -28,14 +28,14 @@ import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler } from "./workspace";
+import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler } from "./workspace";
 import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
 import { initSearch, openSearch } from "./search";
 import { initQuickOpen } from "./quickopen";
 import { initGit, openGit, refreshGitBranch } from "./git";
-import { initAssistant, openAssistant } from "./assistant";
+import { initAssistant, openAssistant, startLocalizedEdit } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
 import { t, initI18n, getLocale, setLocale, onLocaleChange, type Locale } from "./i18n";
@@ -3563,6 +3563,7 @@ async function main() {
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing
   setEditHandler((path, content, lang) => startEdit(path, content, lang)); // editor → Edit with AI
+  setLocalizedEditHandler((path, sl, el, selected, lang) => void startLocalizedEdit(path, sl, el, selected, lang)); // editor → localized edit
   initDebug({ getTarget: currentDebugTarget }); // wire the Run-and-Debug panel
   await setupTerminal();
 

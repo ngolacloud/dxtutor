@@ -724,6 +724,23 @@ export function initWorkspace() {
     },
   });
 
+  // "Improve this block" (Alt+E) — localized edit of ONLY the selection: streams a
+  // replacement into just that range, leaving the rest of the file untouched.
+  wsEditor.addAction({
+    id: "dxtutor.editSelection",
+    label: "Improve this block (AI)",
+    contextMenuGroupId: "modification",
+    contextMenuOrder: 1.4,
+    keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyE],
+    run: (ed) => {
+      const sel = ed.getSelection();
+      const model = ed.getModel();
+      if (!sel || sel.isEmpty() || !model || !activeTabPath || !localizedEditHandler) return;
+      const selected = model.getValueInRange(sel);
+      localizedEditHandler(activeTabPath, sel.startLineNumber, sel.endLineNumber, selected, model.getLanguageId());
+    },
+  });
+
   // Sidebar header actions.
   $("#ws-act-open").addEventListener("click", () => void openFolder());
   $("#ws-act-newfile").addEventListener("click", () => void createEntry(false));
@@ -891,6 +908,62 @@ export function editorStreamPath(): string | null {
   return editorStream?.path ?? null;
 }
 
+// ── Localized edit: stream generated code into ONE block/method range ─────────────
+// Unlike beginEditorStream (whole file), this replaces only the target line range, so the
+// rest of the file — cursor/scroll outside, unsaved edits elsewhere — is untouched.
+
+let rangeStream: {
+  model: monaco.editor.ITextModel;
+  startLine: number;
+  curEndLine: number; // moves as the generated text grows/shrinks
+  original: string; // the block's original text, to restore on empty/error
+} | null = null;
+
+/** Begin streaming a replacement into lines `[startLine..endLine]` (1-based, inclusive) of
+ *  `path`'s editor tab. Opens the file, clamps the range to the buffer, and opens one undo
+ *  group. Returns false if the editor could not be prepared. */
+export async function beginRangeStream(
+  path: string,
+  startLine: number,
+  endLine: number,
+): Promise<boolean> {
+  await openFile(path);
+  const tab = tabByPath(path);
+  const model = wsEditor?.getModel();
+  if (!wsEditor || !tab || !model) return false;
+  const max = model.getLineCount();
+  const sl = Math.max(1, Math.min(startLine, max));
+  const el = Math.max(sl, Math.min(endLine, max));
+  const original = model.getValueInRange(new monaco.Range(sl, 1, el, model.getLineMaxColumn(el)));
+  rangeStream = { model: tab.model, startLine: sl, curEndLine: el, original };
+  wsEditor.pushUndoStop();
+  return true;
+}
+
+/** Replace the current target range with `text` (per token chunk); only the block changes. */
+export function pushRangeStream(text: string): void {
+  if (!rangeStream) return;
+  const { model, startLine, curEndLine } = rangeStream;
+  const endCol = model.getLineMaxColumn(curEndLine);
+  model.pushEditOperations([], [{ range: new monaco.Range(startLine, 1, curEndLine, endCol), text }], () => null);
+  rangeStream.curEndLine = startLine + text.split("\n").length - 1; // track the moved end
+}
+
+/** Finish the localized stream: close the undo group and reveal the block. */
+export function endRangeStream(): void {
+  if (rangeStream && wsEditor) {
+    wsEditor.pushUndoStop();
+    wsEditor.focus();
+    wsEditor.revealLineInCenterIfOutsideViewport(rangeStream.startLine);
+  }
+  rangeStream = null;
+}
+
+/** The block's original text (to restore when a localized stream yields nothing/errors). */
+export function rangeStreamOriginal(): string {
+  return rangeStream?.original ?? "";
+}
+
 /** Absolute path of the file in the active workspace tab, if any. */
 export function activeFilePath(): string | null {
   return activeTabPath;
@@ -960,6 +1033,16 @@ export function setCodeMapHandler(fn: (symbol: string, pos?: CodeMapPos) => void
 let editHandler: ((path: string, content: string, lang: string) => void) | null = null;
 export function setEditHandler(fn: (path: string, content: string, lang: string) => void): void {
   editHandler = fn;
+}
+
+/** Register the handler that starts a LOCALIZED edit of a line range (wired by main.ts). */
+let localizedEditHandler:
+  | ((path: string, startLine: number, endLine: number, selected: string, lang: string) => void)
+  | null = null;
+export function setLocalizedEditHandler(
+  fn: (path: string, startLine: number, endLine: number, selected: string, lang: string) => void,
+): void {
+  localizedEditHandler = fn;
 }
 
 /** Current in-editor content of `path` if a tab is open, else null (unopened). */

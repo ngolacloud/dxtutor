@@ -9,10 +9,14 @@ import {
   activeFilePath,
   activeSelection,
   beginEditorStream,
+  beginRangeStream,
   currentFileContent,
   endEditorStream,
+  endRangeStream,
   isDirty,
   pushEditorStream,
+  pushRangeStream,
+  rangeStreamOriginal,
   revealPath,
   workspaceRoot,
 } from "./workspace";
@@ -62,6 +66,8 @@ let codeStream: {
 } | null = null;
 const writeState = new Map<number, "writing" | "done">(); // message idx -> code-stream state
 const shrinkWarn = new Set<number>(); // done writes where the file shrank a lot (review it)
+// Localized edit: a code stream scoped to ONE block/range in the editor (not a whole file).
+let localStream: { requestId: string; path: string; idx: number; accum: string } | null = null;
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -121,6 +127,11 @@ export function initAssistant(): void {
   // Live token stream from the backend. Tokens route to the EDITOR during a code stream
   // (Dev delegate), or to the chat bubble otherwise.
   void listen<{ requestId: string; delta: string }>("llm://token", (e) => {
+    if (localStream && e.payload.requestId === localStream.requestId) {
+      localStream.accum += e.payload.delta;
+      pushRangeStream(stripFences(localStream.accum)); // build into the target block only
+      return;
+    }
     if (codeStream && e.payload.requestId === codeStream.requestId) {
       codeStream.accum += e.payload.delta;
       pushEditorStream(stripFences(codeStream.accum)); // build the code live in the tab
@@ -131,6 +142,21 @@ export function initAssistant(): void {
     renderMessages();
   });
   void listen<{ requestId: string }>("llm://done", (e) => {
+    if (localStream && e.payload.requestId === localStream.requestId) {
+      const ls = localStream;
+      const produced = stripFences(ls.accum).trim();
+      if (!produced) {
+        pushRangeStream(rangeStreamOriginal()); // nothing usable — restore the block
+        messages[ls.idx].content += " — ⚠ no replacement; block left unchanged.";
+      } else {
+        messages[ls.idx].content += " — ✓ done (review it; Ctrl+Z to revert).";
+      }
+      writeState.delete(ls.idx);
+      endRangeStream();
+      localStream = null;
+      finishStream();
+      return;
+    }
     if (codeStream && e.payload.requestId === codeStream.requestId) {
       const cs = codeStream;
       const produced = stripFences(cs.accum).trim();
@@ -169,6 +195,15 @@ export function initAssistant(): void {
     }
   });
   void listen<{ requestId: string; error: string }>("llm://error", (e) => {
+    if (localStream && e.payload.requestId === localStream.requestId) {
+      pushRangeStream(rangeStreamOriginal()); // restore the block on a mid-stream failure
+      endRangeStream();
+      messages[localStream.idx].content += ` — ⚠ ${e.payload.error}`;
+      writeState.delete(localStream.idx);
+      localStream = null;
+      finishStream();
+      return;
+    }
     if (codeStream && e.payload.requestId === codeStream.requestId) {
       // A mid-stream provider failure must not leave a partial/empty buffer — restore the
       // file to what it was before the generation started.
@@ -418,6 +453,77 @@ function stripFences(s: string): string {
 function codeTargetAbs(file: string): string | null {
   const root = workspaceRoot();
   return root ? `${root.replace(/\/$/, "")}/${file.replace(/^\.?\//, "")}` : null;
+}
+
+/** Localized edit: stream a replacement into ONLY the selected block (lines
+ *  `startLine..endLine`), leaving the rest of the file untouched. The target is shown in the
+ *  chat; the block is restored on empty/error; Stop / Ctrl+Z keep control. */
+export async function startLocalizedEdit(
+  path: string,
+  startLine: number,
+  endLine: number,
+  selected: string,
+  lang: string,
+): Promise<void> {
+  if (busy) return;
+  const instruction = (window.prompt(`Improve lines ${startLine}–${endLine} — how?`, "") ?? "").trim();
+  if (!instruction) return;
+
+  openAssistant();
+  const rel = path.split("/").pop() ?? path;
+  const idx =
+    messages.push({
+      role: "assistant",
+      content: `✏️ Improving \`${rel}\` lines ${startLine}–${endLine}: ${instruction}`,
+    }) - 1;
+  writeState.set(idx, "writing");
+  renderMessages();
+
+  const ok = await beginRangeStream(path, startLine, endLine);
+  if (!ok) {
+    actionErrors.set(idx, "could not open the target block in the editor");
+    writeState.delete(idx);
+    renderMessages();
+    return;
+  }
+
+  const rid = crypto.randomUUID();
+  localStream = { requestId: rid, path, idx, accum: "" };
+  busy = true;
+  currentRequestId = rid;
+  setStreaming(true);
+
+  const genMessages: ChatMsg[] = [
+    {
+      role: "system",
+      content:
+        `You are a precise code editor working on "${rel}" (${lang}). The user selected a ` +
+        `block (lines ${startLine}–${endLine}). Output ONLY the replacement for THAT block — ` +
+        `no fences, no explanation, no surrounding code, and keep the block's indentation. ` +
+        `Do not output the whole file.`,
+    },
+    {
+      role: "user",
+      content: `${instruction}\n\nThe selected block:\n${selected}`,
+    },
+  ];
+  try {
+    await invoke("assistant_chat_stream", {
+      messages: genMessages,
+      provider,
+      model: null,
+      requestId: rid,
+      mode: "workspace",
+      stepId: null,
+    });
+  } catch (e) {
+    pushRangeStream(rangeStreamOriginal());
+    endRangeStream();
+    actionErrors.set(idx, String(e));
+    writeState.delete(idx);
+    localStream = null;
+    finishStream();
+  }
 }
 
 /** Dev delegate: stream the generated file content LIVE into the editor tab. The chat
