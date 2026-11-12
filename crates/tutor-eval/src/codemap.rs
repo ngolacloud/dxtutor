@@ -152,9 +152,10 @@ pub fn symbol_relations(root: &Path, symbol: &str) -> Result<Relations> {
 
     dedup(&mut callers);
 
-    // Go definitions (syntactic): makes "go to definition" work for Go symbols too. Go
-    // references/callers need a tokenizer and are intentionally not inferred here.
+    // Go and Python definitions (syntactic): make "go to definition" work for those
+    // symbols too. Their references/callers need a tokenizer and are not inferred here.
     definitions.extend(go_definitions(root, symbol));
+    definitions.extend(python_definitions(root, symbol));
 
     // Homonyms: more than one definition with this name means the syntactic matcher
     // cannot say which one each reference binds to — flag it so the UI is honest.
@@ -343,15 +344,45 @@ fn go_def_name(line: &str) -> Option<&str> {
 /// Syntactic Go definitions of `symbol` across `.go` files under `root`. Definitions only
 /// (precise); Go references/callers need a tokenizer and are not inferred here.
 pub(crate) fn go_definitions(root: &Path, symbol: &str) -> Vec<SymbolRef> {
+    defs_by_line(root, "go", symbol, go_def_name)
+}
+
+/// Top-level Python definition name on a line, if any: `def name(` / `class Name(` /
+/// `class Name:`. Indentation-tolerant, so methods inside classes count too.
+fn python_def_name(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    for kw in ["def ", "class "] {
+        if let Some(rest) = line.strip_prefix(kw) {
+            let end = rest.find(|c: char| c == '(' || c == ':' || c.is_whitespace())?;
+            return (end > 0).then(|| &rest[..end]);
+        }
+    }
+    None
+}
+
+/// Syntactic Python definitions of `symbol` (`def`/`class`) across `.py` files. Definitions
+/// only; references need a tokenizer and are not inferred here.
+pub(crate) fn python_definitions(root: &Path, symbol: &str) -> Vec<SymbolRef> {
+    defs_by_line(root, "py", symbol, python_def_name)
+}
+
+/// Shared line scanner for the syntactic language adapters: every line whose definition
+/// name (via `name_of`) equals `symbol` becomes a `SymbolRef`.
+fn defs_by_line(
+    root: &Path,
+    ext: &str,
+    symbol: &str,
+    name_of: fn(&str) -> Option<&str>,
+) -> Vec<SymbolRef> {
     let mut out = Vec::new();
-    for path in files_with_ext(root, "go") {
+    for path in files_with_ext(root, ext) {
         let code = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(_) => continue,
         };
         let file = display_path(&path, root);
         for (i, line) in code.lines().enumerate() {
-            if go_def_name(line) == Some(symbol) {
+            if name_of(line) == Some(symbol) {
                 out.push(SymbolRef {
                     name: symbol.to_string(),
                     kind: SymbolKind::Other,
@@ -451,6 +482,34 @@ mod tests {
         assert_eq!(go_def_name("const MaxSize = 10"), Some("MaxSize"));
         assert_eq!(go_def_name("var Logger *log.Logger"), Some("Logger"));
         assert_eq!(go_def_name("    x := 1"), None);
+    }
+
+    #[test]
+    fn python_def_name_reconhece_formas() {
+        assert_eq!(python_def_name("def add(a, b):"), Some("add"));
+        assert_eq!(python_def_name("    def method(self):"), Some("method"));
+        assert_eq!(python_def_name("class Node:"), Some("Node"));
+        assert_eq!(python_def_name("class Server(Base):"), Some("Server"));
+        assert_eq!(python_def_name("x = 1"), None);
+    }
+
+    #[test]
+    fn navega_para_definicoes_python() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("app.py"),
+            "class Server:\n    def start(self):\n        pass\ndef helper():\n    pass\n",
+        )
+        .unwrap();
+        for sym in ["Server", "start", "helper"] {
+            let rel = symbol_relations(root, sym).expect("relations");
+            assert!(
+                rel.definitions.iter().any(|d| d.name == sym && d.file.ends_with("app.py")),
+                "{sym}: sem definição Python em {:?}",
+                rel.definitions
+            );
+        }
     }
 
     #[test]
