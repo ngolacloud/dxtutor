@@ -40,7 +40,7 @@ pub mod tracer;
 pub use advisor::advise;
 pub use complexity::{Class, Confidence, Estimate, Sample};
 pub use container::{
-    cache_volumes_for, current_engine, engine_available, engine_name, image_for, parse_engine,
+    build_image, cache_volumes_for, current_engine, engine_available, engine_name, image_for, parse_engine,
     run_in_container, run_python_in_sandbox, run_rust_snippet_in_container,
     run_rust_snippet_in_container_deps, sandbox_engine, set_engine, ContainerSpec, SandboxEngine,
 };

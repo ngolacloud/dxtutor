@@ -318,6 +318,30 @@ pub fn delonix_available() -> bool {
     engine_available(SandboxEngine::Delonix)
 }
 
+/// Constrói uma imagem a partir de um `dockerfile` (com `context` como contexto de build)
+/// e etiqueta-a como `tag`, usando o CLI do motor activo (`<engine> build -t tag -f
+/// dockerfile context`). Devolve a saída combinada; erro em falha de build.
+pub fn build_image(context: &Path, dockerfile: &Path, tag: &str) -> Result<String> {
+    let engine = container_engine();
+    let bin = engine_bin(engine);
+    let out = Command::new(&bin)
+        .arg("build")
+        .arg("-t")
+        .arg(tag)
+        .arg("-f")
+        .arg(dockerfile)
+        .arg(context)
+        .output()
+        .with_context(|| format!("falha a lançar `{} build`", bin.display()))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() {
+        Ok(format!("{stdout}{stderr}"))
+    } else {
+        anyhow::bail!("build falhou:\n{stderr}{stdout}")
+    }
+}
+
 /// Gera um nome de container único sem depender de `Date`/`rand` (proibidos no host):
 /// `dxtutor-<pid>-<contador>-<nanos>`, onde o contador é atómico global e os nanos
 /// vêm de um [`Instant`] de arranque do processo.

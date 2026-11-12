@@ -1586,15 +1586,56 @@ async fn devcontainer_info(root: String) -> Result<DevcontainerInfo, String> {
 struct DevcontainerUp {
     ok: bool,
     image: String,
+    built: bool,
     ran: String,
     stdout: String,
     stderr: String,
 }
 
-/// Actually bring up the Dev Container: pull/run its image with the workspace bind-mounted
-/// and execute its `postCreateCommand` (or a readiness probe) inside it, via the active
-/// container engine. One-shot (not a persistent attached session), but it genuinely runs
-/// the project's code inside the devcontainer image. Errors when there's no image to run.
+/// Resolve the image to run for a devcontainer: an explicit `image`, or a built image from
+/// `build.dockerfile`. Returns `(image_ref, built)` — building when necessary. Build output
+/// is prefixed onto `log` so the caller can surface it.
+fn devcontainer_image(
+    base: &std::path::Path,
+    v: &serde_json::Value,
+    log: &mut String,
+) -> Result<(String, bool), String> {
+    if let Some(img) = v.get("image").and_then(|i| i.as_str()) {
+        return Ok((img.to_string(), false));
+    }
+    // build: { dockerfile, context } — dockerfile path is relative to the .devcontainer dir.
+    let build = v.get("build").ok_or_else(|| {
+        "devcontainer.json has neither `image` nor `build.dockerfile`.".to_string()
+    })?;
+    let dockerfile = build
+        .get("dockerfile")
+        .and_then(|d| d.as_str())
+        .ok_or_else(|| "build has no `dockerfile`.".to_string())?;
+    // The .devcontainer directory is the reference dir for build paths.
+    let dc_dir = base.join(".devcontainer");
+    let ref_dir = if dc_dir.is_dir() { dc_dir } else { base.to_path_buf() };
+    let dockerfile_path = ref_dir.join(dockerfile);
+    let context = build
+        .get("context")
+        .and_then(|c| c.as_str())
+        .map(|c| ref_dir.join(c))
+        .unwrap_or_else(|| ref_dir.clone());
+    let tag = format!(
+        "dxtutor-dc-{}",
+        base.file_name()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_else(|| "project".into())
+    );
+    log.push_str(&format!("▸ building {tag} from {}\n", dockerfile_path.display()));
+    let out = tutor_eval::build_image(&context, &dockerfile_path, &tag).map_err(|e| e.to_string())?;
+    log.push_str(&out);
+    log.push('\n');
+    Ok((tag, true))
+}
+
+/// Bring the Dev Container up: resolve/build its image, then run `postCreateCommand` (or a
+/// readiness probe) inside it with the workspace bind-mounted, via the active engine. Now
+/// supports Dockerfile-based devcontainers (it builds first). One-shot per call.
 #[tauri::command]
 async fn devcontainer_up(root: String) -> Result<DevcontainerUp, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1608,14 +1649,8 @@ async fn devcontainer_up(root: String) -> Result<DevcontainerUp, String> {
         let v: serde_json::Value = serde_json::from_str(&strip_jsonc_comments(&text))
             .map_err(|e| format!("devcontainer.json is not valid JSON: {e}"))?;
 
-        let image = v
-            .get("image")
-            .and_then(|i| i.as_str())
-            .ok_or_else(|| {
-                "This devcontainer builds from a Dockerfile; image-based reopen only for now."
-                    .to_string()
-            })?
-            .to_string();
+        let mut log = String::new();
+        let (image, built) = devcontainer_image(base, &v, &mut log)?;
 
         // postCreateCommand: string, array (joined), else a readiness probe.
         let post = match v.get("postCreateCommand") {
@@ -1634,14 +1669,54 @@ async fn devcontainer_up(root: String) -> Result<DevcontainerUp, String> {
             vec!["sh".into(), "-lc".into(), post.clone()],
         );
         spec.network = true;
-        spec.timeout = std::time::Duration::from_secs(180);
+        spec.timeout = std::time::Duration::from_secs(300);
 
         let out = tutor_eval::run_in_container(spec).map_err(|e| e.to_string())?;
         Ok(DevcontainerUp {
             ok: out.ok,
             image,
+            built,
             ran: post,
-            stdout: out.stdout,
+            stdout: format!("{log}{}", out.stdout),
+            stderr: out.stderr,
+        })
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))?
+}
+
+/// Run an arbitrary command inside the devcontainer image with the workspace mounted — the
+/// practical "attach" affordance (exec a shell line in the project's container env).
+#[tauri::command]
+async fn devcontainer_exec(root: String, cmd: String) -> Result<DevcontainerUp, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let file = [".devcontainer/devcontainer.json", ".devcontainer.json"]
+            .iter()
+            .map(|r| base.join(r))
+            .find(|p| p.is_file())
+            .ok_or_else(|| "No devcontainer.json in this folder.".to_string())?;
+        let v: serde_json::Value =
+            serde_json::from_str(&strip_jsonc_comments(&std::fs::read_to_string(&file).map_err(
+                |e| e.to_string(),
+            )?))
+            .map_err(|e| format!("devcontainer.json is not valid JSON: {e}"))?;
+        let mut log = String::new();
+        let (image, built) = devcontainer_image(base, &v, &mut log)?;
+        let mut spec = tutor_eval::ContainerSpec::new(
+            image.clone(),
+            base.to_path_buf(),
+            vec!["sh".into(), "-lc".into(), cmd.clone()],
+        );
+        spec.network = true;
+        spec.timeout = std::time::Duration::from_secs(300);
+        let out = tutor_eval::run_in_container(spec).map_err(|e| e.to_string())?;
+        Ok(DevcontainerUp {
+            ok: out.ok,
+            image,
+            built,
+            ran: cmd,
+            stdout: format!("{log}{}", out.stdout),
             stderr: out.stderr,
         })
     })
@@ -1771,6 +1846,7 @@ fn main() {
             set_sandbox_engine,
             devcontainer_info,
             devcontainer_up,
+            devcontainer_exec,
             detect_projects,
             pty::pty_spawn,
             pty::pty_write,
