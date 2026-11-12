@@ -984,16 +984,33 @@ async fn symbol_ranges(
         .map_err(|e| format!("symbol_ranges task failed: {e}"))
 }
 
-/// The symbol outline of a file (every fn/method/class + line span, in order), for a precise
-/// Explain anchored to real lines. Rust is AST-precise; Python/Go/JS/TS use a heuristic scan.
+/// The symbol outline of a file, for a precise Explain anchored to real lines. Prefers the
+/// real language server (textDocument/documentSymbol — rust-analyzer/pyright/gopls/tsserver,
+/// on host or in the container) when `root`+`file` are given and a server answers; otherwise
+/// the syntactic outline (Rust AST, or the Python/Go/JS/TS heuristic).
 #[tauri::command]
 async fn file_outline(
     code: String,
     lang: String,
+    root: Option<String>,
+    file: Option<String>,
 ) -> Result<Vec<tutor_eval::codemap::SymbolRange>, String> {
-    tauri::async_runtime::spawn_blocking(move || tutor_eval::codemap::outline(&code, &lang))
-        .await
-        .map_err(|e| format!("file_outline task failed: {e}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        if let (Some(r), Some(f)) = (root.as_ref(), file.as_ref()) {
+            let via_lsp = tutor_eval::lsp::document_symbols(
+                std::path::Path::new(r),
+                std::path::Path::new(f),
+                &lang,
+                &code,
+            );
+            if !via_lsp.is_empty() {
+                return via_lsp;
+            }
+        }
+        tutor_eval::codemap::outline(&code, &lang)
+    })
+    .await
+    .map_err(|e| format!("file_outline task failed: {e}"))
 }
 
 /// Section 5 (daily work): every symbol definition across the project at `root` (Rust via

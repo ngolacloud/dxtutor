@@ -5,7 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { openExplainTab, closeExplainTab, revealLine, openFileAt } from "./workspace";
+import { openExplainTab, closeExplainTab, revealLine, openFileAt, workspaceRoot } from "./workspace";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const esc = (s: string) =>
@@ -104,7 +104,7 @@ export async function explainFile(path: string, code: string, lang: string, name
   try {
     const outline = await invoke<Array<{ name: string; kind: string; startLine: number; endLine: number }>>(
       "file_outline",
-      { code, lang },
+      { code, lang, root: workspaceRoot(), file: path }, // root+file → try the real LSP first
     );
     if (outline.length) {
       outlineBlock =
