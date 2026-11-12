@@ -31,15 +31,35 @@ export function initRemote(deps: { ensureWorkspaceMode: () => void }): void {
   });
 }
 
-/** "Reopen in Container": switch the sandbox engine to Delonix so this project's code runs
- *  inside the container, mirroring VSCode's Dev Containers reopen. */
+interface DevcontainerUp {
+  ok: boolean;
+  image: string;
+  ran: string;
+  stdout: string;
+  stderr: string;
+}
+
+/** "Reopen in Container": switch the sandbox engine to Delonix AND actually bring the
+ *  devcontainer image up — run its postCreateCommand inside the container with the
+ *  workspace mounted — surfacing the real logs. */
 async function reopenInContainer(): Promise<void> {
+  const log = $("#remote-log");
+  log.classList.remove("hidden");
+  log.textContent = "⟳ Switching to the Delonix sandbox…";
   try {
     await invoke<string>("set_sandbox_engine", { engine: "delonix" });
   } catch {
     /* keep going — scan reflects the real state */
   }
-  await scan();
+  log.textContent = "⟳ Bringing the container up (pulling image + postCreateCommand)…";
+  try {
+    const r = await invoke<DevcontainerUp>("devcontainer_up", { root: workspaceRoot() });
+    const head = `${r.ok ? "✓" : "✗"} ${r.image}\n$ ${r.ran}\n`;
+    log.textContent = head + (r.stdout || "") + (r.stderr ? `\n[stderr]\n${r.stderr}` : "");
+  } catch (e) {
+    log.textContent = `✗ ${String(e)}`;
+  }
+  await scan(); // #remote-log is a sibling of #remote-body, so it survives the rebuild
 }
 
 export function openRemote(): void {

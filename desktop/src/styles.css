@@ -2407,6 +2407,8 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .remote-empty { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
 .remote-empty .remote-reopen { align-self: flex-start; background: var(--bg-elevated); border-color: var(--border); color: var(--fg); }
 .remote-empty .remote-reopen:hover { background: var(--bg-selected-inactive); filter: none; }
+.remote-log { flex: 0 1 auto; max-height: 45%; overflow: auto; margin: 0; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg-base, #181818); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; white-space: pre-wrap; color: var(--fg-dim); }
+.remote-log.hidden { display: none; }
 
 /* Run and Debug empty-state (VSCode-style sidebar view). */
 .rundebug-empty { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; }

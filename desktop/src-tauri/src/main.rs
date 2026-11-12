@@ -1581,6 +1581,74 @@ async fn devcontainer_info(root: String) -> Result<DevcontainerInfo, String> {
     .map_err(|e| format!("devcontainer task failed: {e}"))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevcontainerUp {
+    ok: bool,
+    image: String,
+    ran: String,
+    stdout: String,
+    stderr: String,
+}
+
+/// Actually bring up the Dev Container: pull/run its image with the workspace bind-mounted
+/// and execute its `postCreateCommand` (or a readiness probe) inside it, via the active
+/// container engine. One-shot (not a persistent attached session), but it genuinely runs
+/// the project's code inside the devcontainer image. Errors when there's no image to run.
+#[tauri::command]
+async fn devcontainer_up(root: String) -> Result<DevcontainerUp, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let file = [".devcontainer/devcontainer.json", ".devcontainer.json"]
+            .iter()
+            .map(|r| base.join(r))
+            .find(|p| p.is_file())
+            .ok_or_else(|| "No devcontainer.json in this folder.".to_string())?;
+        let text = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+        let v: serde_json::Value = serde_json::from_str(&strip_jsonc_comments(&text))
+            .map_err(|e| format!("devcontainer.json is not valid JSON: {e}"))?;
+
+        let image = v
+            .get("image")
+            .and_then(|i| i.as_str())
+            .ok_or_else(|| {
+                "This devcontainer builds from a Dockerfile; image-based reopen only for now."
+                    .to_string()
+            })?
+            .to_string();
+
+        // postCreateCommand: string, array (joined), else a readiness probe.
+        let post = match v.get("postCreateCommand") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(serde_json::Value::Array(a)) => a
+                .iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => "echo \"container ready: $(pwd)\"; uname -s; ls -a".to_string(),
+        };
+
+        let mut spec = tutor_eval::ContainerSpec::new(
+            image.clone(),
+            base.to_path_buf(),
+            vec!["sh".into(), "-lc".into(), post.clone()],
+        );
+        spec.network = true;
+        spec.timeout = std::time::Duration::from_secs(180);
+
+        let out = tutor_eval::run_in_container(spec).map_err(|e| e.to_string())?;
+        Ok(DevcontainerUp {
+            ok: out.ok,
+            image,
+            ran: post,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))?
+}
+
 /// Strip `//` line and `/* */` block comments (JSONC) outside of string literals.
 fn strip_jsonc_comments(src: &str) -> String {
     let b = src.as_bytes();
@@ -1702,6 +1770,7 @@ fn main() {
             get_sandbox_engine,
             set_sandbox_engine,
             devcontainer_info,
+            devcontainer_up,
             detect_projects,
             pty::pty_spawn,
             pty::pty_write,
