@@ -61,6 +61,7 @@ let codeStream: {
   original: string; // file content before the stream, to restore if the model gives nothing
 } | null = null;
 const writeState = new Map<number, "writing" | "done">(); // message idx -> code-stream state
+const shrinkWarn = new Set<number>(); // done writes where the file shrank a lot (review it)
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -76,6 +77,7 @@ export function initAssistant(): void {
     appliedActions.clear();
     actionErrors.clear();
     writeState.clear();
+    shrinkWarn.clear();
     renderMessages();
   });
   // Approve / dismiss a proposed workspace action (event delegation on the message list).
@@ -142,6 +144,11 @@ export function initAssistant(): void {
       } else {
         endEditorStream();
         writeState.set(cs.idx, "done");
+        // Shrink guard: if a substantial file was replaced with far less content, the
+        // model may have returned a partial — flag it so the developer reviews (undoable).
+        if (cs.original.trim().length > 200 && produced.length < cs.original.length * 0.4) {
+          shrinkWarn.add(cs.idx);
+        }
       }
       codeStream = null;
       finishStream();
@@ -607,7 +614,10 @@ function renderMessages(): void {
           if (state === "writing") {
             card = `<div class="as-action"><div class="as-action-h">✍️ Writing <code>${esc(code.file)}</code> in the editor… <span class="as-spin"></span></div><div class="as-action-sub">Press <b>Stop</b> to interrupt — the code stays in the buffer.</div></div>`;
           } else if (state === "done") {
-            card = `<div class="as-action done">✓ Wrote <code>${esc(code.file)}</code> in the editor — review, edit and save it.</div>`;
+            const warn = shrinkWarn.has(i)
+              ? `<div class="as-action-sub">⚠ The new file is much smaller than before — review it (Ctrl+Z to revert) in case the generation was partial.</div>`
+              : "";
+            card = `<div class="as-action done">✓ Wrote <code>${esc(code.file)}</code> in the editor — review, edit and save it.${warn}</div>`;
           } else {
             const abs = codeTargetAbs(code.file);
             const dirty = abs ? isDirty(abs) : false;
