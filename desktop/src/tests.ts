@@ -128,7 +128,12 @@ async function runOne(path: string): Promise<void> {
   const root = lastRoot || workspaceRoot();
   if (!root) return;
   const lang = items.find((t) => t.path === path)?.lang ?? "rust";
-  const cmd = lang === "go" ? `go test -run ^${path}$ -v ./...` : `cargo test ${path} -- --exact`;
+  const cmd =
+    lang === "go"
+      ? `go test -run ^${path}$ -v ./...`
+      : lang === "python"
+        ? `python3 -m unittest discover -k ${path} -v`
+        : `cargo test ${path} -- --exact`;
   status.set(path, "running");
   render();
   $("#tests-output").textContent = `$ ${cmd}\nrunning…`;

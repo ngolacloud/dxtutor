@@ -53,6 +53,7 @@ pub fn discover_tests(root: &Path) -> Vec<TestItem> {
         collect_tests(&ast.items, &file, "", &mut out);
     }
     collect_go_tests(root, &mut out);
+    collect_python_tests(root, &mut out);
     out.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
     out
 }
@@ -273,6 +274,122 @@ pub(crate) fn go_test_names(code: &str) -> Vec<(String, u32)> {
     out
 }
 
+// ── Python test discovery + run (unittest) ───────────────────────────────────────
+
+/// Collect Python tests: `def test_*` in `test*.py` / `*_test.py` files (methods inside
+/// `TestCase` classes or module-level funcs — `trim_start` handles indentation).
+fn collect_python_tests(root: &Path, out: &mut Vec<TestItem>) {
+    let mut files = Vec::new();
+    walk_python(root, 0, &mut files);
+    for path in files {
+        let code = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let file = display_path(&path, root);
+        for (name, line) in python_test_names(&code) {
+            out.push(TestItem {
+                path: name.clone(), // unittest -k filters by name
+                name,
+                file: file.clone(),
+                line,
+                ignored: false,
+                lang: "python".to_string(),
+            });
+        }
+    }
+}
+
+fn walk_python(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+    if depth > 12 {
+        return;
+    }
+    let rd = match std::fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
+            if name.starts_with('.')
+                || matches!(name.as_str(), "venv" | ".venv" | "node_modules" | "__pycache__" | "target")
+            {
+                continue;
+            }
+            walk_python(&e.path(), depth + 1, out);
+        } else if name.ends_with(".py") && (name.starts_with("test") || name.ends_with("_test.py")) {
+            out.push(e.path());
+        }
+    }
+}
+
+/// Parse `def test_*(` names (with 1-based line). Indentation-tolerant, so it finds
+/// `TestCase` methods and module-level functions alike.
+pub(crate) fn python_test_names(code: &str) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    for (i, line) in code.lines().enumerate() {
+        let rest = match line.trim_start().strip_prefix("def ") {
+            Some(r) => r,
+            None => continue,
+        };
+        let paren = match rest.find('(') {
+            Some(p) => p,
+            None => continue,
+        };
+        let name = rest[..paren].trim();
+        if name.starts_with("test") {
+            out.push((name.to_string(), (i as u32) + 1));
+        }
+    }
+    out
+}
+
+/// Run a single Python test by name via `python3 -m unittest discover -k <name> -v` in
+/// `root` (unittest is always present; `-k` filters by name, no module path needed).
+pub fn run_python_test(root: &Path, name: &str) -> TestRun {
+    let scratch = match tempfile::tempdir() {
+        Ok(d) => d,
+        Err(e) => return TestRun { ran: false, passed: false, output: format!("scratch: {e}") },
+    };
+    let mut cmd = Command::new("python3");
+    cmd.args(["-m", "unittest", "discover", "-s", ".", "-t", ".", "-k", name, "-v"]);
+    cmd.current_dir(root);
+    cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+    match run_guarded(cmd, scratch.path(), "pytest", TEST_TIMEOUT, None) {
+        Ok(o) if o.timed_out => TestRun {
+            ran: false,
+            passed: false,
+            output: format!("timed out after {}s", TEST_TIMEOUT.as_secs()),
+        },
+        Ok(o) => {
+            let combined = format!("{}{}", o.stdout, o.stderr);
+            match python_test_outcome(&combined) {
+                Outcome::Passed => TestRun { ran: true, passed: true, output: combined },
+                Outcome::Failed => TestRun { ran: true, passed: false, output: combined },
+                Outcome::DidNotRun => TestRun { ran: false, passed: false, output: combined },
+            }
+        }
+        Err(e) => TestRun { ran: false, passed: false, output: format!("spawn: {e}") },
+    }
+}
+
+/// unittest verdict: `Ran 0 tests` ⇒ did not run; a `FAILED (...)` line ⇒ failed; a lone
+/// `OK` line after a run ⇒ passed. An import/syntax error (traceback, no "Ran") ⇒ did not
+/// run. Testable without running Python.
+pub(crate) fn python_test_outcome(output: &str) -> Outcome {
+    if output.contains("Ran 0 tests") {
+        return Outcome::DidNotRun;
+    }
+    if output.contains("FAILED") {
+        return Outcome::Failed;
+    }
+    if output.lines().any(|l| l.trim() == "OK") {
+        return Outcome::Passed;
+    }
+    Outcome::DidNotRun
+}
+
 /// Does this attribute mark a test? Matches `#[test]` and the common async variants
 /// whose LAST path segment is `test` — `#[tokio::test]`, `#[async_std::test]` — which
 /// cargo runs and lists just like a plain test. Custom macros like `#[rstest]` (last
@@ -413,6 +530,52 @@ mod tests {
         assert_eq!(go.lang, "go");
         assert_eq!(go.path, "TestAdd");
         assert!(go.file.ends_with("math_test.go"));
+    }
+
+    #[test]
+    fn python_test_names_encontra_metodos_e_funcs() {
+        let code = "import unittest\n\
+            class TestMath(unittest.TestCase):\n\
+            \x20\x20\x20\x20def test_add(self):\n\
+            \x20\x20\x20\x20\x20\x20\x20\x20self.assertEqual(2+2, 4)\n\
+            \x20\x20\x20\x20def helper(self):\n\
+            \x20\x20\x20\x20\x20\x20\x20\x20pass\n\
+            def test_module_level():\n\
+            \x20\x20\x20\x20pass\n";
+        let found = python_test_names(code);
+        let names: Vec<&str> = found.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"test_add"));
+        assert!(names.contains(&"test_module_level"));
+        assert!(!names.contains(&"helper"));
+    }
+
+    #[test]
+    fn parser_do_resultado_python() {
+        assert_eq!(python_test_outcome("test_add (m.T.test_add) ... ok\n\nRan 1 test in 0.0s\n\nOK\n"), Outcome::Passed);
+        assert_eq!(python_test_outcome("test_add ... FAIL\n\nRan 1 test\n\nFAILED (failures=1)\n"), Outcome::Failed);
+        assert_eq!(python_test_outcome("\nRan 0 tests in 0.000s\n\nOK\n"), Outcome::DidNotRun);
+        assert_eq!(python_test_outcome("Traceback...\nSyntaxError: bad"), Outcome::DidNotRun);
+    }
+
+    #[test]
+    #[ignore = "precisa de python3; corre com --ignored"]
+    fn corre_teste_python_passa_e_falha() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("test_math.py"),
+            "import unittest\n\
+             class TestMath(unittest.TestCase):\n\
+             \x20\x20\x20\x20def test_passa(self):\n\
+             \x20\x20\x20\x20\x20\x20\x20\x20self.assertEqual(2 + 2, 4)\n\
+             \x20\x20\x20\x20def test_falha(self):\n\
+             \x20\x20\x20\x20\x20\x20\x20\x20self.assertEqual(2 + 2, 5)\n",
+        )
+        .unwrap();
+        let ok = run_python_test(root, "test_passa");
+        assert!(ok.ran && ok.passed, "test_passa devia passar:\n{}", ok.output);
+        let bad = run_python_test(root, "test_falha");
+        assert!(bad.ran && !bad.passed, "test_falha devia falhar:\n{}", bad.output);
     }
 
     #[test]

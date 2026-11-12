@@ -973,6 +973,7 @@ async fn run_test(
         let root = std::path::Path::new(&root);
         match lang.as_deref() {
             Some("go") => tutor_eval::testnav::run_go_test(root, &path),
+            Some("python") => tutor_eval::testnav::run_python_test(root, &path),
             _ => tutor_eval::testnav::run_test(root, &path),
         }
     })
