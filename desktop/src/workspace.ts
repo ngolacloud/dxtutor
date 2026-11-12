@@ -981,8 +981,15 @@ async function openFile(path: string) {
   }
   const name = baseName(path);
   const model = monaco.editor.createModel(contents, langForFile(name));
+  let autosaveTimer: number | undefined;
   model.onDidChangeContent(() => {
     if (!applyingModel) renderTabs();
+    // Autosave: persist this file a short while after the last edit (VSCode's afterDelay).
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = window.setTimeout(() => {
+      const tab = tabs.find((tb) => tb.model === model);
+      if (tab) void autosaveTab(tab);
+    }, 1200);
   });
   tabs.push({ path, name, model, saved: contents, savedVersionId: model.getAlternativeVersionId() });
   restoreBreakpointsFor(path); // re-create any breakpoints saved for this file last session
@@ -1068,6 +1075,23 @@ async function saveActive(): Promise<boolean> {
   } catch (err) {
     writeOutput("Save failed", String(err), "err");
     return false;
+  }
+}
+
+/** Lightweight autosave for one tab: write it and drop the dirty dot, without the heavy
+ *  git/tree refresh of a manual Save. Best-effort (manual Save surfaces errors). Skipped
+ *  while an AI proposal is mid-stream or under review, so an un-accepted edit isn't persisted. */
+async function autosaveTab(tab: Tab): Promise<void> {
+  if (rangeStream || rangeReview) return; // don't persist an un-accepted agent proposal
+  const value = tab.model.getValue();
+  if (value === tab.saved) return; // nothing changed since the last save
+  try {
+    await cmdWriteFile(tab.path, value);
+    tab.saved = value;
+    tab.savedVersionId = tab.model.getAlternativeVersionId();
+    renderTabs();
+  } catch {
+    /* autosave is best-effort — a manual Save will surface any real error */
   }
 }
 

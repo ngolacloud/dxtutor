@@ -13,7 +13,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { monaco } from "./monaco";
-import { askAssistant } from "./assistant";
+import { askAssistant, startLocalizedEdit } from "./assistant";
 import { startEdit } from "./edit";
 import {
   activeFilePath,
@@ -489,22 +489,36 @@ function askAboutFinding(f: Finding): void {
   askAssistant(prompt);
 }
 
-/** Delegate the fix to the AI: open "Edit with me" on the finding's file, pre-filled. */
+/** Delegate the fix to the AI. A LOCALIZED edit of just the finding's region (plus a little
+ *  context) — the agent rewrites only the broken lines, not the whole file. That is faster,
+ *  cannot truncate a long file mid-stream, and streams into the editor with the inline
+ *  Accept/Reject widget. Falls back to a whole-file "Edit with me" only if the file isn't open. */
 async function fixWithAI(f: Finding): Promise<void> {
   ensureWorkspaceMode();
   const abs = resolvePath(f.primary.file, lastRoot);
-  let content = currentFileContent(abs);
-  if (content == null) {
-    try {
-      content = await invoke<string>("read_text_file", { path: abs });
-    } catch {
-      content = null;
-    }
-  }
-  if (content == null) return;
   const name = abs.split("/").pop() ?? abs;
+  const lang = langForFile(name);
   const instruction = `Fix the ${f.analyzer}${f.rule ? " " + f.rule : ""} issue at line ${f.primary.startLine}: ${f.message}. Change only what is necessary.`;
-  startEdit(abs, content, langForFile(name), instruction);
+
+  // Open the file in the editor (the localized edit streams INTO it); then target the
+  // finding's line span, padded by 2 lines of context on each side.
+  await openFileAt(abs, f.primary.startLine, f.primary.startCol);
+  const content = currentFileContent(abs);
+  if (content != null) {
+    const lines = content.split("\n");
+    const sl = Math.max(1, f.primary.startLine - 2);
+    const el = Math.min(lines.length, Math.max(f.primary.endLine, f.primary.startLine) + 2);
+    const selected = lines.slice(sl - 1, el).join("\n");
+    void startLocalizedEdit(abs, sl, el, selected, lang, instruction);
+    return;
+  }
+  // File not open / unreadable → whole-file "Edit with me" as a fallback.
+  try {
+    const disk = await invoke<string>("read_text_file", { path: abs });
+    startEdit(abs, disk, lang, instruction);
+  } catch {
+    /* nothing to edit */
+  }
 }
 
 /** Apply ALL edits of the analyzer's machine fix as one undoable change. */
