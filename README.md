@@ -9,6 +9,25 @@ símbolos, corre testes, revê código offline e pode delegar edições com cont
 O aluno escreve sempre a implementação final. O percurso essencial funciona
 offline; a IA é opcional.
 
+## O princípio do mentor
+
+O dxtutor não é uma enciclopédia nem um gerador de respostas: é um **mentor**. Um mentor
+**corta caminho** e **foca no que realmente importa**. Perante a vastidão de um tema —
+arquitectura de software, infraestrutura, segurança, dados, mensageria — o papel do mentor
+é destilar o percurso até ao essencial para a vida de quem aprende:
+
+- **transformar ideias em coisas concretas** (entregar, não só saber);
+- **ser competente no que faz** (domínio real, provado por evidência);
+- **ganhar com isso** (a competência tem valor económico);
+- **um futuro melhor para a família**;
+- **uma vida mais tranquila**.
+
+Na prática isto governa as decisões de produto: cada fase tem um **objectivo mensurável** e
+uma **actividade de transferência** (aplicar a um caso inédito), não cobertura exaustiva; o
+tutor **dá a próxima acção útil** (`curriculum::next_unit`) em vez de despejar matéria; a IA
+**tutora** (explica, questiona, dá a pista mínima) em vez de entregar a solução; e a
+honestidade abaixo garante que o atalho nunca é uma ilusão de competência.
+
 ## Princípios de honestidade (contratos)
 
 Inferir a complexidade (Big-O) de código arbitrário é **indecidível** em geral. Por isso:
@@ -50,15 +69,44 @@ os contratos de honestidade acima:
   **em streaming**, para um ficheiro ou uma **pasta/módulo**. As âncoras `[L<n>]` e os saltos
   usam o **outline real** (documentSymbol via LSP → AST do Rust → heurística Py/Go/JS/TS).
 - **Dev Assistant (Agent)** — focado no **projecto seleccionado**, com *templates* de *prompt*
-  (`/`) que o programador preenche; assiste a intenção do *dev*, não a define.
+  (`/`) que o programador preenche; assiste a intenção do *dev*, não a define. Edita por
+  **bloco/método** com *diff* e **detecção de conflito** (se editas durante o *stream*, pára e
+  preserva a tua alteração); **continua** ficheiros incompletos por **anexação** (sem
+  reescrever); corre e **cita** os testes do projecto (comando + saída real).
+- **Orquestração (observar→planear→actuar→verificar)** — o Agent emite um **plano** (`dxplan`),
+  renderizado como *checklist* de progresso; **«Continue →»** conduz o passo seguinte e o
+  *toggle* **Auto** encadeia-os (limitado ao nº de passos, parável com **Stop**); ao concluir,
+  **auto-verifica** (corre os testes).
+- **Tarefa isolada (forma cloud)** — «**Run in isolation**» executa uma proposta numa *worktree*
+  descartável de HEAD e devolve um **patch** revisível — a árvore de trabalho não é tocada. A
+  API `submit → status → collect` é a mesma que um *backend* remoto exporia.
+- **Architecture Studio** — modela um *System Design* orientado a eventos e **valida a
+  arquitectura** (*outbox* sem *relay*, evento publicado sem consumidor, subscrição órfã,
+  *broker*/aresta pendurados) antes de gerar código.
+
+## Trilha universitária (institucional)
+
+Para além do percurso individual, o dxtutor modela o que uma **instituição** precisa:
+
+- **Competências + CS2023** (`tutor-core::curriculum`) — competências mapeadas às áreas de
+  conhecimento do **CS2023** (ACM/IEEE), unidades com pré-requisitos, e **evidência honesta**
+  (`Tests` / `Measurement` / `Simulation` / `Proof` — uma medição nunca é uma prova).
+  `next_unit` dá a **próxima actividade** disponível; adaptável a CS / CE / SE.
+- **Labs-piloto** — três laboratórios verticais (CS: comparar algoritmos = medição; CE: padrão
+  de acesso à memória = simulação; SE: reproduzir/corrigir regressão = testes), cada um com
+  rubrica e pergunta de transferência.
+- **Registo institucional** (`tutor-track`) — tentativas por aluno com **sincronização
+  idempotente** e **privacidade** (um aluno só vê o seu), padrões de falha por turma, em
+  memória ou **SQLite durável** atrás do mesmo `trait Store`.
 
 ## Estrutura
 
 | Crate / pasta       | Papel                                                                |
 |---------------------|----------------------------------------------------------------------|
-| `tutor-core`        | Modelo de domínio + conteúdo curado (cursos/fases, glossário, guias).|
-| `tutor-eval`        | Avaliador (`cargo test` isolado), sonda de complexidade, **review** (analisadores offline + identidade de correcção), CodeMap. |
-| `tutor-llm`         | Fornecedores de dica/plano/correcção, chat (Dev Assistant), **`policy`**. |
+| `tutor-core`        | Modelo de domínio + conteúdo curado (cursos/fases, glossário, guias), **`curriculum`** (competências/CS2023/labs). |
+| `tutor-eval`        | Avaliador (`cargo test` isolado), sonda de complexidade, **review**, CodeMap, LSP, `git` (DAG + *worktree* isolada), **`arch`** (validação de System Design). |
+| `tutor-llm`         | Fornecedores de dica/plano/correcção, chat (Dev Assistant), capacidades por fornecedor, **`policy`**. |
+| `tutor-track`       | Registo institucional de tentativas (`Store`): sync idempotente + privacidade; `MemStore` e **`SqliteStore`**. |
 | `tutor-tui`         | Editor TUI (`ratatui`).                                              |
 | `tutor-cli`         | Prova ponta-a-ponta do cérebro (`dxt demo`).                         |
 | `desktop/`          | Shell desktop Tauri + frontend Monaco (Estudo Guiado + Projecto).    |
