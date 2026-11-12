@@ -586,6 +586,10 @@
         <p class="rundebug-hint">Step through a real trace of the current Learning step or Workspace file.</p>
         <p class="rundebug-hint">To customize Run and Debug, <a id="rundebug-launch" class="rundebug-link" role="button" tabindex="0">create a launch.json file</a>.</p>
       </div>
+      <div class="rundebug-bps">
+        <div class="rundebug-bps-hdr"><span>Breakpoints</span><button id="bp-clear" class="rundebug-link" title="Remove all breakpoints">Remove all</button></div>
+        <div id="bp-list" class="bp-list"></div>
+      </div>
     </aside>
     <!-- Tests: discover #[test] functions in the open project and run one -->
     <aside id="tests-overlay" class="codemap-drawer hidden" aria-label="Tests">

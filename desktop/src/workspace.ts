@@ -130,9 +130,20 @@ export function revealLine(line: number): void {
 // is edited above them — resilient, not a frozen line number. An optional condition makes
 // the debugger stop only when it holds. The debugger seeds its stops from the active file
 // (see debugTarget()). Keyed by file path → decoration id → condition (empty = unconditional).
-const bpById = new Map<string, Map<string, string>>();
+// Keyed by file path → decoration id → {cond, enabled}. A disabled breakpoint stays visible
+// (dimmed) but is skipped by the debugger.
+interface BpState {
+  cond: string;
+  enabled: boolean;
+}
+const bpById = new Map<string, Map<string, BpState>>();
+let onBreakpointsChanged: () => void = () => {};
+/** Register a callback fired whenever breakpoints change (wired by main.ts's panel). */
+export function setBreakpointsChangeHandler(fn: () => void): void {
+  onBreakpointsChanged = fn;
+}
 
-function bpMap(path: string): Map<string, string> {
+function bpMap(path: string): Map<string, BpState> {
   let m = bpById.get(path);
   if (!m) {
     m = new Map();
@@ -146,66 +157,124 @@ function bpLine(model: monaco.editor.ITextModel, id: string): number | null {
   return model.getDecorationRange(id)?.startLineNumber ?? null;
 }
 
-function bpDecoration(cond: string): monaco.editor.IModelDeltaDecoration {
+function bpDecoration(st: BpState): monaco.editor.IModelDeltaDecoration {
+  const cls = ["ws-bp-glyph"];
+  if (st.cond) cls.push("ws-bp-cond");
+  if (!st.enabled) cls.push("ws-bp-off");
   return {
     range: new monaco.Range(1, 1, 1, 1), // placeholder; set by deltaDecorations at the line
     options: {
-      glyphMarginClassName: cond ? "ws-bp-glyph ws-bp-cond" : "ws-bp-glyph",
-      glyphMarginHoverMessage: cond ? { value: `Conditional breakpoint: \`${cond}\`` } : undefined,
+      glyphMarginClassName: cls.join(" "),
+      glyphMarginHoverMessage: st.cond ? { value: `Conditional breakpoint: \`${st.cond}\`` } : undefined,
       stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
     },
   };
 }
 
+/** The decoration id of the breakpoint currently on `line`, or null. */
+function bpIdAtLine(model: monaco.editor.ITextModel, m: Map<string, BpState>, line: number): string | null {
+  for (const [id] of m) if (bpLine(model, id) === line) return id;
+  return null;
+}
+
+/** Create/replace the decoration for a breakpoint at `line` with state `st`. */
+function paintBp(path: string, line: number, st: BpState): void {
+  const tab = tabByPath(path);
+  if (!tab) return;
+  const m = bpMap(path);
+  const existing = bpIdAtLine(tab.model, m, line);
+  if (existing) {
+    tab.model.deltaDecorations([existing], []);
+    m.delete(existing);
+  }
+  const [id] = tab.model.deltaDecorations(
+    [],
+    [{ ...bpDecoration(st), range: new monaco.Range(line, 1, line, 1) }],
+  );
+  m.set(id, st);
+}
+
 function toggleBreakpoint(path: string, line: number): void {
   const tab = tabByPath(path);
   if (!tab) return;
-  const model = tab.model;
   const m = bpMap(path);
-  // Already a breakpoint on this line? Remove it.
-  for (const [id] of m) {
-    if (bpLine(model, id) === line) {
-      model.deltaDecorations([id], []);
-      m.delete(id);
-      return;
-    }
+  const existing = bpIdAtLine(tab.model, m, line);
+  if (existing) {
+    tab.model.deltaDecorations([existing], []);
+    m.delete(existing);
+  } else {
+    paintBp(path, line, { cond: "", enabled: true });
   }
-  const [id] = model.deltaDecorations(
-    [],
-    [{ ...bpDecoration(""), range: new monaco.Range(line, 1, line, 1) }],
-  );
-  m.set(id, "");
+  onBreakpointsChanged();
 }
 
 /** Set (or clear, with empty) a condition on the breakpoint at `line`; creates one if none. */
 function setBreakpointCondition(path: string, line: number, cond: string): void {
   const tab = tabByPath(path);
   if (!tab) return;
-  const model = tab.model;
-  const m = bpMap(path);
-  let found: string | null = null;
-  for (const [id] of m) if (bpLine(model, id) === line) found = id;
-  if (found) {
-    model.deltaDecorations([found], []);
-    m.delete(found);
-  }
-  const [id] = model.deltaDecorations(
-    [],
-    [{ ...bpDecoration(cond), range: new monaco.Range(line, 1, line, 1) }],
-  );
-  m.set(id, cond);
+  const id = bpIdAtLine(tab.model, bpMap(path), line);
+  const enabled = id ? (bpMap(path).get(id)?.enabled ?? true) : true;
+  paintBp(path, line, { cond, enabled });
+  onBreakpointsChanged();
 }
 
-/** Current breakpoints for a file as {line, condition} — read live from the decorations. */
-function fileBreakpoints(path: string): Array<{ line: number; condition: string }> {
+/** Enable/disable the breakpoint at `line` (kept visible but skipped when disabled). */
+export function setBreakpointEnabled(path: string, line: number, enabled: boolean): void {
+  const tab = tabByPath(path);
+  if (!tab) return;
+  const id = bpIdAtLine(tab.model, bpMap(path), line);
+  const cond = id ? (bpMap(path).get(id)?.cond ?? "") : "";
+  paintBp(path, line, { cond, enabled });
+  onBreakpointsChanged();
+}
+
+/** Remove the breakpoint at `line`. */
+export function removeBreakpoint(path: string, line: number): void {
+  const tab = tabByPath(path);
+  if (!tab) return;
+  const m = bpMap(path);
+  const id = bpIdAtLine(tab.model, m, line);
+  if (id) {
+    tab.model.deltaDecorations([id], []);
+    m.delete(id);
+  }
+  onBreakpointsChanged();
+}
+
+/** Remove every breakpoint across all files. */
+export function removeAllBreakpoints(): void {
+  for (const [path, m] of bpById) {
+    const tab = tabByPath(path);
+    if (tab) tab.model.deltaDecorations([...m.keys()], []);
+    m.clear();
+  }
+  onBreakpointsChanged();
+}
+
+/** Current (enabled) breakpoints for a file — read live from the decorations. */
+function fileBreakpoints(path: string): Array<{ line: number; condition: string; enabled: boolean }> {
   const tab = tabByPath(path);
   if (!tab) return [];
-  const out: Array<{ line: number; condition: string }> = [];
-  for (const [id, cond] of bpMap(path)) {
+  const out: Array<{ line: number; condition: string; enabled: boolean }> = [];
+  for (const [id, st] of bpMap(path)) {
     const line = bpLine(tab.model, id);
-    if (line) out.push({ line, condition: cond });
+    if (line) out.push({ line, condition: st.cond, enabled: st.enabled });
   }
   return out.sort((a, b) => a.line - b.line);
+}
+
+/** Every breakpoint across all open files, for the Breakpoints panel. */
+export function allBreakpoints(): Array<{ path: string; name: string; line: number; condition: string; enabled: boolean }> {
+  const out: Array<{ path: string; name: string; line: number; condition: string; enabled: boolean }> = [];
+  for (const [path, m] of bpById) {
+    const tab = tabByPath(path);
+    if (!tab) continue;
+    for (const [id, st] of m) {
+      const line = bpLine(tab.model, id);
+      if (line) out.push({ path, name: tab.name, line, condition: st.cond, enabled: st.enabled });
+    }
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
 }
 
 // ── DOM helpers ──────────────────────────────────────────────────────────────

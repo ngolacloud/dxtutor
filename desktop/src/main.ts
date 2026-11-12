@@ -28,7 +28,7 @@ import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler, createLaunchJson, activeFilePath, currentFileContent, langForFile } from "./workspace";
+import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler, createLaunchJson, activeFilePath, currentFileContent, langForFile, allBreakpoints, setBreakpointEnabled, removeBreakpoint, removeAllBreakpoints, setBreakpointsChangeHandler, openFileAt } from "./workspace";
 import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
@@ -3197,6 +3197,29 @@ function setMode(mode: AppMode) {
 // What the 🐞 debugger steps through: in Learning mode the current step's editor
 // code (course language); in Workspace mode the active file (language by
 // extension). The debugger traces this with the SAME backend `trace_execution`.
+/** Render the Breakpoints list in the Run and Debug view (toggle / remove / jump). */
+function renderBreakpointsPanel(): void {
+  const host = document.getElementById("bp-list");
+  if (!host) return;
+  const bps = allBreakpoints();
+  const esc = (s: string) =>
+    s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  if (bps.length === 0) {
+    host.innerHTML = `<div class="bp-empty">No breakpoints. Click the editor gutter (Alt+click for a condition).</div>`;
+    return;
+  }
+  host.innerHTML = bps
+    .map(
+      (b) =>
+        `<div class="bp-row${b.enabled ? "" : " off"}" data-path="${esc(b.path)}" data-line="${b.line}" title="${esc(b.path)}:${b.line}">` +
+        `<input type="checkbox" class="bp-toggle" ${b.enabled ? "checked" : ""} aria-label="Enabled" />` +
+        `<span class="bp-loc">${esc(b.name)}:${b.line}</span>` +
+        (b.condition ? `<span class="bp-cond" title="condition">${esc(b.condition)}</span>` : "") +
+        `<button class="bp-remove" title="Remove">✕</button></div>`,
+    )
+    .join("");
+}
+
 function currentDebugTarget(): DebugTarget | null {
   if (appMode === "workspace") {
     return workspaceActions.debugTarget();
@@ -3461,6 +3484,7 @@ function wireChrome() {
         else {
           setMode("workspace"); // Run and Debug view lives in the sidebar column
           target.classList.remove("hidden");
+          renderBreakpointsPanel();
         }
         return;
       }
@@ -3702,6 +3726,21 @@ async function main() {
   $("#rundebug-launch").addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") launchJson();
   });
+
+  // Breakpoints panel (in the Run and Debug view): list, toggle, remove, jump.
+  setBreakpointsChangeHandler(renderBreakpointsPanel);
+  $("#bp-clear").addEventListener("click", () => removeAllBreakpoints());
+  $("#bp-list").addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    const row = t.closest(".bp-row") as HTMLElement | null;
+    if (!row) return;
+    const path = row.dataset.path!;
+    const line = Number(row.dataset.line);
+    if (t.closest(".bp-toggle")) setBreakpointEnabled(path, line, (t as HTMLInputElement).checked);
+    else if (t.closest(".bp-remove")) removeBreakpoint(path, line);
+    else void openFileAt(path, line, 1);
+  });
+
   await setupTerminal();
 
   profile = loadProfile();

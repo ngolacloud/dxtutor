@@ -53,7 +53,8 @@ export interface DebugTarget {
   traceLang: string; // language passed to trace_execution ("python" | "rust" | …)
   // Breakpoints pre-set in the editor gutter (seed the debugger). Each carries an optional
   // condition — the debugger stops only when it evaluates true against the step's variables.
-  breakpoints?: Array<{ line: number; condition: string }>;
+  // Disabled breakpoints are omitted by the caller.
+  breakpoints?: Array<{ line: number; condition: string; enabled: boolean }>;
 }
 export interface DebugContext {
   getTarget: () => DebugTarget | null;
@@ -312,6 +313,7 @@ export function openDebug() {
     breakpoints.clear();
     bpConditions.clear();
     for (const bp of target.breakpoints) {
+      if (!bp.enabled) continue; // disabled breakpoints are skipped
       breakpoints.add(bp.line);
       if (bp.condition) bpConditions.set(bp.line, bp.condition);
     }
