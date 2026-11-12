@@ -128,8 +128,10 @@ export function initAssistant(): void {
     document.getElementById("body")?.classList.remove("dock-open"); // free the editor column
   });
 
-  // Restore dock mode + width, then wire the dock toggle and the resize handle.
-  docked = localStorage.getItem("dx.assistant.docked") === "1";
+  // Restore dock mode + width. First use (no saved preference) DOCKS the Agent by default,
+  // VSCode/Antigravity-style; a saved choice wins afterwards (RF-UI-01).
+  const dockPref = localStorage.getItem("dx.assistant.docked");
+  docked = dockPref === null ? true : dockPref === "1";
   const savedW = Number(localStorage.getItem("dx.assistant.dockw"));
   if (Number.isFinite(savedW) && savedW > 0) setDockWidth(savedW);
   $("#assistant-dock").addEventListener("click", () => {
@@ -278,7 +280,10 @@ export function initAssistant(): void {
     provider = (e.target as HTMLSelectElement).value;
     updateModelLabel();
   });
-  $("#assistant-settings").addEventListener("click", () => void openProviders());
+  // The Agent gear opens the UNIFIED Settings at its AI section (RF-UI-03); main.ts wires
+  // the handler. Falls back to the providers surface if none is registered.
+  $("#assistant-settings").addEventListener("click", () => settingsHandler());
+  $("#settings-open-providers").addEventListener("click", () => void openProviders());
   $("#providers-close").addEventListener("click", () => $("#providers-overlay").classList.add("hidden"));
   $("#providers-save").addEventListener("click", () => void saveProviders());
 
@@ -419,6 +424,17 @@ export function initAssistant(): void {
   });
 
   setStreaming(false); // render the circular send arrow at rest
+}
+
+/** Where the Agent gear opens (unified Settings @ AI section). Wired by main.ts. */
+let settingsHandler: () => void = () => void openProviders();
+export function setSettingsHandler(fn: () => void): void {
+  settingsHandler = fn;
+}
+
+/** The active-model label text, so Settings can mirror it in its AI section. */
+export function activeModelLabel(): string {
+  return document.getElementById("assistant-model")?.textContent ?? "—";
 }
 
 export function openAssistant(): void {

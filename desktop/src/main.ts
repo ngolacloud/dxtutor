@@ -38,7 +38,7 @@ import { initGit, openGit, refreshGitBranch } from "./git";
 import { initRemote, openRemote, setSessionChangeHandler } from "./remote";
 import { initExplain, explainFile, explainFolder } from "./explain";
 import { workspaceRoot } from "./workspace";
-import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint } from "./assistant";
+import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint, setSettingsHandler, activeModelLabel } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
 import { t, initI18n, getLocale, setLocale, onLocaleChange, type Locale } from "./i18n";
@@ -1091,11 +1091,26 @@ function syncLocaleRadios() {
   });
 }
 
-function openSettings() {
+function openSettings(opts?: { section?: string }) {
   syncSandboxRadios();
   syncLocaleRadios();
   $("#sandbox-appnote").classList.toggle("hidden", hasTauri);
+  $("#settings-ai-model").textContent = activeModelLabel(); // mirror the Agent's active model
+  ($("#settings-search") as HTMLInputElement).value = "";
+  filterSettings("");
   $("#settings-overlay").classList.remove("hidden");
+  if (opts?.section) {
+    requestAnimationFrame(() => document.getElementById(opts.section!)?.scrollIntoView({ block: "start" }));
+  }
+}
+
+/** Live-filter the Settings sections by heading + note text (RF-UI-03 search). */
+function filterSettings(query: string): void {
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll<HTMLElement>("#settings-overlay .settings-sec").forEach((sec) => {
+    const hit = !q || sec.textContent?.toLowerCase().includes(q);
+    sec.classList.toggle("hidden", !hit);
+  });
 }
 
 function closeSettings() {
@@ -3386,7 +3401,12 @@ function wireChrome() {
   $("#settings-overlay").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeSettings();
   });
-  $("#status-sandbox").addEventListener("click", openSettings);
+  // RF-UI-03: the Agent gear opens unified Settings at the AI section; live search filters.
+  setSettingsHandler(() => openSettings({ section: "settings-sec-ai" }));
+  $("#settings-search").addEventListener("input", (e) =>
+    filterSettings((e.target as HTMLInputElement).value),
+  );
+  $("#status-sandbox").addEventListener("click", () => openSettings());
   $("#status-sandbox").addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
       e.preventDefault();

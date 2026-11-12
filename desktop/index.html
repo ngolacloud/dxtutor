@@ -317,6 +317,8 @@
       <div class="settings-card">
         <div class="gloss-head">
           <div class="gloss-title"><span class="gloss-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></span> <span data-i18n="settings.title">Settings</span></div>
+          <span class="settings-scope" title="These settings apply to this device / profile">Personal</span>
+          <input id="settings-search" class="settings-search" type="text" autocomplete="off" placeholder="Search settings…" aria-label="Search settings" />
           <button id="settings-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
         </div>
         <div class="settings-body">
@@ -370,6 +372,14 @@
             <p class="settings-note" data-i18n="settings.course.note">Start over with a different language or level.
               This clears your saved profile, points and progress on this device.</p>
             <button id="settings-reset" class="btn btn-secondary" data-i18n="settings.reset">Change course / reset profile</button>
+          </section>
+          <section class="settings-sec" id="settings-sec-ai">
+            <h3 class="settings-h">AI &amp; providers</h3>
+            <p class="settings-note">The Dev Assistant and the tutor use an AI provider. The active provider and model are shown in the Agent composer; pick among a provider's models there. Keys and availability are managed below. In study mode the policy keeps the AI tutoring — it never hands over the solution.</p>
+            <div class="settings-ai-row">
+              <span class="settings-ai-active">Active: <b id="settings-ai-model">—</b></span>
+              <button id="settings-open-providers" class="btn btn-secondary">Manage AI providers &amp; keys…</button>
+            </div>
           </section>
         </div>
       </div>
