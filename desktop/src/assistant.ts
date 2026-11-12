@@ -455,6 +455,44 @@ function codeTargetAbs(file: string): string | null {
   return root ? `${root.replace(/\/$/, "")}/${file.replace(/^\.?\//, "")}` : null;
 }
 
+interface SymbolRange {
+  name: string;
+  kind: string;
+  startLine: number;
+  endLine: number;
+}
+
+/** Localized edit of a NAMED Rust fn/method: find the target range via symbol_ranges
+ *  (disambiguating homonyms), then run the scoped block edit. Rust-only (syntactic). */
+export async function startMethodEdit(path: string, code: string, lang: string): Promise<void> {
+  if (busy) return;
+  const name = (window.prompt("Which method/function? (name)", "") ?? "").trim();
+  if (!name) return;
+  let ranges: SymbolRange[] = [];
+  try {
+    ranges = await invoke<SymbolRange[]>("symbol_ranges", { code, name });
+  } catch {
+    ranges = [];
+  }
+  if (ranges.length === 0) {
+    window.alert(`No Rust fn/method named "${name}" found in this file.`);
+    return;
+  }
+  let target = ranges[0];
+  if (ranges.length > 1) {
+    const choice = window.prompt(
+      `${ranges.length} items named "${name}" — enter the start line to pick:\n` +
+        ranges.map((r) => `• lines ${r.startLine}–${r.endLine} (${r.kind})`).join("\n"),
+      String(ranges[0].startLine),
+    );
+    const found = ranges.find((r) => r.startLine === Number(choice));
+    if (!found) return;
+    target = found;
+  }
+  const selected = code.split("\n").slice(target.startLine - 1, target.endLine).join("\n");
+  await startLocalizedEdit(path, target.startLine, target.endLine, selected, lang);
+}
+
 /** Localized edit: stream a replacement into ONLY the selected block (lines
  *  `startLine..endLine`), leaving the rest of the file untouched. The target is shown in the
  *  chat; the block is restored on empty/error; Stop / Ctrl+Z keep control. */

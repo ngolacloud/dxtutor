@@ -741,6 +741,21 @@ export function initWorkspace() {
     },
   });
 
+  // "Improve a method by name" — localized edit of a named Rust fn/method (no selection
+  // needed); disambiguates homonyms. Context menu + command palette.
+  wsEditor.addAction({
+    id: "dxtutor.editMethodByName",
+    label: "Improve a method by name (AI)",
+    contextMenuGroupId: "modification",
+    contextMenuOrder: 1.45,
+    run: (ed) => {
+      const model = ed.getModel();
+      if (activeTabPath && model && methodEditHandler) {
+        methodEditHandler(activeTabPath, model.getValue(), model.getLanguageId());
+      }
+    },
+  });
+
   // Sidebar header actions.
   $("#ws-act-open").addEventListener("click", () => void openFolder());
   $("#ws-act-newfile").addEventListener("click", () => void createEntry(false));
@@ -1043,6 +1058,12 @@ export function setLocalizedEditHandler(
   fn: (path: string, startLine: number, endLine: number, selected: string, lang: string) => void,
 ): void {
   localizedEditHandler = fn;
+}
+
+/** Register the handler that starts a localized edit of a NAMED method (wired by main.ts). */
+let methodEditHandler: ((path: string, code: string, lang: string) => void) | null = null;
+export function setMethodEditHandler(fn: (path: string, code: string, lang: string) => void): void {
+  methodEditHandler = fn;
 }
 
 /** Current in-editor content of `path` if a tab is open, else null (unopened). */
