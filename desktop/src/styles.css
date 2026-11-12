@@ -2411,6 +2411,8 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .remote-log.hidden { display: none; }
 .remote-session-row { display: flex; align-items: center; gap: 8px; }
 .remote-session-badge { flex: 1; font-size: 11px; color: var(--green, #4ec9b0); }
+.remote-session-term { flex: none; font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
+.remote-session-term:hover { border-color: var(--accent); color: var(--accent-hover, var(--accent)); }
 .remote-session-stop { flex: none; font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
 .remote-session-stop:hover { border-color: var(--red); color: var(--red); }
 .remote-exec { display: flex; gap: 4px; }

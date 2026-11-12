@@ -416,6 +416,17 @@ pub fn session_running(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Programa + argumentos para um shell INTERACTIVO dentro da sessão (`exec -it <name> sh`),
+/// para ligar a um PTY. O chamador deve confirmar [`session_running`] primeiro.
+pub fn session_shell_command(root: &Path) -> (String, Vec<String>) {
+    let bin = engine_bin(container_engine());
+    let name = session_name(root);
+    (
+        bin.to_string_lossy().into_owned(),
+        vec!["exec".into(), "-it".into(), name, "sh".into()],
+    )
+}
+
 /// Pára e remove a sessão (`rm -f`).
 pub fn session_down(name: &str) -> Result<()> {
     let bin = engine_bin(container_engine());

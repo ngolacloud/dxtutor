@@ -1940,6 +1940,7 @@ fn main() {
             devcontainer_session_down,
             detect_projects,
             pty::pty_spawn,
+            pty::pty_spawn_in_session,
             pty::pty_write,
             pty::pty_resize,
         ])

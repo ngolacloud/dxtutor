@@ -16,9 +16,14 @@ const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 let ensureWorkspaceMode: () => void = () => {};
+let openSessionTerminal: (root: string) => void = () => {};
 
-export function initRemote(deps: { ensureWorkspaceMode: () => void }): void {
+export function initRemote(deps: {
+  ensureWorkspaceMode: () => void;
+  openSessionTerminal?: (root: string) => void;
+}): void {
   ensureWorkspaceMode = deps.ensureWorkspaceMode;
+  if (deps.openSessionTerminal) openSessionTerminal = deps.openSessionTerminal;
   $("#remote-close").addEventListener("click", () => $("#remote-overlay").classList.add("hidden"));
   $("#remote-refresh").addEventListener("click", () => void scan());
   $("#remote-body").addEventListener("click", (e) => {
@@ -30,6 +35,10 @@ export function initRemote(deps: { ensureWorkspaceMode: () => void }): void {
     else if (act === "reopen") void reopenInContainer();
     else if (act === "exec") void execInContainer();
     else if (act === "stop") void stopSession();
+    else if (act === "terminal") {
+      const root = workspaceRoot();
+      if (root) openSessionTerminal(root);
+    }
   });
   $("#remote-body").addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement;
@@ -165,6 +174,7 @@ async function scan(): Promise<void> {
                running
                  ? `<div class="remote-session-row">
                       <span class="remote-session-badge">● session running</span>
+                      <button class="remote-session-term" data-act="terminal" title="Open an interactive shell in the container">⌨ Terminal</button>
                       <button class="remote-session-stop" data-act="stop">Stop</button>
                     </div>
                     <div class="remote-exec">

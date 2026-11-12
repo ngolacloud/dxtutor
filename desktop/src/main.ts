@@ -3135,6 +3135,23 @@ async function setupTerminal() {
   window.addEventListener("resize", fitTerminal);
 }
 
+/** Open the terminal panel and attach it to the project's persistent container session —
+ *  a live interactive shell INSIDE the devcontainer (replaces the current PTY session). */
+async function attachSessionTerminal(root: string) {
+  toggleTerminal(true);
+  if (!hasTauri || !term) return;
+  requestAnimationFrame(() => fitTerminal());
+  term.clear();
+  term.writeln("\x1b[90mattaching to container session…\x1b[0m");
+  try {
+    await invoke("pty_spawn_in_session", { rows: term.rows, cols: term.cols, root });
+    ptyReady = true;
+    term.focus();
+  } catch (e) {
+    term.writeln(`\r\n\x1b[31m${esc(String(e))}\x1b[0m`);
+  }
+}
+
 // ── Mode toggle (Learning ↔ Workspace) ───────────────────────────────────────
 
 type AppMode = "learning" | "workspace";
@@ -3646,7 +3663,10 @@ async function main() {
     ],
   }); // Ctrl+P quick-open · Ctrl+Shift+P command palette
   initGit({ ensureWorkspaceMode: () => setMode("workspace") }); // Git panel
-  initRemote({ ensureWorkspaceMode: () => setMode("workspace") }); // Remote / Dev Containers
+  initRemote({
+    ensureWorkspaceMode: () => setMode("workspace"),
+    openSessionTerminal: (root) => void attachSessionTerminal(root),
+  }); // Remote / Dev Containers
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing

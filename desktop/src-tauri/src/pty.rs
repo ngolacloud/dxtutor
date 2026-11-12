@@ -25,14 +25,14 @@ struct Session {
 #[derive(Default)]
 pub struct PtyState(Mutex<Option<Session>>);
 
-/// Spawn an interactive `bash` attached to a fresh PTY and start streaming its
-/// output. Re-spawning replaces any previous session.
-#[tauri::command]
-pub fn pty_spawn(
+/// Open a PTY, spawn `cmd` on its slave, stream its output as `pty://data`, and store the
+/// session (replacing any previous one). Shared by the host shell and the in-container shell.
+fn spawn_with_command(
     app: AppHandle,
     state: State<'_, PtyState>,
     rows: u16,
     cols: u16,
+    cmd: CommandBuilder,
 ) -> Result<(), String> {
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -43,14 +43,6 @@ pub fn pty_spawn(
             pixel_height: 0,
         })
         .map_err(|e| format!("openpty failed: {e}"))?;
-
-    // Interactive login-ish shell with a sane TERM and the user's HOME as cwd.
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
-    let mut cmd = CommandBuilder::new(shell);
-    cmd.env("TERM", "xterm-256color");
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.cwd(home);
-    }
 
     let child = pair
         .slave
@@ -92,6 +84,50 @@ pub fn pty_spawn(
         child,
     });
     Ok(())
+}
+
+/// Spawn an interactive `bash` attached to a fresh PTY and start streaming its
+/// output. Re-spawning replaces any previous session.
+#[tauri::command]
+pub fn pty_spawn(
+    app: AppHandle,
+    state: State<'_, PtyState>,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    // Interactive login-ish shell with a sane TERM and the user's HOME as cwd.
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
+    let mut cmd = CommandBuilder::new(shell);
+    cmd.env("TERM", "xterm-256color");
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.cwd(home);
+    }
+    spawn_with_command(app, state, rows, cols, cmd)
+}
+
+/// Spawn an interactive shell INSIDE the persistent devcontainer session for `root`
+/// (`<engine> exec -it <session> sh`) on a PTY — a live terminal attached to the container.
+/// Errors when no session is running. Re-spawning replaces the current PTY session.
+#[tauri::command]
+pub fn pty_spawn_in_session(
+    app: AppHandle,
+    state: State<'_, PtyState>,
+    rows: u16,
+    cols: u16,
+    root: String,
+) -> Result<(), String> {
+    let path = std::path::Path::new(&root);
+    let name = tutor_eval::session_name(path);
+    if !tutor_eval::session_running(&name) {
+        return Err("No running session — press Reopen in Container first.".into());
+    }
+    let (program, args) = tutor_eval::session_shell_command(path);
+    let mut cmd = CommandBuilder::new(program);
+    for a in args {
+        cmd.arg(a);
+    }
+    cmd.env("TERM", "xterm-256color");
+    spawn_with_command(app, state, rows, cols, cmd)
 }
 
 /// Forward keystrokes (or pasted text) from xterm to the shell.
