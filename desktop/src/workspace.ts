@@ -557,6 +557,25 @@ async function loadChildren(dir: string): Promise<EntryDto[]> {
 /** Reload the git decorations for the open workspace (no-op outside Tauri / a repo). */
 async function refreshGitStatus(): Promise<void> {
   gitDeco = rootPath && hasTauri ? await gitStatusMap(rootPath) : new Map();
+  updateGitBadge();
+}
+
+/** Badge the Source Control activity-bar icon with the change count (prototype parity). */
+function updateGitBadge(): void {
+  const btn = document.querySelector('.act[data-view="git"]');
+  if (!btn) return;
+  const n = gitDeco.size;
+  let badge = btn.querySelector(".act-badge");
+  if (!n) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "act-badge";
+    btn.appendChild(badge);
+  }
+  badge.textContent = n > 99 ? "99+" : String(n);
 }
 
 /** Roll-up colour for a folder: the strongest git state among its descendants, or null
