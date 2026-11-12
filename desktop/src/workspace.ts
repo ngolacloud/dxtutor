@@ -1755,6 +1755,7 @@ export function enterRangeReview(): { startLine: number; endLine: number; origin
   wsEditor.pushUndoStop();
   rangeReview = { model, startLine, endLine: curEndLine, original, deco };
   rangeStream = null; // streaming done; now under review
+  showInlineReviewWidget(startLine); // Codex-style Accept/Reject floating on the change
   wsEditor.revealLineInCenterIfOutsideViewport(startLine);
   return { startLine, endLine: curEndLine, original, proposed };
 }
@@ -1764,6 +1765,7 @@ export function enterRangeReview(): { startLine: number; endLine: number; origin
 export function acceptRange(): void {
   rangeReview?.deco.clear();
   rangeReview = null;
+  removeInlineReviewWidget();
 }
 
 /** Apply a developer-constructed block (from accepting SELECTED diff lines): replace the
@@ -1780,6 +1782,7 @@ export function applyReviewedBlock(text: string): void {
     deco.clear();
   }
   rangeReview = null;
+  removeInlineReviewWidget();
 }
 
 /** Reject the proposal: restore the original block (one undoable edit) and drop the review. */
@@ -1795,6 +1798,52 @@ export function rejectRange(): void {
     deco.clear();
   }
   rangeReview = null;
+  removeInlineReviewWidget();
+}
+
+// ── Inline review widget (Codex-style) ─────────────────────────────────────────
+// The proposed block already lives in the editor under review; instead of forcing the
+// developer back to the Assistant panel to decide, float an Accept/Reject toolbar RIGHT
+// on the change — like Codex/Copilot inline edits. It drives the same acceptRange/
+// rejectRange, and fires `dx:range-reviewed` so the panel card stays in sync.
+let inlineReviewWidget: monaco.editor.IContentWidget | null = null;
+
+function removeInlineReviewWidget(): void {
+  if (inlineReviewWidget && wsEditor) wsEditor.removeContentWidget(inlineReviewWidget);
+  inlineReviewWidget = null;
+}
+
+/** Apply the inline decision AND tell the Assistant panel to clear its matching card. */
+function decideInlineReview(kind: "accept" | "reject"): void {
+  if (kind === "accept") acceptRange();
+  else rejectRange();
+  window.dispatchEvent(new CustomEvent("dx:range-reviewed", { detail: { kind } }));
+}
+
+function showInlineReviewWidget(startLine: number): void {
+  if (!wsEditor) return;
+  removeInlineReviewWidget();
+  const node = document.createElement("div");
+  node.className = "dx-inline-review";
+  node.innerHTML =
+    `<span class="dx-ir-tag">Proposta do Assistant</span>` +
+    `<button class="dx-ir-btn dx-ir-accept" type="button" title="Aceitar — mantém a proposta (uma só edição)">✓ Aceitar</button>` +
+    `<button class="dx-ir-btn dx-ir-reject" type="button" title="Rejeitar — restaura o original">✗ Rejeitar</button>`;
+  node.querySelector(".dx-ir-accept")?.addEventListener("click", () => decideInlineReview("accept"));
+  node.querySelector(".dx-ir-reject")?.addEventListener("click", () => decideInlineReview("reject"));
+  const widget: monaco.editor.IContentWidget = {
+    getId: () => "dx.inline-review",
+    getDomNode: () => node,
+    getPosition: () => ({
+      position: { lineNumber: startLine, column: 1 },
+      preference: [
+        monaco.editor.ContentWidgetPositionPreference.ABOVE,
+        monaco.editor.ContentWidgetPositionPreference.BELOW,
+      ],
+    }),
+  };
+  inlineReviewWidget = widget;
+  wsEditor.addContentWidget(widget);
 }
 
 /** The block's original text (to restore when a localized stream yields nothing/errors). */

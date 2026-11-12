@@ -2557,6 +2557,27 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 /* Localized edit under review — the proposed block, pending Accept/Reject. */
 .dx-review-block { background: color-mix(in srgb, #d29922 14%, transparent); }
 .dx-review-gutter { width: 3px !important; margin-left: 2px; background: #d29922; }
+
+/* Codex-style inline Accept/Reject toolbar, floating on the pending change in the editor. */
+.dx-inline-review {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 6px; margin-bottom: 3px;
+  background: var(--bg-menu, #1d1d20); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: var(--sh-pop, 0 10px 34px rgba(0,0,0,.55));
+  font-family: var(--font-ui); font-size: 11.5px; white-space: nowrap; user-select: none;
+}
+.dx-inline-review .dx-ir-tag {
+  color: var(--fg-dim); font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .5px; padding: 0 3px;
+}
+.dx-inline-review .dx-ir-btn {
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 9px;
+  font: inherit; font-size: 11.5px; cursor: pointer; color: var(--fg);
+  background: var(--bg-input);
+}
+.dx-inline-review .dx-ir-accept { background: var(--accent-grad); border-color: transparent; color: #fff; font-weight: 600; }
+.dx-inline-review .dx-ir-accept:hover { filter: brightness(1.08); }
+.dx-inline-review .dx-ir-reject:hover { border-color: var(--red); color: var(--red); }
 /* Review diff shown in the assistant panel. */
 .as-review { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .as-review-diff { max-height: 220px; overflow: auto; margin: 0; padding: 6px 0; background: var(--bg-base); font-size: 12px; line-height: 1.45; }

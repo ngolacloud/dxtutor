@@ -254,6 +254,19 @@ export function initAssistant(): void {
     document.getElementById("body")?.classList.remove("dock-open"); // free the editor column
   });
 
+  // The developer decided the pending change from the INLINE editor widget (Codex-style).
+  // acceptRange/rejectRange already ran; here we just retire the matching review card in the
+  // panel and note the outcome on its message, so the two surfaces stay in sync.
+  window.addEventListener("dx:range-reviewed", (e) => {
+    if (!reviews.size && !reviewSel.size) return;
+    const kind = (e as CustomEvent<{ kind: "accept" | "reject" }>).detail?.kind;
+    const note = kind === "reject" ? " — ✗ rejected (inline)." : " — ✓ accepted (inline).";
+    for (const idx of reviews.keys()) if (messages[idx]) messages[idx].content += note;
+    reviews.clear();
+    reviewSel.clear();
+    renderMessages();
+  });
+
   // Restore dock mode + width. First use (no saved preference) DOCKS the Agent by default,
   // VSCode/Antigravity-style; a saved choice wins afterwards (RF-UI-01).
   const dockPref = localStorage.getItem("dx.assistant.docked");
