@@ -211,13 +211,111 @@ async function loadGraph(): Promise<void> {
     $("#git-graph-list").innerHTML = `<div class="tests-note">No commits yet.</div>`;
     return;
   }
-  $("#git-graph-list").innerHTML = commits.map(commitRow).join("");
+  const rows = computeGraph(commits);
+  $("#git-graph-list").innerHTML = commits.map((c, i) => commitRow(c, rows[i])).join("");
   $("#git-graph-detail").textContent = "";
 }
 
-/** One commit row with a simple lane rail (hollow dot = merge) and ref chips. */
-function commitRow(c: GitCommit): string {
-  const merge = c.parents.length > 1;
+// ── Multi-lane DAG layout ───────────────────────────────────────────────────
+// Classic git-graph lane assignment: walk commits newest→oldest keeping a set of active
+// lanes (each reserved for the next commit expected there). A commit takes the lane that
+// was waiting for it; its first parent continues that lane, extra parents open/merge lanes.
+interface GraphSeg {
+  from: number; // column at the top edge
+  to: number; // column at the bottom edge
+  kind: "full" | "upper" | "lower"; // vertical span within the row
+  lane: number; // colour key
+}
+interface GraphRow {
+  nodeCol: number;
+  merge: boolean;
+  segs: GraphSeg[];
+  width: number;
+}
+
+function computeGraph(commits: GitCommit[]): GraphRow[] {
+  const lanes: (string | null)[] = []; // hash each active lane is waiting for
+  const rows: GraphRow[] = [];
+  const freeSlot = () => {
+    const i = lanes.indexOf(null);
+    if (i !== -1) return i;
+    lanes.push(null);
+    return lanes.length - 1;
+  };
+  for (const c of commits) {
+    const top = lanes.slice();
+    let nodeCol = lanes.indexOf(c.hash);
+    if (nodeCol === -1) nodeCol = freeSlot();
+    // Merge every lane that was waiting for this commit into the node.
+    for (let i = 0; i < lanes.length; i++) if (lanes[i] === c.hash) lanes[i] = null;
+    // Place parents: first parent keeps the node's lane; others open/merge lanes.
+    const parentCols: number[] = [];
+    c.parents.forEach((p, k) => {
+      let col: number;
+      if (k === 0) {
+        col = nodeCol;
+      } else {
+        const existing = lanes.indexOf(p);
+        col = existing !== -1 ? existing : freeSlot();
+      }
+      lanes[col] = p;
+      parentCols.push(col);
+    });
+    const bottom = lanes.slice();
+    const segs: GraphSeg[] = [];
+    // Lanes coming from the top: either continue downward, or merge up into the node.
+    for (let t = 0; t < top.length; t++) {
+      const h = top[t];
+      if (h == null) continue;
+      if (h === c.hash) {
+        segs.push({ from: t, to: nodeCol, kind: "upper", lane: t });
+      } else {
+        let b = bottom.indexOf(h);
+        if (b === -1) b = t;
+        segs.push({ from: t, to: b, kind: "full", lane: t });
+      }
+    }
+    // Node → each parent (lower half).
+    for (const b of parentCols) segs.push({ from: nodeCol, to: b, kind: "lower", lane: b });
+    rows.push({
+      nodeCol,
+      merge: c.parents.length > 1,
+      segs,
+      width: Math.max(top.length, bottom.length, nodeCol + 1),
+    });
+  }
+  return rows;
+}
+
+const LANE_W = 14;
+const ROW_H = 46;
+const LANE_COLORS = ["#4aa3ff", "#4ec9b0", "#e0a05a", "#c586c0", "#89d185", "#f14c4c", "#d7ba7d"];
+const laneX = (col: number) => col * LANE_W + LANE_W / 2;
+const laneColor = (lane: number) => LANE_COLORS[lane % LANE_COLORS.length];
+
+/** One commit row: an SVG rail drawing the DAG lanes + node, then the commit text. */
+function commitRow(c: GitCommit, row: GraphRow): string {
+  const w = Math.max(1, row.width) * LANE_W;
+  const yTop = 0;
+  const yMid = ROW_H / 2;
+  const yBot = ROW_H;
+  const paths = row.segs
+    .map((s) => {
+      const x1 = laneX(s.from);
+      const x2 = laneX(s.to);
+      const [ya, yb] = s.kind === "upper" ? [yTop, yMid] : s.kind === "lower" ? [yMid, yBot] : [yTop, yBot];
+      // Smooth S-curve when the lane shifts columns; straight line otherwise.
+      const d =
+        x1 === x2
+          ? `M${x1} ${ya}L${x2} ${yb}`
+          : `M${x1} ${ya}C${x1} ${(ya + yb) / 2} ${x2} ${(ya + yb) / 2} ${x2} ${yb}`;
+      return `<path d="${d}" stroke="${laneColor(s.lane)}" stroke-width="1.6" fill="none"/>`;
+    })
+    .join("");
+  const cx = laneX(row.nodeCol);
+  const node = row.merge
+    ? `<circle cx="${cx}" cy="${yMid}" r="4.5" fill="var(--bg-sidebar)" stroke="${laneColor(row.nodeCol)}" stroke-width="2"/>`
+    : `<circle cx="${cx}" cy="${yMid}" r="4.5" fill="${laneColor(row.nodeCol)}"/>`;
   const chips = c.refs
     .map((r) => {
       const tag = r.startsWith("tag:");
@@ -226,7 +324,7 @@ function commitRow(c: GitCommit): string {
     })
     .join("");
   return `<div class="git-commit-row" data-hash="${esc(c.hash)}" title="${esc(c.hash)}">
-      <span class="git-rail"><span class="git-node${merge ? " merge" : ""}"></span></span>
+      <svg class="git-graph-svg" width="${w}" height="${ROW_H}" viewBox="0 0 ${w} ${ROW_H}" style="flex:0 0 ${w}px">${paths}${node}</svg>
       <span class="git-commit-main">
         <span class="git-commit-subject">${chips}${esc(c.subject)}</span>
         <span class="git-commit-meta">${esc(c.short)} · ${esc(c.author)} · ${esc(c.date)}</span>
