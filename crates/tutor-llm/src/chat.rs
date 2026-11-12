@@ -109,7 +109,14 @@ pub struct ProviderInfo {
     pub id: String,
     pub name: String,
     pub available: bool,
+    /// Capabilities, honestly reported (RF-AG-06). `streaming`: a live token stream exists.
+    /// `cancel`: an in-flight request can be stopped. `tools`: the structured action protocol
+    /// (dxedit/dxcode/dxcontinue/dxaction) works through this provider. `context`: the
+    /// workspace grounding (tree/active file/selection) is sent.
     pub streaming: bool,
+    pub cancel: bool,
+    pub tools: bool,
+    pub context: bool,
     pub note: String,
     pub models: Vec<String>,
 }
@@ -125,6 +132,9 @@ pub fn list_providers() -> Vec<ProviderInfo> {
         name: "Ollama (local)".into(),
         available: !models.is_empty(),
         streaming: true,
+        cancel: true,
+        tools: true,
+        context: true,
         note: if models.is_empty() {
             "Start Ollama and pull a model, e.g. `ollama pull qwen3`.".into()
         } else {
@@ -142,6 +152,9 @@ pub fn list_providers() -> Vec<ProviderInfo> {
             name: name.into(),
             available: has,
             streaming: true,
+            cancel: true,
+            tools: true,
+            context: true,
             note: if has {
                 "Key set — streams live.".into()
             } else {
@@ -157,6 +170,9 @@ pub fn list_providers() -> Vec<ProviderInfo> {
         name: "Claude (Anthropic)".into(),
         available: claude_key,
         streaming: true,
+        cancel: true,
+        tools: true,
+        context: true,
         note: if claude_key {
             "Key set — streams via the Messages API.".into()
         } else {
@@ -174,6 +190,9 @@ pub fn list_providers() -> Vec<ProviderInfo> {
             name: "GitHub Copilot".into(),
             available: false,
             streaming: false,
+            cancel: false,
+            tools: false,
+            context: false,
             note: "Requires GitHub authentication (not wired).".into(),
             models: vec![],
         },

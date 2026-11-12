@@ -55,6 +55,9 @@ interface ProviderInfo {
   name: string;
   available: boolean;
   streaming: boolean;
+  cancel: boolean;
+  tools: boolean;
+  context: boolean;
   note: string;
   models: string[];
 }
@@ -750,6 +753,26 @@ const val = (id: string) => {
 };
 const setVal = (id: string, v: string) => (($(`#${id}`) as HTMLInputElement).value = v);
 
+/** Honest capability matrix per provider (RF-AG-06): streaming / cancel / tools / context. */
+function renderCapabilityMatrix(providers: ProviderInfo[]): void {
+  const host = document.getElementById("providers-caps");
+  if (!host) return;
+  const tick = (b: boolean) => (b ? '<span class="cap-yes">✓</span>' : '<span class="cap-no">·</span>');
+  host.innerHTML =
+    `<table class="caps-table"><thead><tr><th>Provider</th><th title="Live token stream">stream</th>` +
+    `<th title="Stop an in-flight request">cancel</th><th title="Structured edit/action protocol">tools</th>` +
+    `<th title="Workspace grounding sent">context</th><th></th></tr></thead><tbody>` +
+    providers
+      .map(
+        (p) =>
+          `<tr class="${p.available ? "" : "cap-off"}"><td>${esc(p.name)}</td><td>${tick(p.streaming)}</td>` +
+          `<td>${tick(p.cancel)}</td><td>${tick(p.tools)}</td><td>${tick(p.context)}</td>` +
+          `<td class="cap-note">${esc(p.available ? "ready" : "set key")}</td></tr>`,
+      )
+      .join("") +
+    "</tbody></table>";
+}
+
 async function openProviders(): Promise<void> {
   // Populate the default-provider dropdown from the live provider list.
   try {
@@ -757,6 +780,7 @@ async function openProviders(): Promise<void> {
     (($("#cfg-provider") as HTMLSelectElement).innerHTML = providers
       .map((p) => `<option value="${p.id}">${p.name}</option>`)
       .join(""));
+    renderCapabilityMatrix(providers);
   } catch {
     /* leave empty */
   }

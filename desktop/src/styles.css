@@ -2841,6 +2841,16 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .providers-note { font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
 .providers-note code { background: var(--bg-elevated); padding: 1px 4px; border-radius: 3px; }
 .providers-status { flex: 1; font-size: 11px; color: var(--green); }
+/* Provider capability matrix (RF-AG-06). */
+.providers-caps { margin: 4px 0 10px; }
+.caps-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.caps-table th, .caps-table td { text-align: center; padding: 3px 6px; border-bottom: 1px solid var(--seam); }
+.caps-table th:first-child, .caps-table td:first-child { text-align: left; color: var(--fg); }
+.caps-table th { color: var(--fg-dim); font-weight: 600; }
+.caps-table .cap-yes { color: var(--green, #4ec9b0); font-weight: 700; }
+.caps-table .cap-no { color: var(--fg-muted); }
+.caps-table tr.cap-off td:first-child { color: var(--fg-muted); }
+.caps-table .cap-note { color: var(--fg-muted); font-size: 10px; }
 
 /* ── Edit with me (P4 §6) ────────────────────────────────────────────────────── */
 .edit-box {
