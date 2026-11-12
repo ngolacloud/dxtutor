@@ -56,16 +56,25 @@ export function initQuickOpen(deps: { ensureWorkspaceMode: () => void }): void {
   $("#quickopen-overlay").addEventListener("click", (e) => {
     if (e.target === $("#quickopen-overlay")) close();
   });
-  document.addEventListener("keydown", (e) => {
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && (e.key === "p" || e.key === "P") && !e.shiftKey) {
-      e.preventDefault();
-      void openPalette("file");
-    } else if (mod && e.shiftKey && (e.key === "o" || e.key === "O")) {
-      e.preventDefault();
-      void openPalette("symbol");
-    }
-  });
+  // Capture phase on `window`: this runs BEFORE Monaco (which consumes keydown events on
+  // its own element) and before the webview's default Ctrl+P (print), so the global
+  // palette shortcuts fire even while the editor has focus.
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && (e.key === "p" || e.key === "P") && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void openPalette("file");
+      } else if (mod && e.shiftKey && (e.key === "o" || e.key === "O")) {
+        e.preventDefault();
+        e.stopPropagation();
+        void openPalette("symbol");
+      }
+    },
+    true,
+  );
 }
 
 export const openQuickOpen = () => openPalette("file");
