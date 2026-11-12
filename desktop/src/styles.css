@@ -522,6 +522,11 @@ body.term-open #terminal-panel {
   margin: 3px 0 0 5px;
   background: var(--red);
 }
+/* Conditional breakpoint: hollow red ring with an amber core (Alt+click to set). */
+.ws-bp-glyph.ws-bp-cond::before {
+  background: var(--orange, #e0a05a);
+  box-shadow: inset 0 0 0 2px var(--red);
+}
 .explain-hdr { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--seam); }
 .explain-title { font-weight: 600; letter-spacing: 0.3px; color: var(--fg-dim); }
 .explain-file { flex: 1; font-family: var(--font-mono); font-size: 11px; color: var(--fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

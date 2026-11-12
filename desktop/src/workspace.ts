@@ -125,38 +125,87 @@ export function revealLine(line: number): void {
 }
 
 // ── Breakpoints ────────────────────────────────────────────────────────────
-// Line breakpoints per file, set by clicking the editor glyph margin. The debugger
-// (tracer) seeds its stops from the active file's set (see debugTarget()).
-const breakpoints = new Map<string, Set<number>>();
-let bpDeco: monaco.editor.IEditorDecorationsCollection | null = null;
+// Line breakpoints per file, set by clicking the editor glyph margin. They are anchored as
+// MODEL decorations (one per breakpoint) so Monaco keeps them on the right line as the code
+// is edited above them — resilient, not a frozen line number. An optional condition makes
+// the debugger stop only when it holds. The debugger seeds its stops from the active file
+// (see debugTarget()). Keyed by file path → decoration id → condition (empty = unconditional).
+const bpById = new Map<string, Map<string, string>>();
 
-function bpSet(path: string): Set<number> {
-  let s = breakpoints.get(path);
-  if (!s) {
-    s = new Set();
-    breakpoints.set(path, s);
+function bpMap(path: string): Map<string, string> {
+  let m = bpById.get(path);
+  if (!m) {
+    m = new Map();
+    bpById.set(path, m);
   }
-  return s;
+  return m;
+}
+
+/** A breakpoint decoration's CURRENT line in the model (moves with edits), or null. */
+function bpLine(model: monaco.editor.ITextModel, id: string): number | null {
+  return model.getDecorationRange(id)?.startLineNumber ?? null;
+}
+
+function bpDecoration(cond: string): monaco.editor.IModelDeltaDecoration {
+  return {
+    range: new monaco.Range(1, 1, 1, 1), // placeholder; set by deltaDecorations at the line
+    options: {
+      glyphMarginClassName: cond ? "ws-bp-glyph ws-bp-cond" : "ws-bp-glyph",
+      glyphMarginHoverMessage: cond ? { value: `Conditional breakpoint: \`${cond}\`` } : undefined,
+      stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+    },
+  };
 }
 
 function toggleBreakpoint(path: string, line: number): void {
-  const s = bpSet(path);
-  if (s.has(line)) s.delete(line);
-  else s.add(line);
-  renderBreakpoints();
+  const tab = tabByPath(path);
+  if (!tab) return;
+  const model = tab.model;
+  const m = bpMap(path);
+  // Already a breakpoint on this line? Remove it.
+  for (const [id] of m) {
+    if (bpLine(model, id) === line) {
+      model.deltaDecorations([id], []);
+      m.delete(id);
+      return;
+    }
+  }
+  const [id] = model.deltaDecorations(
+    [],
+    [{ ...bpDecoration(""), range: new monaco.Range(line, 1, line, 1) }],
+  );
+  m.set(id, "");
 }
 
-/** Paint the breakpoint glyphs for the active file onto the editor. */
-function renderBreakpoints(): void {
-  if (!wsEditor) return;
-  if (!bpDeco) bpDeco = wsEditor.createDecorationsCollection([]);
-  const s = activeTabPath && activeTabPath !== EXPLAIN_TAB ? breakpoints.get(activeTabPath) : null;
-  bpDeco.set(
-    [...(s ?? [])].map((line) => ({
-      range: new monaco.Range(line, 1, line, 1),
-      options: { glyphMarginClassName: "ws-bp-glyph", stickiness: 1 },
-    })),
+/** Set (or clear, with empty) a condition on the breakpoint at `line`; creates one if none. */
+function setBreakpointCondition(path: string, line: number, cond: string): void {
+  const tab = tabByPath(path);
+  if (!tab) return;
+  const model = tab.model;
+  const m = bpMap(path);
+  let found: string | null = null;
+  for (const [id] of m) if (bpLine(model, id) === line) found = id;
+  if (found) {
+    model.deltaDecorations([found], []);
+    m.delete(found);
+  }
+  const [id] = model.deltaDecorations(
+    [],
+    [{ ...bpDecoration(cond), range: new monaco.Range(line, 1, line, 1) }],
   );
+  m.set(id, cond);
+}
+
+/** Current breakpoints for a file as {line, condition} — read live from the decorations. */
+function fileBreakpoints(path: string): Array<{ line: number; condition: string }> {
+  const tab = tabByPath(path);
+  if (!tab) return [];
+  const out: Array<{ line: number; condition: string }> = [];
+  for (const [id, cond] of bpMap(path)) {
+    const line = bpLine(tab.model, id);
+    if (line) out.push({ line, condition: cond });
+  }
+  return out.sort((a, b) => a.line - b.line);
 }
 
 // ── DOM helpers ──────────────────────────────────────────────────────────────
@@ -500,7 +549,6 @@ function setActiveTab(path: string) {
     $("#ws-editor-region").classList.add("explain-split");
     $("#explain-panel").classList.remove("hidden");
     renderTabs();
-    renderBreakpoints();
     requestAnimationFrame(() => wsEditor?.layout());
     return;
   }
@@ -510,12 +558,11 @@ function setActiveTab(path: string) {
   $("#ws-editor-region").classList.remove("explain-split"); // leaving split → code full width
   $("#explain-panel").classList.add("hidden");
   applyingModel = true;
-  wsEditor.setModel(tab.model);
+  wsEditor.setModel(tab.model); // model carries its own breakpoint decorations
   applyingModel = false;
   $("#ws-welcome").classList.add("hidden");
   saveOpenTabs();
   renderTabs();
-  renderBreakpoints(); // breakpoints are per-file — repaint for the newly active file
   highlightActiveRow();
   requestAnimationFrame(() => {
     wsEditor?.layout();
@@ -861,13 +908,19 @@ export function initWorkspace() {
     glyphMargin: true, // breakpoint dots live here
   });
 
-  // Click the glyph margin / line-number to toggle a breakpoint on that line (VSCode-style).
-  // Debug (the tracer) stops at these lines.
+  // Click the glyph margin / line-number to toggle a breakpoint (VSCode-style); Alt+click
+  // sets a CONDITION (stop only when it holds). Debug (the tracer) stops at these lines.
   wsEditor.onMouseDown((e) => {
     const t = monaco.editor.MouseTargetType;
-    if (e.target.type === t.GUTTER_GLYPH_MARGIN || e.target.type === t.GUTTER_LINE_NUMBERS) {
-      const line = e.target.position?.lineNumber;
-      if (line && activeTabPath && activeTabPath !== EXPLAIN_TAB) toggleBreakpoint(activeTabPath, line);
+    if (e.target.type !== t.GUTTER_GLYPH_MARGIN && e.target.type !== t.GUTTER_LINE_NUMBERS) return;
+    const line = e.target.position?.lineNumber;
+    if (!line || !activeTabPath || activeTabPath === EXPLAIN_TAB) return;
+    if (e.event.altKey) {
+      const existing = fileBreakpoints(activeTabPath).find((b) => b.line === line)?.condition ?? "";
+      const cond = window.prompt("Breakpoint condition (e.g. i == 3). Empty = unconditional:", existing);
+      if (cond !== null) setBreakpointCondition(activeTabPath, line, cond.trim());
+    } else {
+      toggleBreakpoint(activeTabPath, line);
     }
   });
 
@@ -1073,7 +1126,7 @@ function debugTarget(): DebugTarget | null {
     title: tab.name,
     monacoLang: langForFile(tab.name),
     traceLang: traceLangForFile(tab.name),
-    breakpoints: [...bpSet(tab.path)].sort((a, b) => a - b),
+    breakpoints: fileBreakpoints(tab.path),
   };
 }
 

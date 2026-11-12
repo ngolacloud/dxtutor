@@ -51,7 +51,9 @@ export interface DebugTarget {
   title: string; // header label (file name or step title)
   monacoLang: string; // monaco language id for syntax highlighting
   traceLang: string; // language passed to trace_execution ("python" | "rust" | …)
-  breakpoints?: number[]; // lines pre-set in the editor gutter (seed the debugger)
+  // Breakpoints pre-set in the editor gutter (seed the debugger). Each carries an optional
+  // condition — the debugger stops only when it evaluates true against the step's variables.
+  breakpoints?: Array<{ line: number; condition: string }>;
 }
 export interface DebugContext {
   getTarget: () => DebugTarget | null;
@@ -76,6 +78,9 @@ let prevVars = new Map<string, string>(); // name → value at the previously pa
 
 // Breakpoints are line numbers; kept per session (reset when the code changes).
 const breakpoints = new Set<number>();
+// Optional per-line conditions: the debugger stops only when the expression holds against
+// the step's locals (e.g. "i == 3", "x > 5 && !done"). No condition = always stop.
+const bpConditions = new Map<number, string>();
 
 // ── DOM helpers ──────────────────────────────────────────────────────────────
 
@@ -298,12 +303,18 @@ export function openDebug() {
   // map — start clean (honest, avoids phantom stops on unrelated lines).
   if (codeChanged) {
     breakpoints.clear();
+    bpConditions.clear();
     stopSession(); // clears the run state + decorations
   }
-  // Seed from breakpoints set in the editor gutter, so clicking the margin and pressing
-  // Debug stops exactly there.
+  // Seed from the editor gutter (lines + optional conditions), so clicking the margin and
+  // pressing Debug stops exactly there — conditionals only when the expression holds.
   if (target.breakpoints) {
-    for (const line of target.breakpoints) breakpoints.add(line);
+    breakpoints.clear();
+    bpConditions.clear();
+    for (const bp of target.breakpoints) {
+      breakpoints.add(bp.line);
+      if (bp.condition) bpConditions.set(bp.line, bp.condition);
+    }
   }
 
   $("#dbg-target-name").textContent = target.title || "Current code";
@@ -430,15 +441,58 @@ function continueExec(fromStart = false) {
   if (!running) return;
   const begin = fromStart ? idx : idx + 1;
   for (let i = begin; i < steps.length; i++) {
-    if (breakpoints.has(steps[i].line)) {
-      gotoStep(i);
-      setStatus(`Breakpoint hit — line ${steps[i].line}.`);
-      return;
-    }
+    if (!breakpoints.has(steps[i].line)) continue;
+    const cond = bpConditions.get(steps[i].line);
+    if (cond && !evalCondition(cond, steps[i].locals)) continue; // conditional: skip when false
+    gotoStep(i);
+    setStatus(`Breakpoint hit — line ${steps[i].line}${cond ? ` (${cond})` : ""}.`);
+    return;
   }
   // No further breakpoint: run to completion.
   gotoStep(steps.length - 1);
   setStatus("Program finished — end of trace.");
+}
+
+// ── Conditional-breakpoint evaluator ────────────────────────────────────────
+// A tiny, SAFE expression evaluator (no eval): ||, &&, and comparisons (==, !=, <, >, <=,
+// >=) over the step's locals and numeric/string/bool literals. A bare variable is truthy
+// unless it reads as empty / 0 / false / none. Unknown shapes default to NOT stopping.
+function evalCondition(cond: string, locals: VarDto[]): boolean {
+  try {
+    return cond.split("||").some((or) => or.split("&&").every((t) => evalTerm(t.trim(), locals)));
+  } catch {
+    return false;
+  }
+}
+
+function evalTerm(term: string, locals: VarDto[]): boolean {
+  const m = term.match(/^(.+?)\s*(==|!=|<=|>=|<|>)\s*(.+)$/);
+  if (!m) {
+    const v = resolveTok(term, locals); // bare variable → truthy test
+    return v !== "" && v !== "0" && v !== "false" && v !== "None" && v !== "null" && v !== "nil";
+  }
+  const a = resolveTok(m[1].trim(), locals);
+  const b = resolveTok(m[3].trim(), locals);
+  const an = Number(a);
+  const bn = Number(b);
+  const num = a !== "" && b !== "" && !Number.isNaN(an) && !Number.isNaN(bn);
+  switch (m[2]) {
+    case "==": return num ? an === bn : a === b;
+    case "!=": return num ? an !== bn : a !== b;
+    case "<": return num ? an < bn : a < b;
+    case ">": return num ? an > bn : a > b;
+    case "<=": return num ? an <= bn : a <= b;
+    case ">=": return num ? an >= bn : a >= b;
+  }
+  return false;
+}
+
+/** Resolve a token to its string value: a quoted literal, a local's value, or the token. */
+function resolveTok(tok: string, locals: VarDto[]): string {
+  if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
+    return tok.slice(1, -1);
+  }
+  return locals.find((l) => l.name === tok)?.value ?? tok;
 }
 
 // Step Over (F10): advance to the next step in the same frame or shallower
