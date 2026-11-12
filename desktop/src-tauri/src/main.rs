@@ -1007,6 +1007,17 @@ async fn search_project(
     .map_err(|e| format!("search task failed: {e}"))
 }
 
+/// Section 5 (daily work): list the project's files (relative, sorted) for quick-open.
+/// Offline, bounded; runs off the UI thread.
+#[tauri::command]
+async fn list_files(root: String, max: Option<usize>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::search::list_files(std::path::Path::new(&root), max.unwrap_or(5000))
+    })
+    .await
+    .map_err(|e| format!("list_files task failed: {e}"))
+}
+
 /// Section 5 (DAP): what the host can really do for debugging. Honest — `available` is
 /// true only when a real DAP adapter is installed; otherwise the note points at the
 /// instrumentation tracer (Visualize) as the fallback. Detection only, starts nothing.
@@ -1191,6 +1202,7 @@ fn main() {
             run_test,
             run_all_tests,
             search_project,
+            list_files,
             debug_capabilities,
             assistant_models,
             assistant_chat,

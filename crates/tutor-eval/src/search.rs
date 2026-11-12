@@ -76,6 +76,37 @@ pub fn search_project(root: &Path, query: &str, max: usize) -> Vec<SearchHit> {
     out
 }
 
+/// List the project's files (relative paths, sorted) for quick-open, skipping heavy/VCS
+/// dirs and dotfiles/dirs. Capped by `max`. Includes all file types (quick-open opens any).
+pub fn list_files(root: &Path, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let rd = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        for entry in rd.flatten() {
+            if out.len() >= max {
+                out.sort();
+                return out;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                stack.push(entry.path());
+            } else if !name.starts_with('.') {
+                out.push(relative(root, &entry.path()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
@@ -113,6 +144,28 @@ mod tests {
         assert!(hits.iter().any(|h| h.file.ends_with("a.rs") && h.line == 2 && h.col == 9));
         assert!(hits.iter().any(|h| h.file.ends_with("b.txt") && h.line == 2));
         assert!(!hits.iter().any(|h| h.file.contains("target")), "build dir must be skipped");
+    }
+
+    #[test]
+    fn list_files_enumerates_and_skips() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/main.rs"), "").unwrap();
+        std::fs::write(root.join("README.md"), "").unwrap();
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        std::fs::write(root.join("target/junk"), "").unwrap();
+        std::fs::write(root.join(".hidden"), "").unwrap();
+
+        let files = list_files(root, 100);
+        assert!(files.iter().any(|f| f == "src/main.rs"));
+        assert!(files.iter().any(|f| f == "README.md"));
+        assert!(!files.iter().any(|f| f.contains("target")), "build dir skipped");
+        assert!(!files.iter().any(|f| f.contains(".hidden")), "dotfiles skipped");
+        // Sorted for a stable quick-open list.
+        let mut sorted = files.clone();
+        sorted.sort();
+        assert_eq!(files, sorted);
     }
 
     #[test]
