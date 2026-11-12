@@ -233,11 +233,45 @@ export function initAssistant(): void {
     else void send();
   });
   const ta = $("#assistant-input") as HTMLTextAreaElement;
+  ta.addEventListener("input", () => syncTemplateMenu());
   ta.addEventListener("keydown", (e) => {
+    const menu = document.getElementById("assistant-templates");
+    const menuOpen = menu && !menu.classList.contains("hidden");
+    if (menuOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        moveTemplate(1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moveTemplate(-1);
+        return;
+      }
+      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        applyTemplate(templateSel);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        hideTemplates();
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        applyTemplate(templateSel);
+        return;
+      }
+    }
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (!busy) void send();
     }
+  });
+  $("#assistant-templates").addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest(".as-tpl") as HTMLElement | null;
+    if (row) applyTemplate(Number(row.dataset.i));
   });
   $("#assistant-provider").addEventListener("change", (e) => {
     provider = (e.target as HTMLSelectElement).value;
@@ -428,8 +462,107 @@ function updateContextHint(): void {
   if (!input) return;
   const p = projects.find((x) => x.path === focusedProject);
   input.placeholder = p
-    ? `Ask about ${p.name} (${p.kind})… — the Agent stays focused on this project (Ctrl+Enter)`
-    : "Ask anything — paste a finding or prompt… (Ctrl+Enter to send)";
+    ? `Ask about ${p.name} (${p.kind})… — / for templates · Ctrl+Enter to send`
+    : "Ask anything — type / for guided prompt templates… (Ctrl+Enter to send)";
+}
+
+// ── Guided prompt templates ("/") ──────────────────────────────────────────
+// The developer stays in charge: templates scaffold a precise, well-engineered prompt
+// with <PLACEHOLDERS> for them to fill, so the Agent assists an intent the dev defines
+// (rather than inventing scope). The <…> gaps are filled by the dev; the project context
+// (AG-1) supplies the rest.
+interface PromptTemplate {
+  cmd: string;
+  label: string;
+  body: string;
+}
+const TEMPLATES: PromptTemplate[] = [
+  {
+    cmd: "/implement",
+    label: "Implement a feature",
+    body: "Implement <WHAT> in <FILE>.\nBehaviour: <WHAT IT SHOULD DO>.\nConstraints: <STYLE / DEPENDENCIES / LIMITS>.\nAcceptance: <HOW I'LL VERIFY IT>.",
+  },
+  {
+    cmd: "/fix",
+    label: "Fix a bug",
+    body: "Fix <BUG> in <FILE OR METHOD>.\nSymptom: <WHAT GOES WRONG>.\nExpected: <WHAT SHOULD HAPPEN>.\nKeep the change minimal and localized.",
+  },
+  {
+    cmd: "/refactor",
+    label: "Refactor safely",
+    body: "Refactor <TARGET> in <FILE> to <GOAL>.\nPreserve behaviour; do not change the public API.\nExplain the trade-off in 1–2 lines before the change.",
+  },
+  {
+    cmd: "/explain",
+    label: "Explain code",
+    body: "Explain <WHAT> in <FILE>.\nFocus on: <ASPECT — control flow / types / edge cases>.\nUse the real symbols from this project.",
+  },
+  {
+    cmd: "/test",
+    label: "Write tests",
+    body: "Write tests for <TARGET> in <FILE>.\nCover: <CASES — happy path / edge / error>.\nUse the project's existing test style/framework.",
+  },
+  {
+    cmd: "/review",
+    label: "Review a change",
+    body: "Review <FILE OR SELECTION> for <CONCERN — correctness / performance / safety>.\nList concrete issues with file:line and a suggested fix each.",
+  },
+];
+let templateSel = 0;
+let templateShown: PromptTemplate[] = [];
+
+function syncTemplateMenu(): void {
+  const ta = $("#assistant-input") as HTMLTextAreaElement;
+  const v = ta.value;
+  // Only a leading "/" command (no spaces/newlines yet) opens the menu.
+  const m = /^\/(\w*)$/.exec(v);
+  if (!m) {
+    hideTemplates();
+    return;
+  }
+  const q = m[1].toLowerCase();
+  templateShown = TEMPLATES.filter((t) => t.cmd.slice(1).startsWith(q));
+  if (templateShown.length === 0) {
+    hideTemplates();
+    return;
+  }
+  templateSel = 0;
+  renderTemplates();
+}
+
+function renderTemplates(): void {
+  const menu = $("#assistant-templates");
+  menu.innerHTML = templateShown
+    .map(
+      (t, i) =>
+        `<div class="as-tpl${i === templateSel ? " sel" : ""}" data-i="${i}" role="option"><span class="as-tpl-cmd">${esc(t.cmd)}</span><span class="as-tpl-label">${esc(t.label)}</span></div>`,
+    )
+    .join("");
+  menu.classList.remove("hidden");
+}
+
+function moveTemplate(d: number): void {
+  if (templateShown.length === 0) return;
+  templateSel = (templateSel + d + templateShown.length) % templateShown.length;
+  renderTemplates();
+}
+
+function hideTemplates(): void {
+  document.getElementById("assistant-templates")?.classList.add("hidden");
+}
+
+/** Insert the chosen scaffold and place the caret on the first <PLACEHOLDER>. */
+function applyTemplate(i: number): void {
+  const t = templateShown[i];
+  if (!t) return;
+  const ta = $("#assistant-input") as HTMLTextAreaElement;
+  ta.value = t.body;
+  hideTemplates();
+  const first = t.body.indexOf("<");
+  const end = t.body.indexOf(">", first);
+  ta.focus();
+  if (first >= 0 && end >= 0) ta.setSelectionRange(first, end + 1);
+  else ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 // ── Docking (Antigravity style) ───────────────────────────────────────────

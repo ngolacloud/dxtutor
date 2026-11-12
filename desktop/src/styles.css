@@ -2512,6 +2512,27 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 #assistant-dock.is-docked { color: var(--accent); }
 .assistant-hdr { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .assistant-hdr-spacer { flex: 1; }
+.assistant-project { max-width: 130px; }
+.assistant-project.hidden { display: none; }
+/* Guided prompt-template menu ("/"). */
+.assistant-compose { position: relative; }
+.assistant-templates {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  z-index: 45;
+}
+.assistant-templates.hidden { display: none; }
+.as-tpl { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; cursor: pointer; }
+.as-tpl:hover, .as-tpl.sel { background: var(--bg-selected-inactive); }
+.as-tpl-cmd { font-family: var(--font-mono); font-size: 11px; color: var(--accent-hover, var(--accent)); flex: none; }
+.as-tpl-label { font-size: 12px; color: var(--fg); }
 /* Chat-history dropdown (Agent-panel style). */
 .assistant-history-panel {
   position: absolute;
