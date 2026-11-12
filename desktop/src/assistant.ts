@@ -111,6 +111,7 @@ interface Plan {
   steps: string[];
   current: number; // index of the running step (steps before it are done)
   done: boolean;
+  autoRun: boolean; // when on, each completed step auto-drives the next (stoppable)
 }
 const plans = new Map<number, Plan>(); // message idx → plan
 let activePlanIdx = -1;
@@ -148,6 +149,25 @@ function advancePlan(): void {
     return;
   }
   renderMessages();
+  if (p.autoRun) {
+    // Multi-step orchestration: drive the next step automatically (bounded by step count,
+    // stoppable). A short tick lets the completed action settle before the next prompt.
+    setTimeout(() => void continuePlan(), 400);
+  }
+}
+
+/** Orchestrate the next plan step: ask the Agent to perform the current (not-yet-done) step,
+ *  grounded on the remaining plan. Bounded by the plan length; Stop cancels the stream. */
+async function continuePlan(): Promise<void> {
+  const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
+  if (!p || p.done || busy) return;
+  const step = p.steps[p.current];
+  const remaining = p.steps.slice(p.current).map((s, i) => `${p.current + i + 1}. ${s}`).join("\n");
+  await sendText(
+    `Continue the plan "${p.title}". Do ONLY this next step now:\n\n➡ ${step}\n\n` +
+      `Remaining steps (for context, do not do them yet):\n${remaining}\n\n` +
+      `Act through the IDE (dxcode/dxedit/dxcontinue/dxaction) — do not just describe it.`,
+  );
 }
 
 /** Render the plan progress card (title · N/M · step checklist), Antigravity-CLI style. */
@@ -162,10 +182,22 @@ function planCard(p: Plan): string {
       return `<div class="as-plan-step ${state}"><span class="as-plan-glyph">${glyph}</span><span class="as-plan-label">${esc(s)}</span></div>`;
     })
     .join("");
+  // Orchestration controls: when the plan has steps left and nothing is streaming, offer to
+  // drive the next step (Continue →) or toggle autonomous run (each step drives the next).
+  const idx = activePlanIdx;
+  const controls =
+    !p.done && idx >= 0 && plans.get(idx) === p
+      ? `<div class="as-plan-ctl">` +
+        (busy
+          ? `<span class="as-plan-run">running step ${p.current + 1}…</span>`
+          : `<button class="as-plan-next" data-idx="${idx}">Continue →</button>`) +
+        `<label class="as-plan-auto"><input type="checkbox" class="as-plan-autock" data-idx="${idx}" ${p.autoRun ? "checked" : ""}/> Auto</label>` +
+        `</div>`
+      : "";
   return (
     `<div class="as-plan"><div class="as-plan-h"><span class="as-plan-title">${esc(p.title)}</span>` +
     `<span class="as-plan-count">${doneN}/${total}${p.done ? " ✓" : ""}</span></div>` +
-    `<div class="as-plan-bar"><span style="width:${pct}%"></span></div>${rows}</div>`
+    `<div class="as-plan-bar"><span style="width:${pct}%"></span></div>${rows}${controls}</div>`
   );
 }
 
@@ -257,6 +289,7 @@ export function initAssistant(): void {
     if (Number.isNaN(idx)) return;
     if (btn.classList.contains("as-apply")) void applyAction(idx);
     else if (btn.classList.contains("as-write")) void startCodeStream(idx);
+    else if (btn.classList.contains("as-plan-next")) void continuePlan(); // drive the next step
     else if (btn.classList.contains("as-accept-all")) {
       acceptRange(); // keep the full proposal (already in the buffer; one undo step)
       reviews.delete(idx);
@@ -287,9 +320,17 @@ export function initAssistant(): void {
       renderMessages();
     }
   });
-  // Toggle a diff line's acceptance (review checkboxes).
+  // Toggle a diff line's acceptance (review checkboxes) or the plan's Auto-run.
   $("#assistant-messages").addEventListener("change", (e) => {
     const ck = e.target as HTMLInputElement;
+    if (ck.classList.contains("as-plan-autock")) {
+      const p = plans.get(Number(ck.dataset.idx));
+      if (p) {
+        p.autoRun = ck.checked;
+        if (p.autoRun && !p.done && !busy) void continuePlan(); // turning Auto on drives now
+      }
+      return;
+    }
     if (!ck.classList.contains("dl-ck")) return;
     const idx = Number(ck.dataset.idx);
     const k = Number(ck.dataset.k);
@@ -300,8 +341,11 @@ export function initAssistant(): void {
   });
   // One button: Send while idle, Stop (cancel) while a stream is running.
   $("#assistant-send").addEventListener("click", () => {
-    if (busy && currentRequestId) void invoke("assistant_cancel", { requestId: currentRequestId });
-    else void send();
+    if (busy && currentRequestId) {
+      const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
+      if (p) p.autoRun = false; // Stop also halts autonomous plan driving
+      void invoke("assistant_cancel", { requestId: currentRequestId });
+    } else void send();
   });
   const ta = $("#assistant-input") as HTMLTextAreaElement;
   ta.addEventListener("input", () => syncTemplateMenu());
@@ -456,9 +500,12 @@ export function initAssistant(): void {
       // A plan sets up the execution checklist; later actions tick its steps.
       const plan = parsePlanDirective(messages[idx]?.content ?? "");
       if (plan) {
-        plans.set(idx, { title: plan.title, steps: plan.steps, current: 0, done: false });
+        // Carry the Auto preference across re-planning within the same run.
+        const autoRun = activePlanIdx >= 0 ? (plans.get(activePlanIdx)?.autoRun ?? false) : false;
+        plans.set(idx, { title: plan.title, steps: plan.steps, current: 0, done: false, autoRun });
         activePlanIdx = idx;
         renderMessages();
+        if (autoRun) setTimeout(() => void continuePlan(), 400); // auto-drive step 1
       }
       // Continue/complete an existing file (append) — for "continue where it stopped".
       const cont = parseContinueDirective(messages[idx]?.content ?? "");
@@ -1477,12 +1524,17 @@ async function applyAction(idx: number): Promise<void> {
 }
 
 async function send(): Promise<void> {
-  if (busy) return;
   const ta = $("#assistant-input") as HTMLTextAreaElement;
   const text = ta.value.trim();
   if (!text) return;
-  messages.push({ role: "user", content: text });
   ta.value = "";
+  await sendText(text);
+}
+
+/** Send `text` as a user turn (shared by the composer and the plan orchestration). */
+async function sendText(text: string): Promise<void> {
+  if (busy || !text.trim()) return;
+  messages.push({ role: "user", content: text });
   streamingIdx = messages.push({ role: "assistant", content: "" }) - 1;
 
   busy = true;

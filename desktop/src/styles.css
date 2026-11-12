@@ -2805,6 +2805,12 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-plan-step.run .as-plan-glyph { color: var(--orange, #e0a05a); }
 .as-plan-step.run .as-plan-label { color: var(--fg-bright); font-weight: 600; }
 .as-plan-step.todo { color: var(--fg-muted); }
+.as-plan-ctl { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.as-plan-next { font-family: inherit; font-size: 11px; font-weight: 600; color: var(--bg); background: var(--orange, #e0a05a); border: none; border-radius: 5px; padding: 4px 10px; cursor: pointer; }
+.as-plan-next:hover { filter: brightness(1.08); }
+.as-plan-run { font-size: 11px; color: var(--orange, #e0a05a); }
+.as-plan-auto { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; cursor: pointer; margin-left: auto; }
+.as-plan-autock { cursor: pointer; }
 
 .as-action { margin-top: 6px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)); display: flex; flex-direction: column; gap: 6px; }
 .as-action.done { border-color: var(--border); color: var(--ok, #3fb950); background: var(--bg-elevated); }
