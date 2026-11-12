@@ -93,6 +93,9 @@
           <button class="act" data-view="search" title="Search — find in project" data-i18n-title="act.search">
             <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           </button>
+          <button class="act" data-view="git" title="Git — working-tree changes" data-i18n-title="act.git">
+            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7"/><path d="M18 11.5c0 3-3 3.5-6 3.5"/></svg>
+          </button>
           <button class="act" data-view="tests" title="Tests — discover and run" data-i18n-title="act.tests">
             <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v6l-5 9a2 2 0 0 0 1.8 3h12.4A2 2 0 0 0 20 18l-5-9V3"/><path d="M8 3h8"/><path d="M7.5 14h9"/></svg>
           </button>
@@ -540,6 +543,17 @@
       </header>
       <div id="tests-list" class="tests-list"></div>
       <pre id="tests-output" class="tests-output" aria-label="Test output"></pre>
+    </aside>
+    <!-- Git: working-tree changes + unified diff (read-only) -->
+    <aside id="git-overlay" class="codemap-drawer hidden" aria-label="Git changes">
+      <header class="codemap-hdr">
+        <span class="codemap-label">Git</span>
+        <span id="git-count" class="codemap-title"></span>
+        <button id="git-refresh" class="assistant-iconbtn" title="Refresh" aria-label="Refresh git changes">&#8635;</button>
+        <button id="git-close" class="review-close" title="Close" aria-label="Close Git">&times;</button>
+      </header>
+      <div id="git-list" class="tests-list"></div>
+      <pre id="git-diff" class="git-diff" aria-label="Diff"></pre>
     </aside>
     <!-- Global search: find literal text across the open project -->
     <!-- Quick-open (Ctrl/Cmd+P): go to a file by name -->

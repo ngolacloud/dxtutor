@@ -2350,6 +2350,19 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .qo-row.sel, .qo-row:hover { background: var(--bg-selected, #094771); }
 .qo-base { color: var(--fg); }
 .qo-dir { color: var(--fg-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Git panel — reuses the codemap drawer shell. */
+.git-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; border-bottom: 1px solid var(--seam, #2b2b2b); }
+.git-row:hover { background: var(--bg-elevated); }
+.git-status { flex: 0 0 auto; width: 20px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 3px; color: var(--fg-muted); }
+.git-status.s-M { color: #d29922; }
+.git-status.s-A, .git-status[class*="s-??"] { color: #3fb950; }
+.git-status.s-D { color: #f85149; }
+.git-open { margin-left: auto; font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
+.git-diff { flex: 1 1 auto; overflow: auto; margin: 0; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--bg-base); white-space: pre; font-size: 12px; line-height: 1.5; }
+.git-diff .d-add { color: #3fb950; }
+.git-diff .d-del { color: #f85149; }
+.git-diff .d-hunk { color: var(--accent); }
+.git-diff .d-meta { color: var(--fg-muted); }
 /* Search panel — reuses the codemap drawer shell. */
 .search-bar { padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .search-input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-base); color: var(--fg); font: inherit; }
