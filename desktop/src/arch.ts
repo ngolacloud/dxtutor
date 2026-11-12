@@ -126,9 +126,11 @@ function onNodeClick(id: string): void {
   setArch(a);
 }
 
+const SPEC_KEY = "dxtutor.arch.spec"; // the design persists across Studio sessions
+
 export function openArch(): void {
   const ta = $("#arch-spec") as HTMLTextAreaElement;
-  if (!ta.value.trim()) ta.value = JSON.stringify(EXAMPLE, null, 2);
+  if (!ta.value.trim()) ta.value = localStorage.getItem(SPEC_KEY) || JSON.stringify(EXAMPLE, null, 2);
   $("#arch-overlay").classList.remove("hidden");
   void validate();
 }
@@ -144,6 +146,8 @@ function currentArch(): Architecture | null {
 }
 
 async function validate(): Promise<void> {
+  const raw = ($("#arch-spec") as HTMLTextAreaElement).value;
+  if (raw.trim()) localStorage.setItem(SPEC_KEY, raw); // persist the design across sessions
   const arch = currentArch();
   if (!arch) {
     $("#arch-findings").innerHTML = `<div class="arch-f err">⚠ Invalid JSON — fix the design spec.</div>`;
