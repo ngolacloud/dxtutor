@@ -32,6 +32,7 @@ import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, 
 import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
+import { initSearch, openSearch } from "./search";
 import { initAssistant, openAssistant } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3443,6 +3444,10 @@ function wireChrome() {
         openTests();
         return;
       }
+      if (view === "search") {
+        openSearch();
+        return;
+      }
       if (view === "assistant") {
         openAssistant();
         return;
@@ -3544,6 +3549,7 @@ async function main() {
   initReview({ ensureWorkspaceMode: () => setMode("workspace") }); // Code Review panel
   initCodeMap({ ensureWorkspaceMode: () => setMode("workspace") }); // CodeMap panel
   initTests({ ensureWorkspaceMode: () => setMode("workspace") }); // Tests panel
+  initSearch({ ensureWorkspaceMode: () => setMode("workspace") }); // Search panel
   setCodeMapHandler((symbol) => void openCodeMap(symbol)); // editor → CodeMap
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing

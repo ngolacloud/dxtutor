@@ -2338,6 +2338,14 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .dbg-cap { font-size: 10px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--fg-muted); cursor: help; }
 .dbg-cap.ok { color: #3fb950; border-color: #3fb950; }
 .dbg-cap.warn { color: var(--fg-dim); }
+/* Search panel — reuses the codemap drawer shell. */
+.search-bar { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.search-input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-base); color: var(--fg); font: inherit; }
+.search-input:focus { outline: none; border-color: var(--accent); }
+.search-row { display: flex; flex-direction: column; gap: 2px; padding: 5px 10px; cursor: pointer; border-bottom: 1px solid var(--seam, #2b2b2b); }
+.search-row:hover { background: var(--bg-elevated); }
+.search-text { color: var(--fg); white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+.search-text mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: inherit; border-radius: 2px; }
 /* Tests panel — reuses the codemap drawer shell. */
 .tests-list { overflow: auto; flex: 1 1 auto; }
 .tests-note { padding: 14px; color: var(--fg-dim); }
