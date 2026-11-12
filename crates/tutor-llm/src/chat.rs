@@ -305,6 +305,14 @@ pub fn ollama_chat_stream(
         "model": model,
         "messages": messages,
         "stream": true,
+        // Ollama defaults num_ctx to 2048 — far too small when the prompt carries a whole
+        // code file AND the model must emit a whole file back: the context overflows and the
+        // generation is CUT OFF mid-way (looks like a broken stream). Give it room, and don't
+        // cap the output (num_predict -1 = generate until the model stops).
+        "options": {
+            "num_ctx": 16384,
+            "num_predict": -1,
+        },
     });
 
     let resp = match ureq::post(&url).timeout(Duration::from_secs(300)).send_json(body) {
