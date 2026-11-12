@@ -579,6 +579,15 @@ fn walk_tree(dir: &Path, depth: u32, max_depth: u32, cap: u32, count: &mut u32, 
     }
 }
 
+/// Resolve `path` (relative, or absolute-under-root) to an absolute path STRICTLY inside
+/// the workspace `root`, or an error if it escapes. The Dev delegate calls this before
+/// opening/streaming into a model-proposed file, so a `../` in a `dxcode` can never read
+/// or write outside the project.
+#[tauri::command]
+pub fn workspace_resolve(root: String, path: String) -> Result<String, String> {
+    contained_path(&root, &path).map(|p| p.to_string_lossy().to_string())
+}
+
 /// Perform a controlled, user-approved filesystem action from the Dev Assistant, STRICTLY
 /// inside the open workspace. `op` is "createDir" | "createFile" | "writeFile"; `path` is
 /// relative to `root` (an absolute path is accepted only if it is already under root).
@@ -659,6 +668,17 @@ mod tests {
 
         // escape is refused — nothing is written outside the workspace
         assert!(workspace_action(root, "createDir".into(), "../evil".into(), None).is_err());
+    }
+
+    #[test]
+    fn workspace_resolve_contains_the_dev_delegate_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_string_lossy().to_string();
+        // A normal dxcode target resolves under the root.
+        let ok = workspace_resolve(root.clone(), "examples/dxtutor/main.rs".into()).unwrap();
+        assert!(ok.starts_with(tmp.path().to_string_lossy().as_ref()));
+        // A `../` escape is refused — the Dev delegate can never open/stream outside.
+        assert!(workspace_resolve(root, "../../etc/passwd".into()).is_err());
     }
 
     #[test]

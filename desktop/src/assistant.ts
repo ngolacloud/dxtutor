@@ -409,7 +409,16 @@ async function startCodeStream(idx: number): Promise<void> {
   const dir = parseCodeDirective(messages[idx]?.content ?? "");
   const root = workspaceRoot();
   if (!dir || !root) return;
-  const abs = codeTargetAbs(dir.file)!;
+  // Containment (robustness): resolve the proposed path under the workspace root on the
+  // backend. A `../` escape is refused here, before any file is opened or streamed into.
+  let abs: string;
+  try {
+    abs = await invoke<string>("workspace_resolve", { root, path: dir.file });
+  } catch (e) {
+    actionErrors.set(idx, `refused: ${String(e)}`);
+    renderMessages();
+    return;
+  }
   const ok = await beginEditorStream(abs);
   if (!ok) {
     actionErrors.set(idx, "could not open the target file in the editor");
