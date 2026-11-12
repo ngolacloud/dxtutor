@@ -337,12 +337,20 @@ async function buildWorkspaceContext(): Promise<string | null> {
   }
   const active = activeFilePath();
   const sel = activeSelection();
+  // Ground on the active file's content too, so "explain/modify this file" works without
+  // the model guessing. Truncated to keep the prompt bounded; a selection takes priority.
+  const activeBody = active && !sel ? currentFileContent(active) : null;
+  const MAX = 8000;
+  const bodyBlock = activeBody
+    ? `Active file content${activeBody.length > MAX ? " (truncated)" : ""}:\n${activeBody.slice(0, MAX)}`
+    : "";
   return [
     `You are the dxtutor workspace assistant. You work INSIDE the user's open project — ` +
       `not a generic chatbot. Ground every answer in THIS real workspace, by its actual paths.`,
     `Workspace root: ${root}`,
     active ? `Active file: ${active}` : `No file is currently open.`,
     sel ? `Selected code:\n${sel.slice(0, 2000)}` : "",
+    bodyBlock,
     `Project tree (depth-limited, build/VCS dirs skipped):\n${tree}`,
     `You act through the IDE, never with OS shell instructions (no mkdir / PowerShell / ` +
       `Python). You have two action blocks. Choose based on whether the task produces CODE:`,
