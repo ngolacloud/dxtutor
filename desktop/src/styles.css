@@ -2334,6 +2334,22 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .cm-res.inferred { background: rgba(224, 160, 90, 0.18); color: var(--orange); }
 .cm-res.resolved { background: rgba(137, 209, 133, 0.18); color: var(--green); }
 .codemap-body { flex: 1; overflow-y: auto; padding: 4px 0 12px; }
+/* Tests panel — reuses the codemap drawer shell. */
+.tests-list { overflow: auto; flex: 1 1 auto; }
+.tests-note { padding: 14px; color: var(--fg-dim); }
+.tests-note.err { color: var(--red); }
+.test-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; border-bottom: 1px solid var(--seam, #2b2b2b); }
+.test-row:hover { background: var(--bg-elevated); }
+.test-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-muted); flex: 0 0 auto; }
+.test-dot.ok { background: #3fb950; }
+.test-dot.fail { background: #f85149; }
+.test-dot.run { background: var(--accent); animation: as-spin 0.7s linear infinite; }
+.test-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.test-ign { font-size: 10px; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.test-loc { color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
+.test-run { font: inherit; font-size: 11px; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
+.test-run:hover:not(:disabled) { border-color: var(--accent); }
+.tests-output { flex: 0 0 auto; max-height: 40%; overflow: auto; margin: 0; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--bg-base); color: var(--fg-dim); white-space: pre-wrap; word-break: break-word; font-size: 12px; }
 .cm-note { padding: 14px; color: var(--fg-dim); }
 .cm-note.err { color: var(--red); }
 .cm-note.warn { margin: 6px 10px; padding: 8px 10px; color: var(--fg); border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)); font-size: 12px; }
