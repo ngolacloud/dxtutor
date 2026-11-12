@@ -44,6 +44,7 @@ interface RunResult {
 const LS = {
   folder: "dxtutor.ws.folder", // last opened root
   expanded: "dxtutor.ws.expanded", // array of expanded dir paths
+  tabs: "dxtutor.ws.tabs", // {folder, paths[], active} — reopened on restart
 } as const;
 
 let wsEditor: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -355,6 +356,31 @@ function tabByPath(path: string): Tab | undefined {
   return tabs.find((t) => t.path === path);
 }
 
+/** Persist the open tabs + active tab for THIS folder, so a restart can reopen them. */
+function saveOpenTabs() {
+  if (!rootPath) return;
+  localStorage.setItem(
+    LS.tabs,
+    JSON.stringify({ folder: rootPath, paths: tabs.map((t) => t.path), active: activeTabPath }),
+  );
+}
+
+/** Reopen the tabs saved for `root` (section 5 — buffer recovery after restart). Skips
+ *  files that no longer exist; restores the previously-active tab. */
+async function restoreTabs(root: string) {
+  let saved: { folder?: string; paths?: string[]; active?: string } = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(LS.tabs) ?? "{}");
+  } catch {
+    return;
+  }
+  if (saved.folder !== root || !Array.isArray(saved.paths)) return;
+  for (const p of saved.paths) {
+    if (!tabByPath(p)) await openFile(p); // openFile reads from disk; missing files no-op
+  }
+  if (saved.active && tabByPath(saved.active)) setActiveTab(saved.active);
+}
+
 function setActiveTab(path: string) {
   const tab = tabByPath(path);
   if (!tab || !wsEditor) return;
@@ -363,6 +389,7 @@ function setActiveTab(path: string) {
   wsEditor.setModel(tab.model);
   applyingModel = false;
   $("#ws-welcome").classList.add("hidden");
+  saveOpenTabs();
   renderTabs();
   highlightActiveRow();
   requestAnimationFrame(() => {
@@ -417,6 +444,7 @@ function closeTab(path: string) {
   } else {
     renderTabs();
   }
+  saveOpenTabs();
 }
 
 async function saveActive(): Promise<boolean> {
@@ -617,6 +645,7 @@ async function mountRoot(path: string) {
   }
   saveExpanded();
   await renderTree();
+  await restoreTabs(path); // reopen the files that were open last time (buffer recovery)
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
