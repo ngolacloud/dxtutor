@@ -51,6 +51,21 @@ export function initArch(): void {
     const g = (e.target as HTMLElement).closest(".arch-node") as HTMLElement | null;
     if (g?.dataset.id) onNodeClick(g.dataset.id);
   });
+  // Double-click a node to remove it (and any connections touching it).
+  $("#arch-diagram").addEventListener("dblclick", (e) => {
+    const g = (e.target as HTMLElement).closest(".arch-node") as HTMLElement | null;
+    if (g?.dataset.id) removeComponent(g.dataset.id);
+  });
+}
+
+/** Remove a component and every connection that touches it. */
+function removeComponent(id: string): void {
+  const a = currentArch();
+  if (!a) return;
+  connectFrom = null;
+  a.components = a.components.filter((c) => c.id !== id);
+  a.connections = a.connections.filter((c) => c.from !== id && c.to !== id);
+  setArch(a);
 }
 
 /** Mutate the design in place, write it back to the spec, and re-validate (which re-renders). */
@@ -95,7 +110,7 @@ function onNodeClick(id: string): void {
   }
   const from = connectFrom;
   connectFrom = null;
-  $("#arch-hint").textContent = "Click a node, then another, to connect them.";
+  $("#arch-hint").textContent = "Click a node, then another, to connect · double-click to delete.";
   if (from === id) {
     void validate(); // clicked the same node → cancel selection
     return;
