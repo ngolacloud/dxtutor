@@ -49,6 +49,7 @@ const LS = {
   tabs: "dxtutor.ws.tabs", // {folder, paths[], active} — reopened on restart
   recents: "dxtutor.ws.recents", // array of recently opened root paths (most-recent first)
   breakpoints: "dxtutor.ws.breakpoints", // {[absPath]: [{line,condition,enabled}]} across sessions
+  sections: "dxtutor.ws.sections", // which Explorer sections (outline/timeline/deps) are open
 } as const;
 
 const RECENTS_MAX = 8;
@@ -667,7 +668,15 @@ async function refreshDir(dir: string) {
 // refreshes with the active file.
 interface OutlineSym { name: string; kind: string; startLine: number; endLine: number }
 interface GitCommitDto { short: string; subject: string; date: string; author: string }
-const SEC_OPEN = new Set<string>(["outline", "deps"]);
+function loadSections(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS.sections) ?? "");
+    if (Array.isArray(v)) return v as string[];
+  } catch { /* default below */ }
+  return ["outline", "deps"];
+}
+const SEC_OPEN = new Set<string>(loadSections());
+const saveSections = () => localStorage.setItem(LS.sections, JSON.stringify([...SEC_OPEN]));
 let secTimeline: GitCommitDto[] = [];
 let secDeps: Array<{ name: string; ver: string }> = [];
 let sectionsBound = false;
@@ -790,6 +799,7 @@ function bindSections(): void {
       if (SEC_OPEN.has(key)) SEC_OPEN.delete(key);
       else SEC_OPEN.add(key);
       hd.parentElement?.classList.toggle("open", SEC_OPEN.has(key));
+      saveSections();
       return;
     }
     const row = target.closest<HTMLElement>(".ws-sec-row[data-line]");
@@ -946,7 +956,10 @@ async function openFile(path: string) {
     let changeTimer: number | undefined;
     model.onDidChangeContent(() => {
       window.clearTimeout(changeTimer);
-      changeTimer = window.setTimeout(() => void lspDidChange(path, model.getValue(), ++ver).catch(() => {}), 250);
+      changeTimer = window.setTimeout(() => {
+        void lspDidChange(path, model.getValue(), ++ver).catch(() => {});
+        if (path === activeTabPath) void renderSections(); // keep the Outline live as you type
+      }, 250);
     });
   }
   setActiveTab(path);
