@@ -208,6 +208,11 @@ fn collect_items(file: &str, items: &[syn::Item], fns: &mut Vec<FnDef>, types: &
             }
             syn::Item::Struct(s) => types.push(type_ref(file, &s.ident, SymbolKind::Struct)),
             syn::Item::Enum(e) => types.push(type_ref(file, &e.ident, SymbolKind::Enum)),
+            // Consts, statics and type aliases are navigable definitions too — without
+            // these, jumping to a `const MAX` or a `type NodeId` found no definition.
+            syn::Item::Const(c) => types.push(type_ref(file, &c.ident, SymbolKind::Other)),
+            syn::Item::Static(s) => types.push(type_ref(file, &s.ident, SymbolKind::Other)),
+            syn::Item::Type(t) => types.push(type_ref(file, &t.ident, SymbolKind::Other)),
             syn::Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
                     collect_items(file, items, fns, types);
@@ -378,5 +383,27 @@ mod tests {
         assert_eq!(rel.definitions.len(), 2, "defs: {:?}", rel.definitions);
         assert!(rel.ambiguous, "two same-named defs must be ambiguous");
         assert_eq!(rel.resolution, Resolution::Inferred);
+    }
+
+    /// Consts/statics/type aliases are navigable: jumping to `MAX` finds its definition.
+    #[test]
+    fn finds_const_static_and_type_definitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("src/lib.rs"),
+            "pub const MAX: usize = 10;\npub static NAME: &str = \"x\";\npub type NodeId = u32;\nfn use_it() -> usize { MAX }\n",
+        )
+        .unwrap();
+
+        for sym in ["MAX", "NAME", "NodeId"] {
+            let rel = symbol_relations(root, sym).expect("relations");
+            assert!(
+                rel.definitions.iter().any(|d| d.name == sym),
+                "{sym}: no definition found in {:?}",
+                rel.definitions
+            );
+        }
     }
 }
