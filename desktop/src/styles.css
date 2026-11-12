@@ -2338,6 +2338,18 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .dbg-cap { font-size: 10px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--fg-muted); cursor: help; }
 .dbg-cap.ok { color: #3fb950; border-color: #3fb950; }
 .dbg-cap.warn { color: var(--fg-dim); }
+/* Quick-open palette (Ctrl+P). */
+.qo-overlay { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; background: rgba(0,0,0,0.35); }
+.qo-overlay.hidden { display: none; }
+.qo-box { width: min(620px, 90vw); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); overflow: hidden; }
+.qo-input { width: 100%; box-sizing: border-box; padding: 11px 14px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg-base); color: var(--fg); font: inherit; font-size: 14px; }
+.qo-input:focus { outline: none; }
+.qo-list { max-height: 50vh; overflow: auto; }
+.qo-note { padding: 14px; color: var(--fg-dim); }
+.qo-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 14px; cursor: pointer; }
+.qo-row.sel, .qo-row:hover { background: var(--bg-selected, #094771); }
+.qo-base { color: var(--fg); }
+.qo-dir { color: var(--fg-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Search panel — reuses the codemap drawer shell. */
 .search-bar { padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .search-input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-base); color: var(--fg); font: inherit; }

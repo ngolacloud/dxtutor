@@ -33,6 +33,7 @@ import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
 import { initSearch, openSearch } from "./search";
+import { initQuickOpen } from "./quickopen";
 import { initAssistant, openAssistant } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3550,6 +3551,7 @@ async function main() {
   initCodeMap({ ensureWorkspaceMode: () => setMode("workspace") }); // CodeMap panel
   initTests({ ensureWorkspaceMode: () => setMode("workspace") }); // Tests panel
   initSearch({ ensureWorkspaceMode: () => setMode("workspace") }); // Search panel
+  initQuickOpen({ ensureWorkspaceMode: () => setMode("workspace") }); // Ctrl+P quick-open
   setCodeMapHandler((symbol) => void openCodeMap(symbol)); // editor → CodeMap
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing

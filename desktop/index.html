@@ -542,6 +542,13 @@
       <pre id="tests-output" class="tests-output" aria-label="Test output"></pre>
     </aside>
     <!-- Global search: find literal text across the open project -->
+    <!-- Quick-open (Ctrl/Cmd+P): go to a file by name -->
+    <div id="quickopen-overlay" class="qo-overlay hidden">
+      <div class="qo-box">
+        <input id="qo-input" type="text" class="qo-input" placeholder="Go to file…" aria-label="Go to file" />
+        <div id="qo-list" class="qo-list"></div>
+      </div>
+    </div>
     <aside id="search-overlay" class="codemap-drawer hidden" aria-label="Search">
       <header class="codemap-hdr">
         <span class="codemap-label">Search</span>
