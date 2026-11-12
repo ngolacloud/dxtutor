@@ -14,6 +14,7 @@
 //! the offline-safe provider when no API key is present.
 
 mod fsops;
+mod lsp;
 mod pty;
 
 use serde::Serialize;
@@ -2147,6 +2148,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(pty::PtyState::default())
+        .manage(lsp::LspState::default())
         .invoke_handler(tauri::generate_handler![
             list_phases,
             submit,
@@ -2236,6 +2238,14 @@ fn main() {
             pty::pty_spawn_in_session,
             pty::pty_write,
             pty::pty_resize,
+            lsp::lsp_start,
+            lsp::lsp_did_open,
+            lsp::lsp_did_change,
+            lsp::lsp_definition,
+            lsp::lsp_references,
+            lsp::lsp_hover,
+            lsp::lsp_rename,
+            lsp::lsp_prepare_rename,
         ])
         .run(tauri::generate_context!())
         .expect("error while running dxtutor desktop");

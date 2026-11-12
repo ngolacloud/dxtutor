@@ -23,6 +23,8 @@ import { invoke } from "@tauri-apps/api/core";
 import "./workspace.css";
 import type { DebugTarget } from "./debug";
 import { t } from "./i18n";
+import { installLsp, lspDidOpen, lspDidChange, LSP_LANGUAGES, type LspHost } from "./lsp";
+import { gitStatusMap, type GitDeco } from "./git";
 
 const hasTauri = "__TAURI_INTERNALS__" in window;
 
@@ -86,6 +88,9 @@ let rootPath: string | null = null;
 
 // Lazily loaded children, keyed by directory path.
 const childrenCache = new Map<string, EntryDto[]>();
+// Git decorations keyed by ABSOLUTE path (file → state). Loaded once per workspace and on
+// Refresh / after file+git operations; renderTree only READS it (cheap — no git spawn).
+let gitDeco = new Map<string, GitDeco>();
 // Directories the user has expanded (persisted so the tree re-opens as left).
 const expanded = new Set<string>(loadExpanded());
 
@@ -416,15 +421,42 @@ function traceLangForFile(name: string): string {
   return langForFile(name); // backend reports it as unsupported, honestly
 }
 
-function fileGlyph(name: string): string {
-  // Lightweight, font-independent icons keyed by broad file family.
-  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-  if (["rs"].includes(ext)) return "\u{1F980}"; // crab
-  if (["py"].includes(ext)) return "\u{1F40D}"; // snake
-  if (["md", "markdown", "txt"].includes(ext)) return "\u{1F4C4}"; // page
-  if (["json", "toml", "yml", "yaml", "ini", "cfg", "xml"].includes(ext)) return "⚙"; // gear
-  if (["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext)) return "\u{1F5BC}"; // frame
-  return "\u{1F4C4}";
+// Monochrome codicon-style SVG icons for the file tree + tabs (no emoji — matches the
+// "dxtutor IDE" prototype). Single-stroke line glyphs tinted per file family by a CSS
+// `ic-*` class, so the whole tree reads as one quiet, professional icon system.
+const svgIco = (inner: string): string =>
+  `<svg class="tree-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const FILE_BODY = '<path d="M13 3H7A1.5 1.5 0 0 0 5.5 4.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V8.5Z"/><path d="M13 3v5.5h5.5"/>';
+const ICON = {
+  folder: svgIco('<path d="M3 7.3A1.5 1.5 0 0 1 4.5 5.8h3.7a1.5 1.5 0 0 1 1.06.44l1.24 1.26H19.5A1.5 1.5 0 0 1 21 9v8.2a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.2Z"/>'),
+  folderOpen: svgIco('<path d="M3 7.3A1.5 1.5 0 0 1 4.5 5.8h3.7a1.5 1.5 0 0 1 1.06.44L10.5 7.5H19.5A1.5 1.5 0 0 1 21 9v1.3"/><path d="M3 9.2v8a1.5 1.5 0 0 0 1.5 1.5h12.9a1.5 1.5 0 0 0 1.45-1.1L21 11H6.6a1.5 1.5 0 0 0-1.45 1.1Z"/>'),
+  file: svgIco(FILE_BODY),
+  // Standalone `</>` — code files read as code, not as a generic document.
+  code: svgIco('<path d="m8.6 8.6-3.8 3.4 3.8 3.4M15.4 8.6l3.8 3.4-3.8 3.4M13.4 6l-2.8 12"/>'),
+  // Rust = cog (the Rust emblem).
+  cog: svgIco('<circle cx="12" cy="12" r="2.8"/><path d="M12 2.7v2.3M12 19v2.3M4.5 7.2l2 1.15M17.5 15.65l2 1.15M4.5 16.8l2-1.15M17.5 8.35l2-1.15M2.7 12H5M19 12h2.3"/>'),
+  // Config = braces.
+  braces: svgIco('<path d="M9.3 4.6c-1.7 0-2.1 1-2.1 2.7 0 1.4-.1 2.7-1.7 3 1.6.3 1.7 1.6 1.7 3 0 1.7.4 2.7 2.1 2.7"/><path d="M14.7 4.6c1.7 0 2.1 1 2.1 2.7 0 1.4.1 2.7 1.7 3-1.6.3-1.7 1.6-1.7 3 0 1.7-.4 2.7-2.1 2.7"/>'),
+  md: svgIco(FILE_BODY + '<path d="M8.4 16.6v-3l1.6 1.8 1.6-1.8v3"/>'),
+  img: svgIco('<rect x="4" y="5" width="16" height="14" rx="1.6"/><circle cx="9" cy="10" r="1.4"/><path d="m5 17 4.3-3.8 3 2.4L16 11l3 3.4"/>'),
+  lock: svgIco('<rect x="5" y="11" width="14" height="9" rx="1.6"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+};
+
+/** Icon + tint class for a file, by extension — mirrors the prototype's palette. */
+function fileIcon(name: string): { cls: string; svg: string } {
+  const lower = name.toLowerCase();
+  const ext = lower.slice(lower.lastIndexOf(".") + 1);
+  if (lower.endsWith(".lock")) return { cls: "ic-lock", svg: ICON.lock };
+  if (ext === "rs") return { cls: "ic-rs", svg: ICON.cog };
+  if (["ts", "tsx"].includes(ext)) return { cls: "ic-ts", svg: ICON.code };
+  if (["js", "jsx", "mjs", "cjs"].includes(ext)) return { cls: "ic-js", svg: ICON.code };
+  if (ext === "py") return { cls: "ic-py", svg: ICON.code };
+  if (ext === "go") return { cls: "ic-go", svg: ICON.code };
+  if (ext === "toml") return { cls: "ic-toml", svg: ICON.braces };
+  if (["json", "yml", "yaml", "ini", "cfg", "conf", "xml"].includes(ext)) return { cls: "ic-cfg", svg: ICON.braces };
+  if (["md", "markdown", "txt"].includes(ext)) return { cls: "ic-md", svg: ICON.md };
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(ext)) return { cls: "ic-img", svg: ICON.img };
+  return { cls: "ic-file", svg: ICON.file };
 }
 
 // ── Tauri command wrappers (fixed camelCase contract) ────────────────────────
@@ -521,25 +553,52 @@ async function loadChildren(dir: string): Promise<EntryDto[]> {
   return entries;
 }
 
+/** Reload the git decorations for the open workspace (no-op outside Tauri / a repo). */
+async function refreshGitStatus(): Promise<void> {
+  gitDeco = rootPath && hasTauri ? await gitStatusMap(rootPath) : new Map();
+}
+
+/** Roll-up colour for a folder: the strongest git state among its descendants, or null
+ *  when the subtree is clean. Deletion dominates, then modified, then untracked/added. */
+function dirRollup(dir: string): GitDeco["cls"] | null {
+  const prefix = dir.replace(/\/+$/, "") + "/";
+  let found: GitDeco["cls"] | null = null;
+  for (const [p, d] of gitDeco) {
+    if (!p.startsWith(prefix)) continue;
+    if (d.cls === "git-d") return "git-d";
+    if (d.cls === "git-m") found = "git-m";
+    else if (!found) found = "git-u";
+  }
+  return found;
+}
+
 function rowHtml(entry: EntryDto, depth: number): string {
   const pad = 8 + depth * 12;
+  const guide = depth > 0 ? ` has-guide" style="--d:${depth};padding-left:` : `" style="padding-left:`;
   if (entry.isDir) {
     const open = expanded.has(entry.path);
     const caret = open ? "▾" : "▸";
-    const folder = open ? "\u{1F4C2}" : "\u{1F4C1}";
+    // Roll-up: a discreet dot when any descendant is dirty (name stays uncoloured for dirs).
+    const roll = dirRollup(entry.path);
+    const dot = roll ? `<span class="ws-git-dot ws-git-dot-${roll.slice(4)}"></span>` : "";
     return (
-      `<div class="ws-row ws-dir" role="treeitem" data-path="${esc(entry.path)}" data-dir="1" ` +
-      `style="padding-left:${pad}px" title="${esc(entry.path)}">` +
+      `<div class="ws-row ws-dir${guide}${pad}px" role="treeitem" data-path="${esc(entry.path)}" data-dir="1" ` +
+      `title="${esc(entry.path)}">` +
       `<span class="ws-caret">${caret}</span>` +
-      `<span class="ws-icon">${folder}</span>` +
-      `<span class="ws-name">${esc(entry.name)}</span></div>`
+      `<span class="ws-icon ic-folder">${open ? ICON.folderOpen : ICON.folder}</span>` +
+      `<span class="ws-name">${esc(entry.name)}</span>${dot}</div>`
     );
   }
+  const fi = fileIcon(entry.name);
+  // Git decoration: colour the name (via the row class) + a status letter at the right edge.
+  const g = gitDeco.get(entry.path);
+  const gitCls = g ? ` ${g.cls}` : "";
+  const gitBadge = g ? `<span class="ws-git">${esc(g.letter)}</span>` : "";
   return (
-    `<div class="ws-row ws-file" role="treeitem" data-path="${esc(entry.path)}" ` +
-    `style="padding-left:${pad + 14}px" title="${esc(entry.path)}">` +
-    `<span class="ws-icon">${fileGlyph(entry.name)}</span>` +
-    `<span class="ws-name">${esc(entry.name)}</span></div>`
+    `<div class="ws-row ws-file${gitCls}${guide}${pad + 14}px" role="treeitem" data-path="${esc(entry.path)}" ` +
+    `title="${esc(entry.path)}">` +
+    `<span class="ws-icon ${fi.cls}">${fi.svg}</span>` +
+    `<span class="ws-name">${esc(entry.name)}</span>${gitBadge}</div>`
   );
 }
 
@@ -589,11 +648,160 @@ async function toggleDir(path: string) {
   await renderTree();
 }
 
-// Refresh a directory's listing from disk and re-render.
+// Refresh a directory's listing from disk and re-render. Also re-reads git state, since
+// the caller (create / delete / rename) just changed the working tree.
 async function refreshDir(dir: string) {
   childrenCache.delete(dir);
   if (dir === rootPath || expanded.has(dir)) await loadChildren(dir);
+  await refreshGitStatus();
   await renderTree();
+  await loadSectionData(); // a new/removed Cargo.lock or commit may change Timeline/Deps
+  void renderSections();
+}
+
+// ── Explorer sections: Outline / Timeline / Rust Dependencies ──────────────────
+// Collapsible sections below the file tree (prototype parity). All real data, no new
+// backend command: Outline = `file_outline` (symbols of the ACTIVE file, click to jump);
+// Timeline = `git_log` (recent repo commits); Rust Dependencies = the resolved crates
+// parsed from the nearest Cargo.lock. Timeline/Deps are cached per workspace; Outline
+// refreshes with the active file.
+interface OutlineSym { name: string; kind: string; startLine: number; endLine: number }
+interface GitCommitDto { short: string; subject: string; date: string; author: string }
+const SEC_OPEN = new Set<string>(["outline", "deps"]);
+let secTimeline: GitCommitDto[] = [];
+let secDeps: Array<{ name: string; ver: string }> = [];
+let sectionsBound = false;
+
+/** A quiet mono glyph + tint class for an outline symbol, by kind. */
+function outlineGlyph(kind: string): string {
+  const map: Record<string, [string, string]> = {
+    function: ["ƒ", "ic-ts"], method: ["ƒ", "ic-ts"], fn: ["ƒ", "ic-ts"],
+    struct: ["◇", "ic-cfg"], class: ["◇", "ic-cfg"],
+    enum: ["▽", "ic-img"], union: ["▽", "ic-img"],
+    trait: ["◈", "ic-ts"], interface: ["◈", "ic-ts"],
+    impl: ["⊞", "ic-py"], module: ["▤", "ic-folder"], mod: ["▤", "ic-folder"],
+    const: ["c", "ic-toml"], static: ["c", "ic-toml"], field: ["•", "ic-file"],
+  };
+  const [g, cls] = map[kind.toLowerCase()] ?? ["·", "ic-file"];
+  return `<span class="ws-sec-glyph ${cls}">${g}</span>`;
+}
+
+/** Every resolved crate in a Cargo.lock (name + version), sorted — like the prototype. */
+function cargoLockCrates(text: string): Array<{ name: string; ver: string }> {
+  const out: Array<{ name: string; ver: string }> = [];
+  let name = "";
+  for (const line of text.split("\n")) {
+    const n = /^name\s*=\s*"(.+?)"/.exec(line);
+    const v = /^version\s*=\s*"(.+?)"/.exec(line);
+    if (n) name = n[1];
+    else if (v && name) { out.push({ name, ver: v[1] }); name = ""; }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Fetch the per-workspace section data (Timeline + Rust deps) once per mount/refresh. */
+async function loadSectionData(): Promise<void> {
+  secTimeline = [];
+  secDeps = [];
+  if (!rootPath || !hasTauri) return;
+  try { secTimeline = await invoke<GitCommitDto[]>("git_log", { root: rootPath, max: 8 }); } catch { /* not a repo */ }
+  try { secDeps = cargoLockCrates(await cmdReadFile(rootPath + "/Cargo.lock")); } catch { /* no Cargo.lock */ }
+}
+
+function sectionHtml(key: string, label: string, count: string, body: string): string {
+  const open = SEC_OPEN.has(key);
+  return (
+    `<div class="ws-section${open ? " open" : ""}" data-section="${key}">` +
+    `<div class="ws-sec-hd" data-sec="${key}"><span class="ws-sec-chev">▸</span>` +
+    `<span class="ws-sec-lbl">${label}</span>${count ? `<span class="ws-sec-cnt">${count}</span>` : ""}</div>` +
+    `<div class="ws-sec-body">${body}</div></div>`
+  );
+}
+
+/** Rebuild the Explorer sections. Outline is fetched here (per active file); Timeline/Deps
+ *  come from the per-workspace cache (`loadSectionData`). */
+async function renderSections(): Promise<void> {
+  const host = document.getElementById("ws-sections");
+  if (!host) return;
+  if (!rootPath) { host.innerHTML = ""; return; }
+
+  // Outline — symbols of the active file (best-effort; Rust/Go/etc via the parser/LSP).
+  let outlineBody = `<div class="ws-sec-empty">Abre um ficheiro para ver a estrutura.</div>`;
+  let outlineCount = "";
+  const tab = activeTabPath && activeTabPath !== EXPLAIN_TAB ? tabByPath(activeTabPath) : undefined;
+  if (tab) {
+    outlineBody = `<div class="ws-sec-empty">Sem símbolos neste ficheiro.</div>`;
+    try {
+      const syms = await invoke<OutlineSym[]>("file_outline", {
+        code: tab.model.getValue(), lang: langForFile(tab.name), root: rootPath, file: tab.path,
+      });
+      if (syms.length) {
+        outlineCount = String(syms.length);
+        outlineBody = syms
+          .map((s) =>
+            `<div class="ws-sec-row" data-line="${s.startLine}" title="${esc(s.kind)} · L${s.startLine}">` +
+            `${outlineGlyph(s.kind)}<span class="ws-sec-name">${esc(s.name)}</span>` +
+            `<span class="ws-sec-meta">${s.startLine}</span></div>`)
+          .join("");
+      }
+    } catch { /* outline best-effort */ }
+  }
+
+  // Timeline — recent repo commits.
+  const timelineBody = secTimeline.length
+    ? secTimeline
+        .map((c) =>
+          `<div class="ws-sec-row" title="${esc(c.author)} · ${esc(c.date)}">` +
+          `<span class="ws-sec-glyph ic-toml">●</span><span class="ws-sec-name">${esc(c.subject)}</span>` +
+          `<span class="ws-sec-meta">${esc(c.short)}</span></div>`)
+        .join("")
+    : `<div class="ws-sec-empty">Sem histórico git.</div>`;
+
+  // Rust Dependencies — resolved crates from Cargo.lock (capped, scrollable).
+  const CAP = 200;
+  const depsBody = secDeps.length
+    ? secDeps
+        .slice(0, CAP)
+        .map((d) =>
+          `<div class="ws-sec-row"><span class="ws-sec-glyph ic-rs">${svgIco('<path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>')}</span>` +
+          `<span class="ws-sec-name">${esc(d.name)}</span><span class="ws-sec-meta">${esc(d.ver)}</span></div>`)
+        .join("") +
+      (secDeps.length > CAP ? `<div class="ws-sec-empty">+${secDeps.length - CAP} mais…</div>` : "")
+    : `<div class="ws-sec-empty">Sem Cargo.lock.</div>`;
+
+  host.innerHTML =
+    sectionHtml("outline", "Outline", outlineCount, outlineBody) +
+    sectionHtml("timeline", "Timeline", secTimeline.length ? String(secTimeline.length) : "", timelineBody) +
+    sectionHtml("deps", "Rust Dependencies", secDeps.length ? String(secDeps.length) : "", depsBody);
+  bindSections();
+}
+
+/** One delegated listener: toggle a section, or jump to an outline symbol's line. */
+function bindSections(): void {
+  if (sectionsBound) return;
+  const host = document.getElementById("ws-sections");
+  if (!host) return;
+  sectionsBound = true;
+  host.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const hd = target.closest<HTMLElement>(".ws-sec-hd");
+    if (hd) {
+      const key = hd.dataset.sec!;
+      if (SEC_OPEN.has(key)) SEC_OPEN.delete(key);
+      else SEC_OPEN.add(key);
+      hd.parentElement?.classList.toggle("open", SEC_OPEN.has(key));
+      return;
+    }
+    const row = target.closest<HTMLElement>(".ws-sec-row[data-line]");
+    if (row && wsEditor) {
+      const ln = Number(row.dataset.line);
+      if (ln > 0) {
+        wsEditor.setPosition({ lineNumber: ln, column: 1 });
+        wsEditor.revealPositionInCenter({ lineNumber: ln, column: 1 });
+        wsEditor.focus();
+      }
+    }
+  });
 }
 
 // ── Tabs + editor ─────────────────────────────────────────────────────────────
@@ -615,9 +823,10 @@ function renderTabs() {
       const mark = dirty
         ? `<span class="ws-tab-dot" title="Unsaved changes">●</span>`
         : `<span class="ws-tab-close" data-close="${esc(t.path)}" title="Close">✕</span>`;
+      const fi = fileIcon(t.name);
       return (
         `<div class="tab ws-tab${active ? " active" : ""}" data-tab="${esc(t.path)}" title="${esc(t.path)}">` +
-        `<span class="file-icon">${fileGlyph(t.name)}</span>` +
+        `<span class="file-icon ${fi.cls}">${fi.svg}</span>` +
         `<span class="ws-tab-name">${esc(t.name)}</span>${mark}</div>`
       );
     })
@@ -626,7 +835,7 @@ function renderTabs() {
     const active = activeTabPath === EXPLAIN_TAB;
     html +=
       `<div class="tab ws-tab explain-tab${active ? " active" : ""}" data-tab="${EXPLAIN_TAB}" title="Explain: ${esc(explainTab.name)}">` +
-      `<span class="file-icon">💡</span>` +
+      `<span class="file-icon ic-explain">${svgIco('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.8 10.6c.6.5.8 1.1.8 1.9h6c0-.8.2-1.4.8-1.9A6 6 0 0 0 12 3Z"/>')}</span>` +
       `<span class="ws-tab-name">Explain: ${esc(explainTab.name)}</span>` +
       `<span class="ws-tab-close" data-close="${EXPLAIN_TAB}" title="Close">✕</span></div>`;
   }
@@ -697,6 +906,7 @@ function setActiveTab(path: string) {
   saveOpenTabs();
   renderTabs();
   highlightActiveRow();
+  void renderSections(); // refresh the Outline for the newly-active file
   requestAnimationFrame(() => {
     wsEditor?.layout();
     wsEditor?.focus();
@@ -723,6 +933,22 @@ async function openFile(path: string) {
   });
   tabs.push({ path, name, model, saved: contents, savedVersionId: model.getAlternativeVersionId() });
   restoreBreakpointsFor(path); // re-create any breakpoints saved for this file last session
+  // Files in a supported language get semantic power from their LSP server (rust-analyzer,
+  // gopls, typescript-language-server, pyright): open the document and stream edits
+  // (debounced) so navigation, rename and diagnostics stay in sync.
+  const lspLang = langForFile(name);
+  if (rootPath && (LSP_LANGUAGES as readonly string[]).includes(lspLang)) {
+    // Opening the doc auto-starts the server rooted at THIS file's project (nearest
+    // marker: Cargo.toml / go.mod / tsconfig / pyproject) — a small, fast index even
+    // inside a huge monorepo. An uninstalled server is a silent no-op (backend returns none).
+    void lspDidOpen(path, contents, lspLang).catch(() => {});
+    let ver = 1;
+    let changeTimer: number | undefined;
+    model.onDidChangeContent(() => {
+      window.clearTimeout(changeTimer);
+      changeTimer = window.setTimeout(() => void lspDidChange(path, model.getValue(), ++ver).catch(() => {}), 250);
+    });
+  }
   setActiveTab(path);
 }
 
@@ -780,6 +1006,8 @@ async function saveActive(): Promise<boolean> {
     tab.saved = value;
     tab.savedVersionId = tab.model.getAlternativeVersionId();
     renderTabs();
+    await refreshGitStatus(); // the saved file may have just become dirty/clean in git
+    await renderTree();
     return true;
   } catch (err) {
     writeOutput("Save failed", String(err), "err");
@@ -802,6 +1030,8 @@ async function saveAll() {
     }
   }
   renderTabs();
+  await refreshGitStatus();
+  await renderTree();
 }
 
 async function runActive() {
@@ -1018,13 +1248,18 @@ async function mountRoot(path: string) {
   localStorage.setItem(LS.folder, path);
   pushRecent(path);
   renderRecents();
+  const tmuxHost = document.getElementById("tmux-host"); // real project name in the terminal strip
+  if (tmuxHost) tmuxHost.textContent = baseName(path);
   childrenCache.clear();
   // Keep only expanded dirs that are under the new root.
   for (const p of [...expanded]) {
     if (p !== path && !p.startsWith(path + "/") && !p.startsWith(path + "\\")) expanded.delete(p);
   }
   saveExpanded();
+  await refreshGitStatus(); // load git decorations once for this workspace
   await renderTree();
+  await loadSectionData(); // Timeline + Rust deps for this workspace
+  void renderSections();
   await restoreTabs(path); // reopen the files that were open last time (buffer recovery)
 }
 
@@ -1044,6 +1279,35 @@ export function initWorkspace() {
     tabSize: 4,
     glyphMargin: true, // breakpoint dots live here
   });
+
+  // Wire rust-analyzer onto the workspace editor: Ctrl+Click/F12 → definition,
+  // Shift+F12 → references, F2 → recursive rename, hover + diagnostics.
+  const lspHost: LspHost = {
+    root: () => rootPath,
+    pathForModel: (model) => tabs.find((tb) => tb.model === model)?.path ?? null,
+    modelForPath: (p) => tabByPath(p)?.model ?? null,
+    openAt: async (p, line, col) => {
+      await openFile(p);
+      const tab = tabByPath(p);
+      if (tab && wsEditor) {
+        if (wsEditor.getModel() !== tab.model) wsEditor.setModel(tab.model);
+        const position = { lineNumber: line, column: col };
+        wsEditor.setPosition(position);
+        wsEditor.revealPositionInCenter(position);
+        wsEditor.focus();
+        // Gentle flash on the landed line that fades out (symbol-navigation feedback).
+        const dec = wsEditor.deltaDecorations([], [
+          { range: new monaco.Range(line, 1, line, 1), options: { isWholeLine: true, className: "lsp-reveal-flash" } },
+        ]);
+        window.setTimeout(() => wsEditor?.deltaDecorations(dec, []), 1300);
+      }
+    },
+    readFile: (p) => cmdReadFile(p),
+    writeFile: (p, text) => cmdWriteFile(p, text),
+    promptRename: (current) => window.prompt("Renomear símbolo para:", current),
+    notify: (msg) => writeOutput("Rust LSP", msg, "info"),
+  };
+  installLsp(monaco, wsEditor, lspHost);
 
   // Click the glyph margin / line-number to toggle a breakpoint (VSCode-style); Alt+click
   // sets a CONDITION (stop only when it holds). Debug (the tracer) stops at these lines.
@@ -1174,7 +1438,7 @@ export function initWorkspace() {
   $("#ws-act-newfolder").addEventListener("click", () => void createEntry(true));
   $("#ws-act-refresh").addEventListener("click", () => {
     childrenCache.clear();
-    void renderTree();
+    void refreshGitStatus().then(() => renderTree());
   });
   $("#ws-open-folder-empty").addEventListener("click", () => void openFolder());
   $("#ws-welcome-open").addEventListener("click", () => void openFolder());

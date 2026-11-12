@@ -68,7 +68,37 @@ body.mode-workspace #workspace-sidebar.hidden { display: block; }
   width: 12px;
   text-align: center;
 }
-.ws-icon { flex: none; font-size: 13px; line-height: 1; }
+.ws-icon { flex: none; display: grid; place-items: center; width: 17px; height: 16px; }
+.ws-icon .tree-ico, .file-icon .tree-ico { width: 16px; height: 16px; display: block; }
+.file-icon .tree-ico { width: 15px; height: 15px; }
+/* Monochrome codicon tints by file family — DISCRETE (desaturated): the distinct
+   glyph shapes (cog / braces / </> / doc) carry the type; colour is only a whisper.
+   Shared by the tree AND the tabs. */
+.ic-folder { color: #80838b; }
+.ic-rs { color: #b79177; }
+.ic-ts { color: #7d8fab; }
+.ic-js { color: #ab9a68; }
+.ic-py { color: #74a08b; }
+.ic-go { color: #6f98a0; }
+.ic-cfg { color: #a8975f; }
+.ic-toml { color: #b08f6a; }
+.ic-md { color: #7d8fab; }
+.ic-img { color: #917fa3; }
+.ic-lock { color: var(--fg-muted); }
+.ic-file { color: var(--fg-dim); }
+.ic-explain { color: var(--accent-hover); }
+/* Indent guide: a quiet vertical rail just left of each nested row's content
+   (VSCode-Explorer style). Depth comes from `--d` set inline by the renderer. */
+.ws-row.has-guide::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--d, 1) * 12px + 5px);
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--guide, #2f2f34);
+  opacity: 0.7;
+  pointer-events: none;
+}
 .ws-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -76,7 +106,82 @@ body.mode-workspace #workspace-sidebar.hidden { display: block; }
   min-width: 0;
 }
 
+/* ── Git decorations (Explorer tree) ───────────────────────────────
+   Files: the NAME takes the git colour and a mono status letter (M/U/A/D) sits at the
+   right edge. Folders: a discreet 7px roll-up dot (name untinted). Colours from the
+   prototype tokens (--git-m / --git-u / --git-d). Nothing here touches the row's click,
+   active state or icon system — these only add colour + a right-aligned indicator. */
+.ws-row.git-m .ws-name { color: var(--git-m); }
+.ws-row.git-u .ws-name { color: var(--git-u); }
+.ws-row.git-d .ws-name { color: var(--git-d); }
+/* Keep the SELECTED row's name bright — selection wins over the git tint. */
+.ws-row.active.git-m .ws-name,
+.ws-row.active.git-u .ws-name,
+.ws-row.active.git-d .ws-name { color: var(--fg-bright); }
+
+.ws-git {
+  margin-left: auto; /* push the letter to the right edge, like the SCM columns */
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  padding-left: 6px;
+}
+.ws-row.git-m .ws-git { color: var(--git-m); }
+.ws-row.git-u .ws-git { color: var(--git-u); }
+.ws-row.git-d .ws-git { color: var(--git-d); }
+
+.ws-git-dot {
+  margin-left: auto; /* folder roll-up dot, right-aligned */
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.ws-git-dot-m { background: var(--git-m); }
+.ws-git-dot-u { background: var(--git-u); }
+.ws-git-dot-d { background: var(--git-d); }
+
 .ws-tree-error { padding: 12px 16px; color: var(--red); font-size: 12px; line-height: 1.5; }
+
+/* ── Explorer collapsible sections (Outline / Timeline / Rust Dependencies) ──────
+   Prototype parity: an uppercase header with a rotating chevron + count, over a body
+   that collapses when the section is closed. Rows mirror the tree's quiet density. */
+.ws-sections { display: flex; flex-direction: column; }
+.ws-section { display: flex; flex-direction: column; min-height: 0; }
+.ws-sec-hd {
+  display: flex; align-items: center; gap: 4px;
+  height: 24px; padding: 0 10px 0 6px; flex: none; cursor: pointer;
+  border-top: 1px solid var(--seam);
+}
+.ws-sec-hd:hover .ws-sec-lbl { color: var(--fg); }
+.ws-sec-chev {
+  width: 16px; flex: none; text-align: center; font-size: 9px;
+  color: var(--fg-dim); transition: transform 0.12s;
+}
+.ws-section.open .ws-sec-chev { transform: rotate(90deg); }
+.ws-sec-lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--fg-dim); }
+.ws-sec-cnt {
+  margin-left: auto; background: var(--bg-selected-inactive); color: var(--fg-dim);
+  border-radius: 9px; padding: 0 7px; font-family: var(--font-mono); font-size: 10px;
+}
+.ws-sec-body { display: none; max-height: 220px; overflow: auto; padding-bottom: 4px; }
+.ws-section.open .ws-sec-body { display: block; }
+.ws-sec-row {
+  display: flex; align-items: center; gap: 7px;
+  height: 22px; padding: 0 10px 0 16px; font-size: 13px; color: var(--fg);
+  white-space: nowrap; cursor: default;
+}
+.ws-sec-row[data-line] { cursor: pointer; }
+.ws-sec-row:hover { background: var(--bg-hover); }
+.ws-sec-glyph {
+  flex: none; width: 15px; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+}
+.ws-sec-glyph .tree-ico { width: 15px; height: 15px; }
+.ws-sec-name { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.ws-sec-meta { margin-left: auto; flex: none; font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-muted); padding-left: 8px; }
+.ws-sec-empty { padding: 7px 16px; color: var(--fg-muted); font-size: 12px; line-height: 1.5; }
 
 .ws-empty {
   padding: 16px 16px 0;

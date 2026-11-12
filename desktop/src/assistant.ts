@@ -90,6 +90,13 @@ let codeStream: {
   idx: number;
   accum: string;
   original: string; // file content before the stream, to restore if the model gives nothing
+  // Typewriter pacing: `accum` fills at network speed, but the editor only reveals
+  // `target` (= stripFences(accum)) up to `shown`, advanced on a timer, so the
+  // developer can follow each line being written instead of a blink-fast dump.
+  target: string;
+  shown: number;
+  done: boolean;
+  timer: number | null;
 } | null = null;
 const writeState = new Map<number, "writing" | "done">(); // message idx -> code-stream state
 const shrinkWarn = new Set<number>(); // done writes where the file shrank a lot (review it)
@@ -206,7 +213,9 @@ function planCard(p: Plan): string {
     !p.done && idx >= 0 && plans.get(idx) === p
       ? `<div class="as-plan-ctl">` +
         (busy
-          ? `<span class="as-plan-run">running step ${p.current + 1}…</span>`
+          ? `<span class="as-plan-run">running step ${p.current + 1}…</span>` +
+            `<button class="as-plan-pause" data-idx="${idx}" title="Pausar ao fim do passo (p)"><kbd>p</kbd> pausar</button>` +
+            `<button class="as-plan-stop" data-idx="${idx}" title="Parar agora (x)"><kbd>x</kbd> parar</button>`
           : `<button class="as-plan-next" data-idx="${idx}">Continue →</button>`) +
         `<label class="as-plan-auto"><input type="checkbox" class="as-plan-autock" data-idx="${idx}" ${p.autoRun ? "checked" : ""}/> Auto</label>` +
         `</div>`
@@ -307,6 +316,14 @@ export function initAssistant(): void {
     if (btn.classList.contains("as-apply")) void applyAction(idx);
     else if (btn.classList.contains("as-write")) void startCodeStream(idx);
     else if (btn.classList.contains("as-plan-next")) void continuePlan(); // drive the next step
+    else if (btn.classList.contains("as-plan-pause")) {
+      const p = plans.get(idx); // pausar: desliga o auto-run (pára ao fim do passo actual)
+      if (p) { p.autoRun = false; renderMessages(); }
+    } else if (btn.classList.contains("as-plan-stop")) {
+      if (currentRequestId) void invoke("assistant_cancel", { requestId: currentRequestId }); // parar agora
+      const p = plans.get(idx);
+      if (p) p.autoRun = false;
+    }
     else if (btn.classList.contains("as-isolate")) void runInIsolation(idx); // isolated worktree → patch
     else if (btn.classList.contains("as-accept-all")) {
       acceptRange(); // keep the full proposal (already in the buffer; one undo step)
@@ -356,6 +373,19 @@ export function initAssistant(): void {
     if (!sel) return;
     if (ck.checked) sel.add(k);
     else sel.delete(k);
+  });
+  // Atalhos do agente em execução (estilo TUI): p = pausar (auto-run off), x = parar (cancelar).
+  // Só disparam com um stream activo e fora de campos de texto, para não colidir com a escrita.
+  document.addEventListener("keydown", (e) => {
+    if (!busy) return;
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (e.key === "p") {
+      const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
+      if (p) { p.autoRun = false; renderMessages(); }
+    } else if (e.key === "x") {
+      if (currentRequestId) void invoke("assistant_cancel", { requestId: currentRequestId });
+    }
   });
   // One button: Send while idle, Stop (cancel) while a stream is running.
   $("#assistant-send").addEventListener("click", () => {
@@ -441,7 +471,8 @@ export function initAssistant(): void {
     }
     if (codeStream && e.payload.requestId === codeStream.requestId) {
       codeStream.accum += e.payload.delta;
-      pushEditorStream(stripFences(codeStream.accum)); // build the code live in the tab
+      codeStream.target = stripFences(codeStream.accum);
+      paceCodeStream(); // reveal progressively — decoupled from arrival speed
       return;
     }
     if (e.payload.requestId !== currentRequestId || streamingIdx < 0) return;
@@ -484,27 +515,11 @@ export function initAssistant(): void {
       return;
     }
     if (codeStream && e.payload.requestId === codeStream.requestId) {
-      const cs = codeStream;
-      const produced = stripFences(cs.accum).trim();
-      if (!produced) {
-        // The model returned nothing usable — restore the original content rather than
-        // leaving the file wiped, and let the developer retry.
-        pushEditorStream(cs.original);
-        endEditorStream();
-        actionErrors.set(cs.idx, "the model produced no code — the file was left unchanged");
-        writeState.delete(cs.idx);
-      } else {
-        endEditorStream();
-        writeState.set(cs.idx, "done");
-        advancePlan(); // a code-write step completed
-        // Shrink guard: if a substantial file was replaced with far less content, the
-        // model may have returned a partial — flag it so the developer reviews (undoable).
-        if (cs.original.trim().length > 200 && produced.length < cs.original.length * 0.4) {
-          shrinkWarn.add(cs.idx);
-        }
-      }
-      codeStream = null;
-      finishStream();
+      // Stream finished arriving; let the typewriter reveal the remaining buffered
+      // text (bounded lag), then finalize via paceCodeStream → finalizeCodeStream.
+      codeStream.done = true;
+      codeStream.target = stripFences(codeStream.accum);
+      paceCodeStream();
       return;
     }
     if (e.payload.requestId === currentRequestId) {
@@ -558,6 +573,7 @@ export function initAssistant(): void {
     if (codeStream && e.payload.requestId === codeStream.requestId) {
       // A mid-stream provider failure must not leave a partial/empty buffer — restore the
       // file to what it was before the generation started.
+      if (codeStream.timer != null) window.clearInterval(codeStream.timer); // stop the typewriter
       pushEditorStream(codeStream.original);
       endEditorStream();
       actionErrors.set(codeStream.idx, e.payload.error);
@@ -1260,6 +1276,51 @@ export async function startContinue(path: string, instruction: string): Promise<
 
 /** Strip a leading ``` fence (language tag and all) from streamed code, tolerating an
  *  unclosed trailing fence while tokens are still arriving. */
+// Typewriter for the code stream: reveals `target` up to `shown` at a readable rate
+// (~80 chars/s) with bounded lag, so the developer can follow each line being written.
+// When the stream has finished arriving AND the editor has caught up, it finalizes.
+function paceCodeStream(): void {
+  if (!codeStream || codeStream.timer != null) return;
+  codeStream.timer = window.setInterval(() => {
+    const cs = codeStream;
+    if (!cs) return; // cancelled / cleared elsewhere (requestId guard owns the stream)
+    if (cs.shown < cs.target.length) {
+      const remaining = cs.target.length - cs.shown;
+      // Base ~2 chars/tick (readable); accelerate only to cap how far behind we lag.
+      const step = Math.max(2, Math.floor(remaining / 50));
+      cs.shown = Math.min(cs.target.length, cs.shown + step);
+      pushEditorStream(cs.target.slice(0, cs.shown));
+    } else if (cs.done) {
+      if (cs.timer != null) {
+        window.clearInterval(cs.timer);
+        cs.timer = null;
+      }
+      finalizeCodeStream(cs);
+    }
+  }, 24);
+}
+function finalizeCodeStream(cs: NonNullable<typeof codeStream>): void {
+  const produced = stripFences(cs.accum).trim();
+  if (!produced) {
+    pushEditorStream(cs.original); // nothing usable — restore, let the developer retry
+    endEditorStream();
+    actionErrors.set(cs.idx, "the model produced no code — the file was left unchanged");
+    writeState.delete(cs.idx);
+  } else {
+    pushEditorStream(cs.target); // ensure the full text is shown
+    endEditorStream();
+    writeState.set(cs.idx, "done");
+    advancePlan(); // a code-write step completed
+    // Shrink guard: a substantial file replaced with far less content may be a partial.
+    if (cs.original.trim().length > 200 && produced.length < cs.original.length * 0.4) {
+      shrinkWarn.add(cs.idx);
+    }
+  }
+  if (codeStream === cs) codeStream = null;
+  finishStream();
+  renderMessages();
+}
+
 function stripFences(s: string): string {
   const i = s.indexOf("```");
   if (i < 0) return s;
@@ -1505,7 +1566,7 @@ async function startCodeStream(idx: number): Promise<void> {
   }
   const current = currentFileContent(abs) ?? "";
   const rid = crypto.randomUUID();
-  codeStream = { requestId: rid, path: abs, file: dir.file, idx, accum: "", original: current };
+  codeStream = { requestId: rid, path: abs, file: dir.file, idx, accum: "", original: current, target: "", shown: 0, done: false, timer: null };
   writeState.set(idx, "writing");
 
   busy = true;

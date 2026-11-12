@@ -93,6 +93,51 @@ export async function refreshGitBranch(): Promise<void> {
   }
 }
 
+// ── Tree decorations (reuses git_changes) ───────────────────────────────────
+// The Explorer paints each file's name by its git state and a status letter at the
+// right edge; folders roll up to a dot. It consumes the SAME `git_changes` command
+// the SCM view uses — no new backend.
+
+export interface GitDeco {
+  letter: string; // M/U/A/D/R/C shown at the row's right edge
+  cls: "git-m" | "git-u" | "git-d"; // colour bucket (name + letter/dot)
+}
+
+/** The git letter for a change: worktree column wins, falling back to the staged one. */
+function decoLetter(c: GitChange): string {
+  if (c.status === "??" || c.work === "?" || c.index === "?") return "U"; // untracked
+  const code = (c.work.trim() || c.index.trim() || "M").toUpperCase();
+  return "MADRC".includes(code) ? code : "M";
+}
+
+/** Colour bucket for a git letter: deletion red, untracked/added green, the rest gold. */
+function decoClass(letter: string): GitDeco["cls"] {
+  if (letter === "D") return "git-d";
+  if (letter === "U" || letter === "A") return "git-u";
+  return "git-m"; // M / R / C → modified (gold)
+}
+
+/**
+ * Working-tree status as an ABSOLUTE-path → decoration map, for the Explorer tree.
+ * Reuses `git_changes` (git status --porcelain); porcelain paths are root-relative, so
+ * we prefix the root. Empty map when the folder is not a git repo (silent).
+ */
+export async function gitStatusMap(root: string): Promise<Map<string, GitDeco>> {
+  const map = new Map<string, GitDeco>();
+  try {
+    const ch = await invoke<GitChange[]>("git_changes", { root });
+    const base = root.replace(/[\\/]+$/, "");
+    for (const c of ch) {
+      const letter = decoLetter(c);
+      const abs = c.path.startsWith("/") ? c.path : `${base}/${c.path}`;
+      map.set(abs, { letter, cls: decoClass(letter) });
+    }
+  } catch {
+    /* not a git repo → no decorations */
+  }
+  return map;
+}
+
 export function openGit(): void {
   $("#review-overlay")?.classList.add("hidden");
   $("#assistant-overlay")?.classList.add("hidden");

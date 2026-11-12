@@ -62,6 +62,11 @@ function ensureDiff(): void {
     readOnly: false, // right = proposal (editable → "take over")
     fontSize: 12,
     minimap: { enabled: false },
+    // Collapse the unchanged lines and surface ONLY the edited regions (with a few
+    // lines of context) — so a one-line fix reads as a one-line fix, not a hunt
+    // through the whole file. Monaco auto-reveals the first change.
+    hideUnchangedRegions: { enabled: true, revealLineCount: 3, minimumLineCount: 3, contextLineCount: 3 },
+    renderMarginRevertIcon: false,
   });
 }
 
@@ -129,6 +134,12 @@ function onDone(): void {
     if (code) propModel.setValue(code);
   }
   state = "done";
+  // If the proposal came back byte-identical, the collapsed diff would look empty —
+  // say so explicitly instead of leaving the developer staring at two equal panes.
+  if (propModel && propModel.getValue().trim() === baseContent.trim()) {
+    setStatus("sem alterações — o modelo devolveu o ficheiro igual. Reformula a instrução e gera de novo.");
+    return;
+  }
   setStatus();
 }
 
