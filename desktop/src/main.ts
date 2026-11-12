@@ -2863,6 +2863,54 @@ function toggleTerminal(force?: boolean) {
   });
 }
 
+// ── Panel tabs: Terminal | Problems (real Monaco markers) ─────────────────────
+
+/** Switch the bottom panel tab. Problems overlays the terminal (which stays mounted). */
+function setPanelTab(tab: "terminal" | "problems"): void {
+  document.querySelectorAll("#panel-tabs .ptab").forEach((b) =>
+    b.classList.toggle("active", (b as HTMLElement).dataset.ptab === tab),
+  );
+  document.getElementById("panel-problems")?.classList.toggle("hidden", tab !== "problems");
+  if (tab === "problems") renderProblems();
+}
+
+/** Populate the Problems list from the REAL Monaco markers (rust-analyzer diagnostics +
+ *  Review findings) and keep the tab's count badge fresh. Click a row → jump to it. */
+function renderProblems(): void {
+  const host = document.getElementById("panel-problems");
+  const countEl = document.getElementById("problems-count");
+  const markers = monaco.editor
+    .getModelMarkers({})
+    .filter((m) => m.severity >= monaco.MarkerSeverity.Warning);
+  markers.sort(
+    (a, b) =>
+      b.severity - a.severity ||
+      a.resource.path.localeCompare(b.resource.path) ||
+      a.startLineNumber - b.startLineNumber,
+  );
+  if (countEl) countEl.textContent = markers.length ? String(markers.length) : "";
+  if (!host) return;
+  if (!markers.length) {
+    host.innerHTML = `<div class="prob-empty">Nenhum problema detectado.</div>`;
+    return;
+  }
+  host.innerHTML = markers
+    .map((m) => {
+      const sev =
+        m.severity === monaco.MarkerSeverity.Error ? "e" : m.severity === monaco.MarkerSeverity.Warning ? "w" : "i";
+      const glyph = sev === "e" ? "✖" : sev === "w" ? "⚠" : "ℹ";
+      const path = decodeURIComponent(m.resource.path);
+      const name = path.split("/").pop() ?? path;
+      return (
+        `<div class="prob-row" data-path="${esc(path)}" data-line="${m.startLineNumber}">` +
+        `<span class="prob-ic ${sev}">${glyph}</span>` +
+        `<span class="prob-msg">${esc(m.message)}</span>` +
+        `<span class="prob-loc">${esc(name)}:${m.startLineNumber}</span></div>`
+      );
+    })
+    .join("");
+}
+
 let busy = false;
 function setBusy(on: boolean) {
   busy = on;
@@ -3485,6 +3533,17 @@ function wireChrome() {
   $("#btn-next").addEventListener("click", () => focusNext());
   $("#btn-start").addEventListener("click", () => startStep());
   $("#btn-term-close").addEventListener("click", () => toggleTerminal(false));
+  // Panel tabs (Terminal | Problems). Problems is populated live from Monaco markers.
+  document.querySelectorAll("#panel-tabs .ptab").forEach((b) =>
+    b.addEventListener("click", () => setPanelTab((b as HTMLElement).dataset.ptab as "terminal" | "problems")),
+  );
+  document.getElementById("panel-problems")?.addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest(".prob-row") as HTMLElement | null;
+    if (row?.dataset.path) void openFileAt(row.dataset.path, Number(row.dataset.line) || 1, 1);
+  });
+  // Keep the Problems count + list in sync as diagnostics change.
+  monaco.editor.onDidChangeMarkers(() => renderProblems());
+  renderProblems(); // initial count
   $("#btn-reset-profile").addEventListener("click", (e) => {
     e.stopPropagation(); // don't also toggle the section header underneath
     resetProfile();

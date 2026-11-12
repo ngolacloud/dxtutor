@@ -759,6 +759,34 @@ h1.explain-h { font-size: 16px; } h2.explain-h { font-size: 15px; } h3.explain-h
 .term-tmux .tmux-sp { flex: 1; }
 .term-tmux .tmux-host { opacity: 0.85; }
 
+/* Panel tab row (Terminal | Problems) + the Problems list overlaying the terminal. */
+#terminal-panel .panel-tabs {
+  display: flex; align-items: center; gap: 2px; height: 28px; padding: 0 6px;
+  border-bottom: 1px solid var(--seam); background: var(--bg-editor);
+}
+.ptab {
+  position: relative; background: none; border: none; color: var(--fg-dim);
+  font-family: var(--font-ui); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.4px;
+  height: 28px; padding: 0 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.ptab:hover, .ptab.active { color: var(--fg); }
+.ptab.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; background: var(--accent-grad); }
+.ptab-count { background: var(--bg-selected-inactive); color: var(--fg-dim); border-radius: 9px; font-size: 10px; padding: 0 6px; font-family: var(--font-mono); text-transform: none; }
+.ptab-count:empty { display: none; }
+.panel-tabs-sp { flex: 1; }
+.panel-problems {
+  position: absolute; left: 0; right: 0; top: 28px; bottom: 20px;
+  overflow: auto; background: var(--bg-panel); padding: 4px 0;
+}
+.panel-problems.hidden { display: none; }
+.prob-row { display: flex; align-items: flex-start; gap: 9px; padding: 5px 14px; font-size: 12.5px; cursor: pointer; }
+.prob-row:hover { background: var(--bg-hover); }
+.prob-ic { flex: none; margin-top: 1px; font-size: 11px; }
+.prob-ic.e { color: var(--red); } .prob-ic.w { color: var(--yellow); } .prob-ic.i { color: var(--blue); }
+.prob-msg { flex: 1; min-width: 0; color: var(--fg); overflow-wrap: anywhere; }
+.prob-loc { flex: none; color: var(--fg-muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.prob-empty { padding: 10px 14px; color: var(--fg-muted); font-size: 12.5px; }
+
 /* ── Results pane ────────────────────────────────────────────── */
 .results-empty, .results-content {
   padding: 16px 20px;
