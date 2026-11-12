@@ -14,6 +14,7 @@ import {
   endEditorStream,
   endRangeStream,
   isDirty,
+  openFileAt,
   pushEditorStream,
   pushRangeStream,
   rangeStreamOriginal,
@@ -35,6 +36,12 @@ interface DxAction {
 interface DxCode {
   file: string;
   language?: string;
+  instruction: string;
+}
+
+interface DxEdit {
+  file: string;
+  method: string;
   instruction: string;
 }
 
@@ -187,9 +194,16 @@ export function initAssistant(): void {
       // code live into the editor — no extra click. Stop / Ctrl+Z keep the developer in
       // control. EXCEPTION: if the target file has unsaved edits, don't silently overwrite
       // them — fall through to the button so the developer decides.
-      const dc = idx >= 0 ? parseCodeDirective(messages[idx]?.content ?? "") : null;
+      if (idx < 0 || writeState.has(idx)) return;
+      // Localized edit (modify one method) takes precedence over a whole-file write.
+      const de = parseEditDirective(messages[idx]?.content ?? "");
+      if (de) {
+        void startChatMethodEdit(idx);
+        return;
+      }
+      const dc = parseCodeDirective(messages[idx]?.content ?? "");
       const abs = dc ? codeTargetAbs(dc.file) : null;
-      if (dc && !writeState.has(idx) && !(abs && isDirty(abs))) {
+      if (dc && !(abs && isDirty(abs))) {
         void startCodeStream(idx);
       }
     }
@@ -398,17 +412,26 @@ async function buildWorkspaceContext(): Promise<string | null> {
     bodyBlock,
     `Project tree (depth-limited, build/VCS dirs skipped):\n${tree}`,
     `You act through the IDE, never with OS shell instructions (no mkdir / PowerShell / ` +
-      `Python). You have two action blocks. Choose based on whether the task produces CODE:`,
-    `• To WRITE or MODIFY CODE in a file (this is the common case), reply with a SHORT plan ` +
-      `(1–3 lines) then, IN THIS SAME REPLY, EXACTLY ONE fenced block:\n` +
+      `Python). You have three action blocks. Choose by what the task does:`,
+    `• To MODIFY an EXISTING function/method in a file (e.g. "improve the pow fn", "make ` +
+      `this method faster", "fix the bug in parse"), reply with a SHORT plan (1–3 lines) then ` +
+      `EXACTLY ONE:\n` +
+      "```dxedit\n" +
+      `{"file":"<path relative to root>","method":"<the fn/method name>","instruction":"<what to change>"}\n` +
+      "```\n" +
+      `This edits ONLY that method — it streams a replacement into just that block, leaving ` +
+      `the rest of the file untouched. PREFER dxedit whenever you are changing existing code: ` +
+      `do NOT rewrite the whole file. (dxedit resolves the method by name in the file.)`,
+    `• To create a NEW file or do a FULL rewrite, reply with a SHORT plan (1–3 lines) then ` +
+      `EXACTLY ONE fenced block:\n` +
       "```dxcode\n" +
       `{"file":"<path relative to the workspace root>","language":"rust","instruction":"<precise, self-contained description of the full file to generate>"}\n` +
       "```\n" +
       `The \`file\` path MAY include folders that do not exist yet (e.g. ` +
-      `"examples/dxtutor/main.rs") — they are created automatically, so you do NOT need a ` +
-      `separate folder step. The code then streams LIVE into that editor tab. NEVER paste ` +
-      `the code in the chat and NEVER say you "will" create it later — emit the dxcode block ` +
-      `now. If several files are needed, emit the first dxcode now and offer the next after.`,
+      `"examples/dxtutor/main.rs") — they are created automatically. The code streams LIVE ` +
+      `into that editor tab. NEVER paste the code in the chat and NEVER say you "will" create ` +
+      `it later — emit the block now. Use dxcode only for a NEW file or a deliberate full ` +
+      `rewrite; to change one method, use dxedit.`,
     `• ONLY for a pure EMPTY folder or empty file (no code at all), use exactly one block:\n` +
       "```dxaction\n" +
       `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to root>","content":"<optional>"}\n` +
@@ -435,6 +458,53 @@ function parseCodeDirective(text: string): DxCode | null {
     /* not valid JSON */
   }
   return null;
+}
+
+/** Extract the first dxedit directive (modify one method), if valid. */
+function parseEditDirective(text: string): DxEdit | null {
+  const m = text.match(/```dxedit\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1].trim());
+    if (typeof obj.file === "string" && typeof obj.method === "string" && typeof obj.instruction === "string") {
+      return obj as DxEdit;
+    }
+  } catch {
+    /* not valid JSON */
+  }
+  return null;
+}
+
+/** Chat → localized edit: open the target file, resolve the method's range via
+ *  symbol_ranges, and stream a replacement into ONLY that method (no whole-file rewrite). */
+async function startChatMethodEdit(idx: number): Promise<void> {
+  const dir = parseEditDirective(messages[idx]?.content ?? "");
+  const root = workspaceRoot();
+  if (!dir || !root) return;
+  const abs = codeTargetAbs(dir.file)!;
+  // Open the file so we have its live content, then resolve the method range.
+  await openFileAt(abs, 1, 1);
+  const code = currentFileContent(abs);
+  if (code == null) {
+    messages[idx].content += ` — ⚠ could not open ${dir.file}`;
+    renderMessages();
+    return;
+  }
+  let ranges: SymbolRange[] = [];
+  try {
+    ranges = await invoke<SymbolRange[]>("symbol_ranges", { code, name: dir.method });
+  } catch {
+    ranges = [];
+  }
+  if (ranges.length === 0) {
+    messages[idx].content += ` — ⚠ no method \`${dir.method}\` found in ${dir.file} (edit skipped).`;
+    renderMessages();
+    return;
+  }
+  const t = ranges[0]; // chat path targets the first match (editor actions disambiguate)
+  const lang = abs.endsWith(".rs") ? "rust" : "plaintext";
+  const selected = code.split("\n").slice(t.startLine - 1, t.endLine).join("\n");
+  await startLocalizedEdit(abs, t.startLine, t.endLine, selected, lang, dir.instruction);
 }
 
 /** Strip a leading ``` fence (language tag and all) from streamed code, tolerating an
@@ -502,9 +572,11 @@ export async function startLocalizedEdit(
   endLine: number,
   selected: string,
   lang: string,
+  instructionArg?: string,
 ): Promise<void> {
   if (busy) return;
-  const instruction = (window.prompt(`Improve lines ${startLine}–${endLine} — how?`, "") ?? "").trim();
+  // The chat (dxedit) passes the instruction; the editor actions prompt for it.
+  const instruction = (instructionArg ?? window.prompt(`Improve lines ${startLine}–${endLine} — how?`, "") ?? "").trim();
   if (!instruction) return;
 
   openAssistant();
@@ -747,10 +819,12 @@ function renderMessages(): void {
         const isDone = m.role === "assistant" && !streaming;
         const action = isDone ? parseAction(m.content) : null;
         const code = isDone ? parseCodeDirective(m.content) : null;
-        // Hide the raw dxaction/dxcode JSON from the bubble; shown as a card instead.
+        // Hide the raw dxaction/dxcode/dxedit JSON from the bubble (shown as the plan text
+        // + an inline status appended by the stream handlers).
         let shown = m.content;
         if (action) shown = shown.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim();
         if (code) shown = shown.replace(/```dxcode\s*\n[\s\S]*?```/, "").trim();
+        shown = shown.replace(/```dxedit\s*\n[\s\S]*?```/, "").trim();
         const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
         const err = actionErrors.get(i);
         let card = "";
