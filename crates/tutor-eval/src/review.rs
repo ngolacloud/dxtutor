@@ -475,23 +475,78 @@ fn review_rust(root: &Path, scope: &ReviewScope) -> (AnalyzerRun, Vec<Finding>) 
     }
 
     findings.retain(|f| !is_noise_path(&f.primary.file)); // drop target/ generated code
-    let covered = count_scope_files(&findings, scope);
+    let mut covered = count_scope_files(&findings, scope);
     filter_scope(&mut findings, scope, root);
+
+    // LOOSE-FILE fallback: a single-file scope that `cargo clippy --all-targets` never
+    // compiled (it is not a cargo target — e.g. an orphan `examples/…/main.rs`) comes back
+    // with 0 covered files, which reads as a misleading "clean" even when the file does not
+    // compile. Compile THAT file standalone with rustc so its real errors surface — the same
+    // reasoning as the Explorer runner (a loose file ≠ a cargo target).
+    let mut detail = if clippy {
+        None
+    } else {
+        Some("Clippy not installed — compiler checks only.".to_string())
+    };
+    if covered == 0 {
+        if let ReviewScope::File(path) = scope {
+            let p = Path::new(path);
+            if p.extension().and_then(|e| e.to_str()) == Some("rs") && p.is_file() {
+                let standalone = rustc_check_file(p, scratch.path());
+                if !standalone.is_empty() {
+                    covered = 1;
+                    findings = standalone;
+                    detail = Some("Ficheiro solto — verificado standalone com rustc.".to_string());
+                }
+            }
+        }
+    }
 
     (
         AnalyzerRun {
             id: tool.to_string(),
             language: "rust".into(),
             status: AnalyzerStatus::Ran,
-            detail: if clippy {
-                None
-            } else {
-                Some("Clippy not installed — compiler checks only.".into())
-            },
+            detail,
             files_covered: covered,
         },
         findings,
     )
+}
+
+/// Compile a LOOSE `.rs` file standalone with `rustc --emit=metadata` and turn its
+/// JSON diagnostics into findings. rustc prints the compiler-message JSON on STDERR and
+/// without cargo's `{"reason":"compiler-message", …}` wrapper, so we re-wrap each line
+/// and reuse [`parse_cargo_json`]. Used when a File-scope review wasn't covered by cargo.
+fn rustc_check_file(file: &Path, scratch_dir: &Path) -> Vec<Finding> {
+    let out = scratch_dir.join("dxtutor-review-meta");
+    let mut cmd = Command::new("rustc");
+    cmd.args(["--edition", "2021", "--error-format=json", "--emit=metadata", "-o"])
+        .arg(&out)
+        .arg(file);
+    if let Some(dir) = file.parent() {
+        cmd.current_dir(dir);
+    }
+    let outcome = match run_guarded(cmd, scratch_dir, "review-rustc", REVIEW_TIMEOUT, None) {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    let wrapped = outcome
+        .stderr
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            if l.is_empty() {
+                return None;
+            }
+            let v: serde_json::Value = serde_json::from_str(l).ok()?;
+            // Keep only diagnostic objects (they carry a "level"); wrap as cargo would.
+            v.get("level").and_then(|x| x.as_str())?;
+            Some(serde_json::json!({ "reason": "compiler-message", "message": v }).to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    parse_cargo_json(&wrapped, "rustc")
 }
 
 fn failed_run(tool: &str, language: &str, detail: impl Into<String>) -> AnalyzerRun {
