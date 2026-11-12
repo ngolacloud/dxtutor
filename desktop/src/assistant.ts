@@ -128,7 +128,15 @@ export function initAssistant(): void {
       finishStream();
       return;
     }
-    if (e.payload.requestId === currentRequestId) finishStream();
+    if (e.payload.requestId === currentRequestId) {
+      const idx = streamingIdx; // the assistant message that just completed
+      finishStream();
+      // Dev delegate: as soon as the plan is in and it carries a dxcode, start writing the
+      // code live into the editor — no extra click. Stop / Ctrl+Z keep the developer in control.
+      if (idx >= 0 && parseCodeDirective(messages[idx]?.content ?? "") && !writeState.has(idx)) {
+        void startCodeStream(idx);
+      }
+    }
   });
   void listen<{ requestId: string; error: string }>("llm://error", (e) => {
     if (codeStream && e.payload.requestId === codeStream.requestId) {
@@ -313,23 +321,28 @@ async function buildWorkspaceContext(): Promise<string | null> {
     active ? `Active file: ${active}` : `No file is currently open.`,
     sel ? `Selected code:\n${sel.slice(0, 2000)}` : "",
     `Project tree (depth-limited, build/VCS dirs skipped):\n${tree}`,
-    `When the user asks to create a folder or do a simple filesystem action, DO NOT give ` +
-      `OS shell instructions (mkdir, PowerShell, etc.). Act through the IDE: reply with one ` +
-      `short sentence, then EXACTLY ONE fenced block:\n` +
-      "```dxaction\n" +
-      `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to the workspace root>","content":"<for files>"}\n` +
-      "```\n" +
-      `The user approves it with one click and the IDE performs it inside the workspace. ` +
-      `The path must be relative to the root and must not escape it.`,
-    `When the user asks you to WRITE or MODIFY CODE in a file, DO NOT put the code in the ` +
-      `chat. Reply with only a SHORT plan (1–3 lines) of what you will do, then EXACTLY ONE ` +
-      `fenced block:\n` +
+    `You act through the IDE, never with OS shell instructions (no mkdir / PowerShell / ` +
+      `Python). You have two action blocks. Choose based on whether the task produces CODE:`,
+    `• To WRITE or MODIFY CODE in a file (this is the common case), reply with a SHORT plan ` +
+      `(1–3 lines) then, IN THIS SAME REPLY, EXACTLY ONE fenced block:\n` +
       "```dxcode\n" +
-      `{"file":"<path relative to the workspace root>","language":"rust","instruction":"<a precise, self-contained description of the full file to generate>"}\n` +
+      `{"file":"<path relative to the workspace root>","language":"rust","instruction":"<precise, self-contained description of the full file to generate>"}\n` +
       "```\n" +
-      `The code will then stream LIVE into the editor tab for that file — the developer ` +
-      `watches it being written and keeps control. Make the instruction detailed enough to ` +
-      `produce the complete file on its own.`,
+      `The \`file\` path MAY include folders that do not exist yet (e.g. ` +
+      `"examples/dxtutor/main.rs") — they are created automatically, so you do NOT need a ` +
+      `separate folder step. The code then streams LIVE into that editor tab. NEVER paste ` +
+      `the code in the chat and NEVER say you "will" create it later — emit the dxcode block ` +
+      `now. If several files are needed, emit the first dxcode now and offer the next after.`,
+    `• ONLY for a pure EMPTY folder or empty file (no code at all), use exactly one block:\n` +
+      "```dxaction\n" +
+      `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to root>","content":"<optional>"}\n` +
+      "```\n" +
+      `Do NOT use dxaction when the task involves code — use dxcode, whose path already ` +
+      `creates any missing folders.`,
+    `Example — user: "create a folder dxtutor in examples and a main.rs that prints hello ` +
+      `world" → reply a one-line plan, then a single dxcode with ` +
+      `file "examples/dxtutor/main.rs" and an instruction for a Rust hello-world program ` +
+      `(the folder is created by that path).`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -541,17 +554,9 @@ function renderMessages(): void {
         const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
         const err = actionErrors.get(i);
         let card = "";
-        if (action) {
-          if (appliedActions.has(i)) {
-            card = `<div class="as-action done">✓ Applied: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>`;
-          } else {
-            card =
-              `<div class="as-action"><div class="as-action-h">Proposed: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>` +
-              `<div class="as-action-btns"><button class="as-apply" data-idx="${i}">Apply</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
-              (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
-              `</div>`;
-          }
-        } else if (code) {
+        // Code tasks win over a bare folder action: the code is the point, and a dxcode
+        // path creates any missing folders on its own.
+        if (code) {
           const state = writeState.get(i);
           if (state === "writing") {
             card = `<div class="as-action"><div class="as-action-h">✍️ Writing <code>${esc(code.file)}</code> in the editor… <span class="as-spin"></span></div><div class="as-action-sub">Press <b>Stop</b> to interrupt — the code stays in the buffer.</div></div>`;
@@ -561,6 +566,16 @@ function renderMessages(): void {
             card =
               `<div class="as-action"><div class="as-action-h">✍️ Write <code>${esc(code.file)}</code> directly in the editor</div>` +
               `<div class="as-action-btns"><button class="as-write" data-idx="${i}">Write in editor</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
+              (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
+              `</div>`;
+          }
+        } else if (action) {
+          if (appliedActions.has(i)) {
+            card = `<div class="as-action done">✓ Applied: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>`;
+          } else {
+            card =
+              `<div class="as-action"><div class="as-action-h">Proposed: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>` +
+              `<div class="as-action-btns"><button class="as-apply" data-idx="${i}">Apply</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
               (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
               `</div>`;
           }
