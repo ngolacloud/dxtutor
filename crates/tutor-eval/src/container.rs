@@ -342,6 +342,94 @@ pub fn build_image(context: &Path, dockerfile: &Path, tag: &str) -> Result<Strin
     }
 }
 
+// ── Sessão persistente (attached) ──────────────────────────────────────────
+// Ao contrário de [`run_in_container`] (one-shot, com limpeza automática), uma sessão é
+// um container de LONGA DURAÇÃO com o workspace montado: os comandos correm com `exec`
+// dentro do MESMO container, por isso o estado (pacotes instalados, ficheiros, env)
+// persiste entre comandos — a verdadeira experiência "attached".
+
+/// Nome determinístico do container de sessão para um `root` (FNV-1a), para que
+/// `exec`/`status`/`down` o encontrem sem estado partilhado.
+pub fn session_name(root: &Path) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in root.to_string_lossy().bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("dxtutor-sess-{h:016x}")
+}
+
+/// Arranca (ou reinicia) a sessão: remove qualquer container homónimo obsoleto e corre um
+/// novo em segundo plano (`run -d`) com o workspace montado em `/work` e um processo de
+/// vida longa. Devolve o nome do container.
+pub fn session_up(root: &Path, image: &str) -> Result<String> {
+    let bin = engine_bin(container_engine());
+    let name = session_name(root);
+    let _ = Command::new(&bin).args(["rm", "-f", &name]).output(); // best-effort cleanup
+    let workdir = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mount = format!("{}:/work", workdir.display());
+    let out = Command::new(&bin)
+        .args([
+            "run",
+            "-d",
+            "--name",
+            &name,
+            "-v",
+            &mount,
+            "-w",
+            "/work",
+            image,
+            "sh",
+            "-c",
+            "sleep infinity",
+        ])
+        .output()
+        .with_context(|| format!("falha a lançar `{} run`", bin.display()))?;
+    if out.status.success() {
+        Ok(name)
+    } else {
+        anyhow::bail!("arranque da sessão falhou:\n{}", String::from_utf8_lossy(&out.stderr));
+    }
+}
+
+/// Corre um comando dentro da sessão em curso (`exec`), preservando o estado do container.
+pub fn session_exec(name: &str, cmd: &str) -> Result<RunOutput> {
+    let bin = engine_bin(container_engine());
+    let out = Command::new(&bin)
+        .args(["exec", name, "sh", "-lc", cmd])
+        .output()
+        .with_context(|| format!("falha a lançar `{} exec`", bin.display()))?;
+    Ok(RunOutput {
+        ok: out.status.success(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    })
+}
+
+/// `true` se a sessão `name` está em execução.
+pub fn session_running(name: &str) -> bool {
+    let bin = engine_bin(container_engine());
+    Command::new(&bin)
+        .args(["ps", "--filter", &format!("name=^{name}$"), "--format", "{{.Names}}"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains(name))
+        .unwrap_or(false)
+}
+
+/// Pára e remove a sessão (`rm -f`).
+pub fn session_down(name: &str) -> Result<()> {
+    let bin = engine_bin(container_engine());
+    let out = Command::new(&bin)
+        .args(["rm", "-f", name])
+        .output()
+        .with_context(|| format!("falha a lançar `{} rm`", bin.display()))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("paragem da sessão falhou:\n{}", String::from_utf8_lossy(&out.stderr));
+    }
+}
+
 /// Gera um nome de container único sem depender de `Date`/`rand` (proibidos no host):
 /// `dxtutor-<pid>-<contador>-<nanos>`, onde o contador é atómico global e os nanos
 /// vêm de um [`Instant`] de arranque do processo.
@@ -691,6 +779,18 @@ mod tests {
         if std::env::var(ENGINE_ENV).is_err() {
             assert_eq!(sandbox_engine(), SandboxEngine::Host);
         }
+    }
+
+    #[test]
+    fn nome_de_sessao_e_deterministico_e_valido() {
+        let a = session_name(Path::new("/home/walter/projects/foo"));
+        let b = session_name(Path::new("/home/walter/projects/foo"));
+        let c = session_name(Path::new("/home/walter/projects/bar"));
+        assert_eq!(a, b, "mesmo root → mesmo nome");
+        assert_ne!(a, c, "roots diferentes → nomes diferentes");
+        assert!(a.starts_with("dxtutor-sess-"));
+        // Nome válido para container (só minúsculas/dígitos/hífen).
+        assert!(a.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-'));
     }
 
     #[test]

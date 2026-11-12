@@ -1685,6 +1685,93 @@ async fn devcontainer_up(root: String) -> Result<DevcontainerUp, String> {
     .map_err(|e| format!("devcontainer task failed: {e}"))?
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionStatus {
+    running: bool,
+    name: String,
+}
+
+/// Start a PERSISTENT devcontainer session: resolve/build the image, then run a long-lived
+/// container with the workspace mounted. Unlike devcontainer_up (one-shot), state persists
+/// across exec calls — the real attached session. Returns the build log + container name.
+#[tauri::command]
+async fn devcontainer_session_up(root: String) -> Result<DevcontainerUp, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let file = [".devcontainer/devcontainer.json", ".devcontainer.json"]
+            .iter()
+            .map(|r| base.join(r))
+            .find(|p| p.is_file())
+            .ok_or_else(|| "No devcontainer.json in this folder.".to_string())?;
+        let v: serde_json::Value =
+            serde_json::from_str(&strip_jsonc_comments(&std::fs::read_to_string(&file).map_err(
+                |e| e.to_string(),
+            )?))
+            .map_err(|e| format!("devcontainer.json is not valid JSON: {e}"))?;
+        let mut log = String::new();
+        let (image, built) = devcontainer_image(base, &v, &mut log)?;
+        let name = tutor_eval::session_up(base, &image).map_err(|e| e.to_string())?;
+        log.push_str(&format!("▸ session started: {name}\n"));
+        Ok(DevcontainerUp {
+            ok: true,
+            image,
+            built,
+            ran: "session up".into(),
+            stdout: log,
+            stderr: String::new(),
+        })
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))?
+}
+
+/// Exec a command inside the RUNNING persistent session (state preserved between calls).
+#[tauri::command]
+async fn devcontainer_session_exec(root: String, cmd: String) -> Result<DevcontainerUp, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let name = tutor_eval::session_name(base);
+        if !tutor_eval::session_running(&name) {
+            return Err("No running session — press Reopen in Container first.".to_string());
+        }
+        let out = tutor_eval::session_exec(&name, &cmd).map_err(|e| e.to_string())?;
+        Ok(DevcontainerUp {
+            ok: out.ok,
+            image: name,
+            built: false,
+            ran: cmd,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))?
+}
+
+#[tauri::command]
+async fn devcontainer_session_status(root: String) -> Result<SessionStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = tutor_eval::session_name(std::path::Path::new(&root));
+        SessionStatus {
+            running: tutor_eval::session_running(&name),
+            name,
+        }
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))
+}
+
+#[tauri::command]
+async fn devcontainer_session_down(root: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = tutor_eval::session_name(std::path::Path::new(&root));
+        tutor_eval::session_down(&name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))?
+}
+
 /// Run an arbitrary command inside the devcontainer image with the workspace mounted — the
 /// practical "attach" affordance (exec a shell line in the project's container env).
 #[tauri::command]
@@ -1847,6 +1934,10 @@ fn main() {
             devcontainer_info,
             devcontainer_up,
             devcontainer_exec,
+            devcontainer_session_up,
+            devcontainer_session_exec,
+            devcontainer_session_status,
+            devcontainer_session_down,
             detect_projects,
             pty::pty_spawn,
             pty::pty_write,

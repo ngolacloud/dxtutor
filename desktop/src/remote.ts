@@ -29,6 +29,7 @@ export function initRemote(deps: { ensureWorkspaceMode: () => void }): void {
     else if (act === "open" && btn.dataset.path) void openFileAt(btn.dataset.path, 1, 1);
     else if (act === "reopen") void reopenInContainer();
     else if (act === "exec") void execInContainer();
+    else if (act === "stop") void stopSession();
   });
   $("#remote-body").addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement;
@@ -49,11 +50,13 @@ async function execInContainer(): Promise<void> {
   log.classList.remove("hidden");
   log.textContent = `$ ${cmd}\n⟳ running in container…`;
   try {
-    const r = await invoke<DevcontainerUp>("devcontainer_exec", { root: workspaceRoot(), cmd });
+    const r = await invoke<DevcontainerUp>("devcontainer_session_exec", {
+      root: workspaceRoot(),
+      cmd,
+    });
     log.textContent =
-      `${r.ok ? "✓" : "✗"} ${r.image}\n$ ${r.ran}\n` +
-      (r.stdout || "") +
-      (r.stderr ? `\n[stderr]\n${r.stderr}` : "");
+      `${r.ok ? "✓" : "✗"} $ ${r.ran}\n` + (r.stdout || "") + (r.stderr ? `\n[stderr]\n${r.stderr}` : "");
+    if (input) input.value = "";
   } catch (e) {
     log.textContent = `✗ ${String(e)}`;
   }
@@ -68,9 +71,9 @@ interface DevcontainerUp {
   stderr: string;
 }
 
-/** "Reopen in Container": switch the sandbox engine to Delonix AND actually bring the
- *  devcontainer image up — run its postCreateCommand inside the container with the
- *  workspace mounted — surfacing the real logs. */
+/** "Reopen in Container": switch to Delonix AND start a PERSISTENT session — a long-lived
+ *  container with the workspace mounted (building the image first if needed). State then
+ *  persists across the exec commands you run below. */
 async function reopenInContainer(): Promise<void> {
   const log = $("#remote-log");
   log.classList.remove("hidden");
@@ -80,15 +83,31 @@ async function reopenInContainer(): Promise<void> {
   } catch {
     /* keep going — scan reflects the real state */
   }
-  log.textContent = "⟳ Bringing the container up (pulling image + postCreateCommand)…";
+  log.textContent = "⟳ Starting a persistent container session (build/pull + run)…";
   try {
-    const r = await invoke<DevcontainerUp>("devcontainer_up", { root: workspaceRoot() });
-    const head = `${r.ok ? "✓" : "✗"} ${r.image}\n$ ${r.ran}\n`;
-    log.textContent = head + (r.stdout || "") + (r.stderr ? `\n[stderr]\n${r.stderr}` : "");
+    const r = await invoke<DevcontainerUp>("devcontainer_session_up", { root: workspaceRoot() });
+    log.textContent =
+      `${r.ok ? "✓" : "✗"} ${r.image}${r.built ? " (built)" : ""}\n` +
+      (r.stdout || "") +
+      (r.stderr ? `\n[stderr]\n${r.stderr}` : "");
   } catch (e) {
     log.textContent = `✗ ${String(e)}`;
   }
   await scan(); // #remote-log is a sibling of #remote-body, so it survives the rebuild
+}
+
+/** Stop and remove the persistent session container. */
+async function stopSession(): Promise<void> {
+  const log = $("#remote-log");
+  log.classList.remove("hidden");
+  log.textContent = "⟳ Stopping the session…";
+  try {
+    await invoke("devcontainer_session_down", { root: workspaceRoot() });
+    log.textContent = "✓ Session stopped.";
+  } catch (e) {
+    log.textContent = `✗ ${String(e)}`;
+  }
+  await scan();
 }
 
 export function openRemote(): void {
@@ -124,7 +143,12 @@ async function scan(): Promise<void> {
   } catch {
     /* treat as absent */
   }
-  const inContainer = engine !== "host";
+  let running = false;
+  try {
+    running = (await invoke<{ running: boolean }>("devcontainer_session_status", { root })).running;
+  } catch {
+    /* no session */
+  }
   body.innerHTML = `
     ${engineBlock(engine)}
     <div class="remote-group">Dev Containers</div>
@@ -132,23 +156,28 @@ async function scan(): Promise<void> {
       dc.present
         ? `<div class="remote-card">
              <div class="remote-card-top">
-               <span class="remote-dot ok"></span>
+               <span class="remote-dot ${running ? "ok" : ""}"></span>
                <span class="remote-name">${esc(dc.name ?? "devcontainer")}</span>
                <button class="remote-link" data-act="open" data-path="${esc(dc.path ?? "")}">config</button>
              </div>
              <div class="remote-card-sub">${esc(dc.image ?? "builds from Dockerfile")}</div>
-             <button class="remote-reopen${inContainer ? " done" : ""}" data-act="reopen">
-               ${inContainer ? "✓ Running in container" : "⟲ Reopen in Container"}
-             </button>
-             <div class="remote-exec">
-               <input id="remote-exec-input" class="remote-exec-input" type="text" autocomplete="off" placeholder="run a command in the container…" aria-label="Command to run in container" />
-               <button class="remote-exec-go" data-act="exec" title="Run in container">▸</button>
-             </div>
+             ${
+               running
+                 ? `<div class="remote-session-row">
+                      <span class="remote-session-badge">● session running</span>
+                      <button class="remote-session-stop" data-act="stop">Stop</button>
+                    </div>
+                    <div class="remote-exec">
+                      <input id="remote-exec-input" class="remote-exec-input" type="text" autocomplete="off" placeholder="run a command in the session…" aria-label="Command to run in container" />
+                      <button class="remote-exec-go" data-act="exec" title="Run in session">▸</button>
+                    </div>`
+                 : `<button class="remote-reopen" data-act="reopen">⟲ Reopen in Container</button>`
+             }
            </div>
            <div class="remote-note">${
-             inContainer
-               ? `Your code runs inside the <b>${esc(engine)}</b> sandbox. Run commands above to work in the container env.`
-               : "Reopen to build/pull and run this project inside the container defined above."
+             running
+               ? "A persistent container session is running — commands you run share its state (installed packages, files)."
+               : "Reopen to build/pull the image and start a persistent session with the workspace mounted."
            }</div>`
         : `<div class="remote-empty">
              <p class="remote-note">No Dev Container yet. Add one to run this project in a reproducible, isolated environment.</p>

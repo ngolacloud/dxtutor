@@ -2409,6 +2409,10 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .remote-empty .remote-reopen:hover { background: var(--bg-selected-inactive); filter: none; }
 .remote-log { flex: 0 1 auto; max-height: 45%; overflow: auto; margin: 0; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg-base, #181818); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; white-space: pre-wrap; color: var(--fg-dim); }
 .remote-log.hidden { display: none; }
+.remote-session-row { display: flex; align-items: center; gap: 8px; }
+.remote-session-badge { flex: 1; font-size: 11px; color: var(--green, #4ec9b0); }
+.remote-session-stop { flex: none; font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
+.remote-session-stop:hover { border-color: var(--red); color: var(--red); }
 .remote-exec { display: flex; gap: 4px; }
 .remote-exec-input { flex: 1; min-width: 0; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-family: var(--font-mono); font-size: 11px; }
 .remote-exec-input:focus { outline: none; border-color: var(--accent); }
