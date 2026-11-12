@@ -47,8 +47,8 @@ pub fn resolve_definition(
     text: Option<&str>,
 ) -> Option<Location> {
     request(root, file, line, character, "textDocument/definition", false, text)
-        .into_iter()
-        .next()
+        .map(|v| parse_locations(&v))
+        .and_then(|ls| ls.into_iter().next())
 }
 
 /// Resolve ALL references to the symbol at (`line`, `character`) across the project via
@@ -61,6 +61,21 @@ pub fn resolve_references(
     text: Option<&str>,
 ) -> Vec<Location> {
     request(root, file, line, character, "textDocument/references", true, text)
+        .map(|v| parse_locations(&v))
+        .unwrap_or_default()
+}
+
+/// Hover info (type signature / docs, as markdown) for the symbol at (`line`, `character`)
+/// via rust-analyzer (`textDocument/hover`). `None` on failure.
+pub fn resolve_hover(
+    root: &Path,
+    file: &Path,
+    line: u32,
+    character: u32,
+    text: Option<&str>,
+) -> Option<String> {
+    request(root, file, line, character, "textDocument/hover", false, text)
+        .and_then(|v| parse_hover(&v))
 }
 
 /// Shared driver: spawn rust-analyzer, handshake, open the file, poll `method` at the
@@ -77,11 +92,11 @@ fn request(
     method: &'static str,
     include_decl: bool,
     text: Option<&str>,
-) -> Vec<Location> {
+) -> Option<Value> {
     // rust-analyzer only speaks Rust: skip it (and its multi-second cold start) for other
     // files, so the caller falls back to the syntactic map immediately.
     if file.extension().and_then(|e| e.to_str()) != Some("rs") {
-        return Vec::new();
+        return None;
     }
     let spawn = Command::new("rust-analyzer")
         .current_dir(root)
@@ -91,11 +106,11 @@ fn request(
         .spawn();
     let mut child = match spawn {
         Ok(c) => c,
-        Err(_) => return Vec::new(),
+        Err(_) => return None,
     };
     let (mut stdin, stdout) = match (child.stdin.take(), child.stdout.take()) {
         (Some(i), Some(o)) => (i, o),
-        _ => return Vec::new(),
+        _ => return None,
     };
     let mut reader = BufReader::new(stdout);
 
@@ -106,7 +121,7 @@ fn request(
         Some(t) => t.to_string(),
         None => match std::fs::read_to_string(file) {
             Ok(t) => t,
-            Err(_) => return Vec::new(),
+            Err(_) => return None,
         },
     };
 
@@ -116,7 +131,7 @@ fn request(
         let r = exchange(&mut stdin, &mut reader, &root_uri, &file_uri, &text, line, character, method, include_decl);
         let _ = tx.send(r);
     });
-    let result = rx.recv_timeout(BUDGET).ok().flatten().unwrap_or_default();
+    let result = rx.recv_timeout(BUDGET).ok().flatten();
     let _ = child.kill(); // closes the pipes → the worker's blocking read unblocks
     let _ = child.wait();
     let _ = worker.join();
@@ -134,7 +149,7 @@ fn exchange(
     character: u32,
     method: &str,
     include_decl: bool,
-) -> Option<Vec<Location>> {
+) -> Option<Value> {
     send(stdin, &json!({
         "jsonrpc": "2.0", "id": 1, "method": "initialize",
         "params": { "processId": null, "rootUri": root_uri, "capabilities": {} }
@@ -157,13 +172,18 @@ fn exchange(
         }
         send(stdin, &json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))?;
         let result = read_until_id(reader, id)?;
-        let locs = parse_locations(&result);
-        if !locs.is_empty() {
-            return Some(locs);
+        if is_ready(&result) {
+            return Some(result);
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    Some(Vec::new())
+    Some(Value::Null)
+}
+
+/// Has rust-analyzer produced a real answer (vs still indexing)? Non-null and not an empty
+/// array means ready — covers locations (`[]` → not ready) and hover (`null` → not ready).
+fn is_ready(v: &Value) -> bool {
+    !v.is_null() && v.as_array().map(|a| !a.is_empty()).unwrap_or(true)
 }
 
 fn send(stdin: &mut impl Write, v: &Value) -> Option<()> {
@@ -238,6 +258,28 @@ fn hex(b: u8) -> Option<u8> {
     }
 }
 
+/// Extract the hover text from a `textDocument/hover` result. `contents` may be a
+/// `MarkupContent {value}`, a `MarkedString` (string or `{value}`), or an array of those.
+fn parse_hover(result: &Value) -> Option<String> {
+    let contents = result.get("contents")?;
+    let text = match contents {
+        Value::String(s) => s.clone(),
+        Value::Object(o) => o.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        Value::Array(a) => a
+            .iter()
+            .map(|p| match p {
+                Value::String(s) => s.clone(),
+                Value::Object(o) => o.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                _ => String::new(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        _ => return None,
+    };
+    let text = text.trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
 /// Normalise a definition/references result (`Location`, `Location[]`, or `LocationLink[]`)
 /// into our `Location`s.
 fn parse_locations(result: &Value) -> Vec<Location> {
@@ -285,6 +327,18 @@ mod tests {
 
         assert!(parse_locations(&Value::Null).is_empty());
         assert!(parse_locations(&json!([])).is_empty());
+    }
+
+    #[test]
+    fn parse_hover_handles_markup_string_and_array() {
+        let markup = json!({ "contents": { "kind": "markdown", "value": "fn helper(n: i32) -> i32" } });
+        assert_eq!(parse_hover(&markup).unwrap(), "fn helper(n: i32) -> i32");
+        let s = json!({ "contents": "plain hover" });
+        assert_eq!(parse_hover(&s).unwrap(), "plain hover");
+        let arr = json!({ "contents": ["a", { "value": "b" }] });
+        assert_eq!(parse_hover(&arr).unwrap(), "a\n\nb");
+        assert!(parse_hover(&Value::Null).is_none());
+        assert!(parse_hover(&json!({ "contents": "" })).is_none());
     }
 
     #[test]

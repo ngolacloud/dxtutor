@@ -1042,6 +1042,29 @@ async fn resolve_definition(
     .map_err(|e| format!("resolve_definition task failed: {e}"))
 }
 
+/// Section 5: hover info (type/docs markdown) for the symbol at (`line`, `col`) — both
+/// 1-based — via rust-analyzer. `None` when absent/unresolved. Runs off the UI thread.
+#[tauri::command]
+async fn resolve_hover(
+    root: String,
+    file: String,
+    line: u32,
+    col: u32,
+    text: Option<String>,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::lsp::resolve_hover(
+            std::path::Path::new(&root),
+            std::path::Path::new(&file),
+            line.saturating_sub(1),
+            col.saturating_sub(1),
+            text.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| format!("resolve_hover task failed: {e}"))
+}
+
 /// Section 5: resolve ALL references to the symbol at (`line`, `col`) — both 1-based — via
 /// rust-analyzer. Empty when absent/unresolved. Runs off the UI thread.
 #[tauri::command]
@@ -1319,6 +1342,7 @@ fn main() {
             list_symbols,
             resolve_definition,
             resolve_references,
+            resolve_hover,
             list_tests,
             run_test,
             run_all_tests,

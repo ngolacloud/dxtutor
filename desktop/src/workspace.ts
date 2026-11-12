@@ -699,6 +699,16 @@ export function initWorkspace() {
     },
   });
 
+  // "Show type" (Ctrl+K Ctrl+I): rust-analyzer hover for the symbol under the cursor.
+  wsEditor.addAction({
+    id: "dxtutor.showType",
+    label: "Show type (rust-analyzer)",
+    contextMenuGroupId: "navigation",
+    contextMenuOrder: 1.45,
+    keybindings: [monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI)],
+    run: (ed) => void showType(ed),
+  });
+
   // "Edit with AI" — delegate an interruptible edit of the active file (Alt+I).
   wsEditor.addAction({
     id: "dxtutor.editWithAI",
@@ -915,6 +925,27 @@ async function goToDefinition(ed: monaco.editor.ICodeEditor): Promise<void> {
     /* rust-analyzer not available / errored — fall through to the syntactic map */
   }
   if (word && codeMapHandler) codeMapHandler(word); // honest fallback
+}
+
+/** Show type / docs for the symbol under the cursor via rust-analyzer hover. */
+async function showType(ed: monaco.editor.ICodeEditor): Promise<void> {
+  const pos = ed.getPosition();
+  const model = ed.getModel();
+  if (!pos || !model || !rootPath || !activeTabPath) return;
+  const word = model.getWordAtPosition(pos)?.word ?? "symbol";
+  try {
+    const hover = await invoke<string | null>("resolve_hover", {
+      root: rootPath,
+      file: activeTabPath,
+      line: pos.lineNumber,
+      col: pos.column,
+      text: model.getValue(),
+    });
+    if (hover) writeOutput(`Type · ${word}`, hover, "info");
+    else writeOutput(`Type · ${word}`, "No type info (rust-analyzer couldn't resolve it).", "err");
+  } catch (e) {
+    writeOutput("Show type failed", String(e), "err");
+  }
 }
 
 /** Register the handler that opens the CodeMap for a symbol (wired by main.ts). The
