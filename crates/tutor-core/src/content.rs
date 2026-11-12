@@ -97,4 +97,17 @@ mod tests {
             assert!(!h.contains(".chars().count()"), "a pista não deve dar o código");
         }
     }
+
+    /// A variação (secção 4) exercita o MESMO conceito noutro problema: inverter por
+    /// caracteres. Mantém o contra-exemplo "ação" e o gabarito honesto (chars, não bytes).
+    #[test]
+    fn variacao_inverter_por_caracteres() {
+        let p = load_project("rust-count-chars").expect("projecto count-chars");
+        let phase = p.phase("p2-reverse-chars").expect("fase da variação existe");
+        assert_eq!(phase.entry, "reverse_chars");
+        assert!(phase.tests.contains("reverse_chars(\"ação\"), \"oãça\""));
+        assert!(phase.gabarito.solution.contains(".chars().rev().collect()"));
+        assert_eq!(phase.hints.len(), 3);
+        assert!(phase.hint(1).unwrap().contains("ação"));
+    }
 }

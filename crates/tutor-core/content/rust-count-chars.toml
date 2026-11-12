@@ -102,3 +102,86 @@ combinante podem formar um só símbolo visual com dois escalares). Para a maior
 dos casos, contar `char`s é a resposta correcta e honesta; contar *graphemes*
 exige a crate `unicode-segmentation` e é um passo posterior.
 """
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 2 — Variação: inverter por caracteres (mesmo conceito, outro problema)
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p2-reverse-chars"
+title = "Fase 2 — Inverter uma string por caracteres"
+level = "básico"
+entry = "reverse_chars"
+instructions = """
+## Objectivo
+
+Implementa `reverse_chars`, que devolve o texto **invertido caractere a
+caractere** (valores escalares Unicode):
+
+- `"casa"` → `"asac"`
+- `"ação"` → `"oãça"`
+- `""` → `""`
+
+## O mesmo conceito, outra vez
+
+Inverter os **bytes** de uma string UTF-8 parte os caracteres multibyte ao meio e
+produz lixo (ou texto inválido). `'ç'` são 2 bytes; ao inverter bytes, esses dois
+bytes trocam de ordem e deixam de formar o `'ç'`. Como em "contar caracteres", a
+unidade certa é o **valor escalar**, não o byte. Inverte os `char`s.
+"""
+starter = """
+pub fn reverse_chars(input: &str) -> String {
+    todo!("inverte por caracteres (valores escalares), não por bytes")
+}
+"""
+tests = """
+use student::reverse_chars;
+
+#[test]
+fn ascii_simples() {
+    assert_eq!(reverse_chars("casa"), "asac");
+}
+
+#[test]
+fn acentos_sobrevivem() {
+    // Inverter bytes partiria o 'ç'/'ã'. Por caracteres, "ação" -> "oãça".
+    assert_eq!(reverse_chars("ação"), "oãça");
+}
+
+#[test]
+fn vazio_fica_vazio() {
+    assert_eq!(reverse_chars(""), "");
+}
+"""
+hints = [
+  "Contra-exemplo: inverter os **bytes** de `\"ação\"` parte o `'ç'` e o `'ã'` ao meio. O que queres inverter são os caracteres, não os bytes.",
+  "`'ç'` ocupa 2 bytes; se trocares a ordem dos bytes, esses 2 bytes deixam de formar o `'ç'`. Percorre os **caracteres** (valores escalares), não os bytes.",
+  "Vê `str::chars()` e o método `rev()` de um iterador. Como é que juntas um iterador de `char` numa `String` outra vez?",
+]
+
+[phase.gabarito]
+time = "O(n)"
+space = "O(n)"
+solution = """
+pub fn reverse_chars(input: &str) -> String {
+    // `chars()` descodifica em valores escalares; `rev()` inverte a ordem deles;
+    // `collect()` volta a juntar numa String válida. Uma passagem → O(n).
+    input.chars().rev().collect()
+}
+"""
+justification = """
+A unidade correcta é o **valor escalar Unicode**, não o byte. `str::chars()`
+descodifica o UTF-8 em `char`s; `Iterator::rev()` inverte a sequência desses
+`char`s; `collect::<String>()` recodifica-os em UTF-8 válido. Tempo **O(n)**
+(uma passagem), espaço **O(n)** (a nova String).
+
+**Porque é que inverter bytes está errado:** em UTF-8, `'ç'`=`[0xC3, 0xA7]`.
+Inverter os bytes de `"ação"` troca a ordem desses pares e produz uma sequência
+que já não descodifica nos mesmos caracteres — no melhor caso lixo, no pior UTF-8
+inválido. É a mesma lição de "contar caracteres": opera sobre escalares, não bytes.
+
+**Nota de honestidade:** tal como na contagem, isto inverte *valores escalares*,
+não *grapheme clusters*. Um caractere com acento combinante (base + combinante)
+seria invertido para (combinante + base), o que visualmente desloca o acento.
+Para texto com combinantes, a inversão correcta usa `unicode-segmentation` — passo
+posterior; para a esmagadora maioria dos casos, inverter `char`s é a via honesta.
+"""
