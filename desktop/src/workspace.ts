@@ -1031,6 +1031,22 @@ export function acceptRange(): void {
   rangeReview = null;
 }
 
+/** Apply a developer-constructed block (from accepting SELECTED diff lines): replace the
+ *  review range with `text` as one undoable edit, then drop the review. */
+export function applyReviewedBlock(text: string): void {
+  if (rangeReview && wsEditor) {
+    const { model, startLine, endLine, deco } = rangeReview;
+    model.pushEditOperations(
+      [],
+      [{ range: new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine)), text }],
+      () => null,
+    );
+    wsEditor.pushUndoStop();
+    deco.clear();
+  }
+  rangeReview = null;
+}
+
 /** Reject the proposal: restore the original block (one undoable edit) and drop the review. */
 export function rejectRange(): void {
   if (rangeReview && wsEditor) {

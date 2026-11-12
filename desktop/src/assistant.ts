@@ -12,6 +12,7 @@ import {
   beginRangeStream,
   currentFileContent,
   acceptRange,
+  applyReviewedBlock,
   endEditorStream,
   endRangeStream,
   enterRangeReview,
@@ -84,6 +85,24 @@ interface DiffLine {
   text: string;
 }
 const reviews = new Map<number, DiffLine[]>();
+// Per-review set of accepted add/del line indices (default: all → "accept all").
+const reviewSel = new Map<number, Set<number>>();
+
+/** Build the block text from a diff, keeping only the accepted changes: context stays;
+ *  an added line is kept iff selected; a deleted line is kept (i.e. NOT removed) iff its
+ *  deletion is NOT selected. */
+function buildSelectedBlock(diff: DiffLine[], sel: Set<number>): string {
+  const out: string[] = [];
+  diff.forEach((l, k) => {
+    if (l.op === "context") out.push(l.text);
+    else if (l.op === "add") {
+      if (sel.has(k)) out.push(l.text);
+    } else if (!sel.has(k)) {
+      out.push(l.text); // unselected deletion → keep the original line
+    }
+  });
+  return out.join("\n");
+}
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -101,6 +120,7 @@ export function initAssistant(): void {
     writeState.clear();
     shrinkWarn.clear();
     reviews.clear();
+    reviewSel.clear();
     renderMessages();
   });
   // Approve / dismiss a proposed workspace action (event delegation on the message list).
@@ -111,14 +131,24 @@ export function initAssistant(): void {
     if (Number.isNaN(idx)) return;
     if (btn.classList.contains("as-apply")) void applyAction(idx);
     else if (btn.classList.contains("as-write")) void startCodeStream(idx);
-    else if (btn.classList.contains("as-accept")) {
-      acceptRange(); // keep the proposed block (it's one undo step)
+    else if (btn.classList.contains("as-accept-all")) {
+      acceptRange(); // keep the full proposal (already in the buffer; one undo step)
       reviews.delete(idx);
-      messages[idx].content += " — ✓ accepted.";
+      reviewSel.delete(idx);
+      messages[idx].content += " — ✓ accepted all.";
+      renderMessages();
+    } else if (btn.classList.contains("as-accept-sel")) {
+      const diff = reviews.get(idx);
+      const sel = reviewSel.get(idx);
+      if (diff && sel) applyReviewedBlock(buildSelectedBlock(diff, sel)); // apply only ticked changes
+      reviews.delete(idx);
+      reviewSel.delete(idx);
+      messages[idx].content += " — ✓ accepted selected lines.";
       renderMessages();
     } else if (btn.classList.contains("as-revreject")) {
       rejectRange(); // restore the original block
       reviews.delete(idx);
+      reviewSel.delete(idx);
       messages[idx].content += " — ✗ rejected (original restored).";
       renderMessages();
     } else if (btn.classList.contains("as-reject")) {
@@ -130,6 +160,17 @@ export function initAssistant(): void {
       actionErrors.delete(idx);
       renderMessages();
     }
+  });
+  // Toggle a diff line's acceptance (review checkboxes).
+  $("#assistant-messages").addEventListener("change", (e) => {
+    const ck = e.target as HTMLInputElement;
+    if (!ck.classList.contains("dl-ck")) return;
+    const idx = Number(ck.dataset.idx);
+    const k = Number(ck.dataset.k);
+    const sel = reviewSel.get(idx);
+    if (!sel) return;
+    if (ck.checked) sel.add(k);
+    else sel.delete(k);
   });
   // One button: Send while idle, Stop (cancel) while a stream is running.
   $("#assistant-send").addEventListener("click", () => {
@@ -186,6 +227,12 @@ export function initAssistant(): void {
           void invoke<DiffLine[]>("diff_lines", { old: info.original, new: info.proposed })
             .then((d) => {
               reviews.set(ls.idx, d);
+              // Default: every change accepted (so "Accept selected" with all ticked = accept all).
+              const sel = new Set<number>();
+              d.forEach((l, k) => {
+                if (l.op !== "context") sel.add(k);
+              });
+              reviewSel.set(ls.idx, sel);
               renderMessages();
             })
             .catch(() => {});
@@ -897,12 +944,19 @@ function renderMessages(): void {
         // Localized-edit review: the proposed block's diff + Accept / Reject.
         const review = reviews.get(i);
         if (review) {
+          const sel = reviewSel.get(i) ?? new Set<number>();
           const diffHtml = review
-            .map((l) => `<span class="dl ${l.op}">${esc(l.text)}</span>`)
+            .map((l, k) => {
+              if (l.op === "context") return `<span class="dl context">${esc(l.text)}</span>`;
+              const checked = sel.has(k) ? "checked" : "";
+              return `<label class="dl ${l.op}"><input type="checkbox" class="dl-ck" data-idx="${i}" data-k="${k}" ${checked}>${esc(l.text)}</label>`;
+            })
             .join("");
           card +=
-            `<div class="as-review"><pre class="as-review-diff">${diffHtml}</pre>` +
-            `<div class="as-review-btns"><button class="as-accept" data-idx="${i}">Accept</button><button class="as-revreject" data-idx="${i}">Reject</button></div></div>`;
+            `<div class="as-review"><div class="as-review-diff">${diffHtml}</div>` +
+            `<div class="as-review-btns"><button class="as-accept-all" data-idx="${i}">Accept all</button>` +
+            `<button class="as-accept-sel" data-idx="${i}">Accept selected</button>` +
+            `<button class="as-revreject" data-idx="${i}">Reject</button></div></div>`;
         }
         return `<div class="as-msg ${m.role}"><div class="as-role">${m.role === "user" ? "You" : "Assistant"}</div><div class="as-body">${body || (streaming ? '<span class="as-cursor">▍</span>' : "")}</div>${card}</div>`;
       })

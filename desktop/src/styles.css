@@ -2358,7 +2358,9 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 /* Review diff shown in the assistant panel. */
 .as-review { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .as-review-diff { max-height: 220px; overflow: auto; margin: 0; padding: 6px 0; background: var(--bg-base); font-size: 12px; line-height: 1.45; }
-.as-review-diff .dl { display: block; padding: 0 10px; white-space: pre-wrap; word-break: break-word; }
+.as-review-diff .dl { display: flex; align-items: flex-start; gap: 6px; padding: 0 10px; white-space: pre-wrap; word-break: break-word; cursor: default; }
+.as-review-diff label.dl { cursor: pointer; }
+.as-review-diff .dl-ck { margin-top: 3px; flex: 0 0 auto; }
 .as-review-diff .dl.add { background: color-mix(in srgb, #3fb950 16%, transparent); }
 .as-review-diff .dl.del { background: color-mix(in srgb, #f85149 16%, transparent); text-decoration: line-through; opacity: 0.8; }
 .as-review-diff .dl.add::before { content: "+ "; color: #3fb950; }
