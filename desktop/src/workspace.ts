@@ -689,8 +689,11 @@ export function initWorkspace() {
       const pos = ed.getPosition();
       const word = pos ? ed.getModel()?.getWordAtPosition(pos)?.word : null;
       if (word && codeMapHandler) {
-        // Pass the cursor position so the CodeMap can try a resolved (rust-analyzer) map.
-        const ctx = pos && activeTabPath ? { file: activeTabPath, line: pos.lineNumber, col: pos.column } : undefined;
+        // Pass the cursor position + live buffer so the CodeMap can try a resolved map.
+        const ctx =
+          pos && activeTabPath
+            ? { file: activeTabPath, line: pos.lineNumber, col: pos.column, text: ed.getModel()?.getValue() }
+            : undefined;
         codeMapHandler(word, ctx);
       }
     },
@@ -902,6 +905,7 @@ async function goToDefinition(ed: monaco.editor.ICodeEditor): Promise<void> {
       file: activeTabPath,
       line: pos.lineNumber,
       col: pos.column,
+      text: model.getValue(), // live buffer, so navigation is correct with unsaved edits
     });
     if (def) {
       await openFileAt(def.file, def.line, def.col);
@@ -915,7 +919,7 @@ async function goToDefinition(ed: monaco.editor.ICodeEditor): Promise<void> {
 
 /** Register the handler that opens the CodeMap for a symbol (wired by main.ts). The
  *  optional position lets the CodeMap attempt a resolved (rust-analyzer) map. */
-type CodeMapPos = { file: string; line: number; col: number };
+type CodeMapPos = { file: string; line: number; col: number; text?: string };
 let codeMapHandler: ((symbol: string, pos?: CodeMapPos) => void) | null = null;
 export function setCodeMapHandler(fn: (symbol: string, pos?: CodeMapPos) => void): void {
   codeMapHandler = fn;

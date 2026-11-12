@@ -1025,6 +1025,7 @@ async fn resolve_definition(
     file: String,
     line: u32,
     col: u32,
+    text: Option<String>,
 ) -> Result<Option<ResolvedDef>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let loc = tutor_eval::lsp::resolve_definition(
@@ -1032,6 +1033,7 @@ async fn resolve_definition(
             std::path::Path::new(&file),
             line.saturating_sub(1), // editor 1-based → LSP 0-based
             col.saturating_sub(1),
+            text.as_deref(),
         )?;
         let path = loc.uri.strip_prefix("file://").unwrap_or(&loc.uri).to_string();
         Some(ResolvedDef { file: path, line: loc.line + 1, col: loc.character + 1 })
@@ -1048,6 +1050,7 @@ async fn resolve_references(
     file: String,
     line: u32,
     col: u32,
+    text: Option<String>,
 ) -> Result<Vec<ResolvedDef>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         tutor_eval::lsp::resolve_references(
@@ -1055,6 +1058,7 @@ async fn resolve_references(
             std::path::Path::new(&file),
             line.saturating_sub(1),
             col.saturating_sub(1),
+            text.as_deref(),
         )
         .into_iter()
         .map(|loc| ResolvedDef {

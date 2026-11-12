@@ -46,7 +46,7 @@ interface ResolvedDef {
 
 export async function openCodeMap(
   symbol: string,
-  pos?: { file: string; line: number; col: number },
+  pos?: { file: string; line: number; col: number; text?: string },
 ): Promise<void> {
   const root = workspaceRoot();
   if (!root) return;
@@ -80,7 +80,7 @@ export async function openCodeMap(
 async function resolvedMap(
   symbol: string,
   root: string,
-  pos: { file: string; line: number; col: number },
+  pos: { file: string; line: number; col: number; text?: string },
 ): Promise<Relations | null> {
   const toRef = (d: ResolvedDef): SymbolRef => ({
     name: symbol,
@@ -89,9 +89,10 @@ async function resolvedMap(
     line: d.line,
     col: d.col,
   });
+  const args = { root, file: pos.file, line: pos.line, col: pos.col, text: pos.text };
   const [def, refs] = await Promise.all([
-    invoke<ResolvedDef | null>("resolve_definition", { root, file: pos.file, line: pos.line, col: pos.col }),
-    invoke<ResolvedDef[]>("resolve_references", { root, file: pos.file, line: pos.line, col: pos.col }),
+    invoke<ResolvedDef | null>("resolve_definition", args),
+    invoke<ResolvedDef[]>("resolve_references", args),
   ]);
   if (!def && (!refs || refs.length === 0)) return null;
   return {

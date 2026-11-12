@@ -39,21 +39,36 @@ pub struct Location {
 /// Resolve the definition of the symbol at (`line`, `character`) — both 0-based — in
 /// `file` (absolute) of the project at `root`, using rust-analyzer. `None` on any failure
 /// (absent server, no result, timeout) so the caller can fall back to the syntactic map.
-pub fn resolve_definition(root: &Path, file: &Path, line: u32, character: u32) -> Option<Location> {
-    request(root, file, line, character, "textDocument/definition", false)
+pub fn resolve_definition(
+    root: &Path,
+    file: &Path,
+    line: u32,
+    character: u32,
+    text: Option<&str>,
+) -> Option<Location> {
+    request(root, file, line, character, "textDocument/definition", false, text)
         .into_iter()
         .next()
 }
 
 /// Resolve ALL references to the symbol at (`line`, `character`) across the project via
 /// rust-analyzer (`textDocument/references`, including the declaration). Empty on failure.
-pub fn resolve_references(root: &Path, file: &Path, line: u32, character: u32) -> Vec<Location> {
-    request(root, file, line, character, "textDocument/references", true)
+pub fn resolve_references(
+    root: &Path,
+    file: &Path,
+    line: u32,
+    character: u32,
+    text: Option<&str>,
+) -> Vec<Location> {
+    request(root, file, line, character, "textDocument/references", true, text)
 }
 
 /// Shared driver: spawn rust-analyzer, handshake, open the file, poll `method` at the
 /// position until it yields locations (or the budget runs out). A watchdog kills the
-/// server so it never hangs. Returns the parsed locations (empty on any failure).
+/// server so it never hangs. `text`, when given, is the LIVE editor buffer — used for the
+/// `didOpen` so navigation is correct even with unsaved edits; otherwise the file is read
+/// from disk. Returns the parsed locations (empty on any failure).
+#[allow(clippy::too_many_arguments)]
 fn request(
     root: &Path,
     file: &Path,
@@ -61,6 +76,7 @@ fn request(
     character: u32,
     method: &'static str,
     include_decl: bool,
+    text: Option<&str>,
 ) -> Vec<Location> {
     let spawn = Command::new("rust-analyzer")
         .current_dir(root)
@@ -80,9 +96,13 @@ fn request(
 
     let root_uri = format!("file://{}", root.display());
     let file_uri = format!("file://{}", file.display());
-    let text = match std::fs::read_to_string(file) {
-        Ok(t) => t,
-        Err(_) => return Vec::new(),
+    // Prefer the live buffer (unsaved edits) over the on-disk content.
+    let text = match text {
+        Some(t) => t.to_string(),
+        None => match std::fs::read_to_string(file) {
+            Ok(t) => t,
+            Err(_) => return Vec::new(),
+        },
     };
 
     // Run the exchange on a worker thread; recv_timeout enforces the hard budget.
@@ -243,7 +263,7 @@ mod tests {
 
         // Position on `helper` in the call (0-based line 1, character ~ the 'h').
         let col = main.lines().nth(1).unwrap().find("helper").unwrap() as u32;
-        let loc = resolve_definition(root, &root.join("src/main.rs"), 1, col)
+        let loc = resolve_definition(root, &root.join("src/main.rs"), 1, col, None)
             .expect("rust-analyzer should resolve the definition");
         assert!(loc.uri.ends_with("src/lib.rs"), "resolved to {}", loc.uri);
         assert_eq!(loc.line, 0, "helper is defined on line 1 (0-based 0)");
@@ -262,7 +282,7 @@ mod tests {
 
         // Position on `helper` at its declaration in lib.rs (line 0).
         let col = lib.find("helper").unwrap() as u32;
-        let refs = resolve_references(root, &root.join("src/lib.rs"), 0, col);
+        let refs = resolve_references(root, &root.join("src/lib.rs"), 0, col, None);
         // With includeDeclaration: the decl in lib.rs + the use in main.rs.
         assert!(refs.len() >= 2, "expected ≥2 references, got {refs:?}");
         assert!(refs.iter().any(|r| r.uri.ends_with("src/main.rs")), "a use in main.rs: {refs:?}");
