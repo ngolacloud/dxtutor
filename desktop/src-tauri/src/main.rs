@@ -1282,6 +1282,62 @@ async fn agent_isolated_patch(
     .map_err(|e| format!("git task failed: {e}"))?
 }
 
+// ── Cloud-shaped task API (RF-AG-01) ────────────────────────────────────────
+// A submit → status → collect lifecycle over the LOCAL isolated executor (worktree_patch).
+// Local today; the same API is what a real remote backend would expose, so the UI already
+// talks the cloud shape. Honestly local: no network, no credentials.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentTask {
+    id: String,
+    status: String, // "running" | "done" | "error"
+    patch: String,
+    error: String,
+}
+
+static AGENT_TASKS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, AgentTask>>> =
+    std::sync::OnceLock::new();
+fn agent_tasks() -> &'static std::sync::Mutex<std::collections::HashMap<String, AgentTask>> {
+    AGENT_TASKS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+fn next_task_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    format!("task-{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed))
+}
+
+/// Submit a delegated task: runs the isolated executor and registers the result under a task
+/// id (submit → the task runs → collectable by id). Returns the id immediately.
+#[tauri::command]
+async fn agent_task_submit(root: String, writes: Vec<(String, String)>) -> Result<String, String> {
+    let id = next_task_id();
+    agent_tasks().lock().unwrap().insert(
+        id.clone(),
+        AgentTask { id: id.clone(), status: "running".into(), patch: String::new(), error: String::new() },
+    );
+    let id2 = id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let rec = match tutor_eval::git::worktree_patch(std::path::Path::new(&root), &writes) {
+            Ok(patch) => AgentTask { id: id2.clone(), status: "done".into(), patch, error: String::new() },
+            Err(e) => AgentTask { id: id2.clone(), status: "error".into(), patch: String::new(), error: e },
+        };
+        agent_tasks().lock().unwrap().insert(id2, rec);
+    });
+    Ok(id)
+}
+
+/// Status + result of a submitted task (collect). `None` when the id is unknown.
+#[tauri::command]
+fn agent_task_status(id: String) -> Option<AgentTask> {
+    agent_tasks().lock().unwrap().get(&id).cloned()
+}
+
+/// Cancel/forget a task (removes its record). Returns whether it existed.
+#[tauri::command]
+fn agent_task_cancel(id: String) -> bool {
+    agent_tasks().lock().unwrap().remove(&id).is_some()
+}
+
 #[tauri::command]
 async fn git_branches(root: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -2084,6 +2140,9 @@ fn main() {
             git_checkout,
             git_create_branch,
             agent_isolated_patch,
+            agent_task_submit,
+            agent_task_status,
+            agent_task_cancel,
             run_tests,
             git_log,
             git_show,
