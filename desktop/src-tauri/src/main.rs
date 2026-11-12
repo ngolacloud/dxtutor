@@ -1111,9 +1111,15 @@ async fn search_project(
     root: String,
     query: String,
     max: Option<usize>,
+    ignore_case: Option<bool>,
 ) -> Result<Vec<tutor_eval::search::SearchHit>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        tutor_eval::search::search_project(std::path::Path::new(&root), &query, max.unwrap_or(500))
+        tutor_eval::search::search_project(
+            std::path::Path::new(&root),
+            &query,
+            max.unwrap_or(500),
+            ignore_case.unwrap_or(false),
+        )
     })
     .await
     .map_err(|e| format!("search task failed: {e}"))

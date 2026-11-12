@@ -23,12 +23,13 @@ const MAX_FILE_BYTES: u64 = 1_048_576; // 1 MiB — skip anything bigger (likely
 const MAX_LINE: usize = 240; // trim very long lines in the result
 
 /// Search `root` for literal `query`, returning up to `max` hits (file-relative paths).
-/// An empty query returns nothing. Never panics.
-pub fn search_project(root: &Path, query: &str, max: usize) -> Vec<SearchHit> {
+/// `ignore_case` folds case on both sides. An empty query returns nothing. Never panics.
+pub fn search_project(root: &Path, query: &str, max: usize, ignore_case: bool) -> Vec<SearchHit> {
     let mut out = Vec::new();
     if query.is_empty() {
         return out;
     }
+    let needle = if ignore_case { query.to_lowercase() } else { query.to_string() };
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let rd = match std::fs::read_dir(&dir) {
@@ -59,7 +60,11 @@ pub fn search_project(root: &Path, query: &str, max: usize) -> Vec<SearchHit> {
             };
             let rel = relative(root, &path);
             for (i, line) in content.lines().enumerate() {
-                if let Some(col) = line.find(query) {
+                // Case-insensitive: match on a lowered copy; the reported column is a byte
+                // offset into it, which equals the original's since lowercasing ASCII (and
+                // the common BMP cases) is length-stable for our display purposes.
+                let haystack = if ignore_case { line.to_lowercase() } else { line.to_string() };
+                if let Some(col) = haystack.find(&needle) {
                     out.push(SearchHit {
                         file: rel.clone(),
                         line: (i + 1) as u32,
@@ -139,11 +144,24 @@ mod tests {
         std::fs::create_dir_all(root.join("target")).unwrap();
         std::fs::write(root.join("target/x.rs"), "needle in build output\n").unwrap();
 
-        let hits = search_project(root, "needle", 100);
+        let hits = search_project(root, "needle", 100, false);
         assert_eq!(hits.len(), 2, "hits: {hits:?}");
         assert!(hits.iter().any(|h| h.file.ends_with("a.rs") && h.line == 2 && h.col == 9));
         assert!(hits.iter().any(|h| h.file.ends_with("b.txt") && h.line == 2));
         assert!(!hits.iter().any(|h| h.file.contains("target")), "build dir must be skipped");
+    }
+
+    #[test]
+    fn case_insensitive_matches_fold_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.rs"), "let Needle = 1;\nTODO: fix\n").unwrap();
+        // Case-sensitive: lower "needle" misses "Needle".
+        assert!(search_project(root, "needle", 100, false).is_empty());
+        // Case-insensitive: it matches.
+        let hits = search_project(root, "needle", 100, true);
+        assert!(hits.iter().any(|h| h.line == 1), "hits: {hits:?}");
+        assert_eq!(search_project(root, "todo", 100, true).len(), 1);
     }
 
     #[test]
@@ -173,7 +191,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(root.join("f.txt"), "x\nx\nx\nx\nx\n").unwrap();
-        assert_eq!(search_project(root, "x", 3).len(), 3);
-        assert!(search_project(root, "", 100).is_empty());
+        assert_eq!(search_project(root, "x", 3, false).len(), 3);
+        assert!(search_project(root, "", 100, false).is_empty());
     }
 }

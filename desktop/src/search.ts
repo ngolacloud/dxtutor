@@ -34,6 +34,8 @@ export function initSearch(deps: { ensureWorkspaceMode: () => void }): void {
       void run(input.value);
     }
   });
+  // Case-sensitivity toggle re-runs the current query.
+  $("#search-case").addEventListener("change", () => void run(input.value));
   // Click a result → open the file at its location.
   $("#search-results").addEventListener("click", (e) => {
     const row = (e.target as HTMLElement).closest(".search-row") as HTMLElement | null;
@@ -72,7 +74,13 @@ async function run(query: string): Promise<void> {
     return;
   }
   try {
-    const hits = await invoke<SearchHit[]>("search_project", { root, query: q, max: 500 });
+    const caseSensitive = ($("#search-case") as HTMLInputElement).checked;
+    const hits = await invoke<SearchHit[]>("search_project", {
+      root,
+      query: q,
+      max: 500,
+      ignoreCase: !caseSensitive,
+    });
     render(hits, q);
   } catch (e) {
     $("#search-results").innerHTML = `<div class="tests-note err">Search failed: ${esc(String(e))}</div>`;
