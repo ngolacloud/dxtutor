@@ -449,6 +449,18 @@ pub fn session_shell_command(root: &Path) -> (String, Vec<String>) {
     )
 }
 
+/// Programa + argumentos para correr `program` dentro da sessão SEM TTY
+/// (`exec -i <name> program`), próprio para pontes stdio como o LSP (JSON-RPC). O chamador
+/// deve confirmar [`session_running`] primeiro.
+pub fn session_exec_command(root: &Path, program: &str) -> (String, Vec<String>) {
+    let bin = engine_bin(container_engine());
+    let name = session_name(root);
+    (
+        bin.to_string_lossy().into_owned(),
+        vec!["exec".into(), "-i".into(), name, program.into()],
+    )
+}
+
 /// Pára e remove a sessão (`rm -f`).
 pub fn session_down(name: &str) -> Result<()> {
     let bin = engine_bin(container_engine());

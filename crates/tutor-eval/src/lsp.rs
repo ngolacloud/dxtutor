@@ -98,12 +98,26 @@ fn request(
     if file.extension().and_then(|e| e.to_str()) != Some("rs") {
         return None;
     }
-    let spawn = Command::new("rust-analyzer")
-        .current_dir(root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
+    // Agent routing: when a persistent container session is running for this project, drive
+    // rust-analyzer INSIDE the container (its toolchain + deps) over `exec -i`, translating
+    // host paths ↔ the container's /work mount. Otherwise run it on the host.
+    let use_container = crate::container::session_running(&crate::container::session_name(root));
+    let spawn = if use_container {
+        let (prog, args) = crate::container::session_exec_command(root, "rust-analyzer");
+        Command::new(prog)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+    } else {
+        Command::new("rust-analyzer")
+            .current_dir(root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+    };
     let mut child = match spawn {
         Ok(c) => c,
         Err(_) => return None,
@@ -114,8 +128,17 @@ fn request(
     };
     let mut reader = BufReader::new(stdout);
 
-    let root_uri = format!("file://{}", root.display());
-    let file_uri = format!("file://{}", file.display());
+    // In container mode the workspace is mounted at /work; build URIs there and map results
+    // back to host paths afterwards.
+    let (root_uri, file_uri) = if use_container {
+        let rel = file
+            .strip_prefix(root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| file.display().to_string());
+        ("file:///work".to_string(), format!("file:///work/{rel}"))
+    } else {
+        (format!("file://{}", root.display()), format!("file://{}", file.display()))
+    };
     // Prefer the live buffer (unsaved edits) over the on-disk content.
     let text = match text {
         Some(t) => t.to_string(),
@@ -131,10 +154,19 @@ fn request(
         let r = exchange(&mut stdin, &mut reader, &root_uri, &file_uri, &text, line, character, method, include_decl);
         let _ = tx.send(r);
     });
-    let result = rx.recv_timeout(BUDGET).ok().flatten();
+    let mut result = rx.recv_timeout(BUDGET).ok().flatten();
     let _ = child.kill(); // closes the pipes → the worker's blocking read unblocks
     let _ = child.wait();
     let _ = worker.join();
+    // Map container URIs (file:///work/…) back to host paths so navigation opens real files.
+    if use_container {
+        if let Some(v) = &result {
+            let host = format!("file://{}", root.display());
+            if let Ok(mapped) = serde_json::from_str(&v.to_string().replace("file:///work", &host)) {
+                result = Some(mapped);
+            }
+        }
+    }
     result
 }
 
