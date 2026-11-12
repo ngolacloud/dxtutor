@@ -101,7 +101,7 @@ body {
   -webkit-app-region: drag;
 }
 .title-left { display: flex; align-items: center; gap: 16px; }
-.codicon-logo { color: #519aba; font-size: 14px; line-height: 1; }
+.codicon-logo { color: #e06c3b; width: 16px; height: 16px; display: block; }
 .menu { display: flex; gap: 14px; color: var(--fg-dim); -webkit-app-region: no-drag; }
 .menu span { cursor: default; }
 .menu span:hover { color: var(--fg-bright); }
@@ -1121,7 +1121,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
   letter-spacing: 0.04em;
   margin-bottom: 24px;
 }
-.onb-brand .onb-logo { color: #519aba; font-size: 16px; }
+.onb-brand .onb-logo { color: #e06c3b; width: 20px; height: 20px; display: block; }
 .onb-screen h1 { font-size: 24px; font-weight: 600; color: var(--fg-bright); margin-bottom: 6px; }
 .onb-sub { color: var(--fg-muted); font-size: 13px; margin-bottom: 22px; }
 
@@ -2494,7 +2494,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .ws-welcome.hidden { display: none; }
 .ws-welcome-inner { width: min(420px, 82%); display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 24px 0; }
 .ws-welcome-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 18px; }
-.ws-welcome-mark { color: var(--accent); }
+.ws-welcome-mark { color: #e06c3b; }
 .ws-welcome-title { font-size: 22px; font-weight: 300; letter-spacing: 0.4px; color: var(--fg); }
 .ws-welcome-actions { display: flex; flex-direction: column; gap: 8px; }
 .welcome-btn {

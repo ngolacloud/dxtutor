@@ -36,7 +36,7 @@
         letter-spacing: 0.01em;
         color: #ffffff;
       }
-      #boot .boot-logo { color: #519aba; font-size: 26px; line-height: 1; }
+      #boot .boot-logo { color: #e06c3b; width: 30px; height: 30px; display: block; }
       #boot .boot-sub { font-size: 12.5px; color: #858585; letter-spacing: 0.04em; }
       #boot .boot-spinner {
         width: 30px;
@@ -55,7 +55,7 @@
   <body>
     <!-- Boot splash: covers everything until the app has mounted (no raw HTML). -->
     <div id="boot">
-      <div class="boot-brand"><span class="boot-logo">&#9776;</span> Delonix Tutor</div>
+      <div class="boot-brand"><svg class="boot-logo" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg> Delonix Tutor</div>
       <div class="boot-spinner"></div>
       <div class="boot-sub" data-i18n="boot.subtitle">Loading your workspace…</div>
     </div>
@@ -63,7 +63,7 @@
       <!-- Title bar -->
       <header id="titlebar">
         <div class="title-left">
-          <span class="codicon-logo">&#9776;</span>
+          <svg class="codicon-logo" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg>
           <nav class="menu">
             <span data-menu="file" data-i18n="menu.file">File</span><span data-i18n="menu.edit">Edit</span><span data-i18n="menu.view">View</span><span data-menu="run" data-i18n="menu.run">Run</span><span data-i18n="menu.help">Help</span>
           </nav>
@@ -215,7 +215,7 @@
               <div id="ws-welcome" class="ws-welcome">
                 <div class="ws-welcome-inner">
                   <div class="ws-welcome-brand">
-                    <svg class="ws-welcome-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true" width="56" height="56"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z" fill="currentColor"/><path d="M24 20l-5 10h10l-5-10Z" fill="var(--bg-editor)"/></svg>
+                    <svg class="ws-welcome-mark" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true" width="56" height="56"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg>
                     <div class="ws-welcome-title">Delonix Tutor</div>
                   </div>
                   <div class="ws-welcome-actions">
@@ -274,7 +274,7 @@
     <!-- Onboarding overlay (shown when there is no saved profile) -->
     <div id="onboarding" class="overlay hidden">
       <div class="onb-card">
-        <div class="onb-brand"><span class="onb-logo">&#9776;</span> Delonix Tutor</div>
+        <div class="onb-brand"><svg class="onb-logo" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg> Delonix Tutor</div>
 
         <section class="onb-screen" data-screen="language">
           <h1 data-i18n="onb.language.title">What do you want to learn?</h1>
