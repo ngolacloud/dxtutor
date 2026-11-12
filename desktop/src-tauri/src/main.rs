@@ -1410,6 +1410,84 @@ fn set_sandbox_engine(engine: String) -> Result<String, String> {
     Ok(tutor_eval::engine_name(parsed).to_string())
 }
 
+/// A project detected inside the open folder — a sub-directory (or the root itself) that
+/// carries a recognised build-manifest. Lets the Agent focus on one project when a
+/// workspace holds several.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectInfo {
+    name: String,
+    path: String,
+    kind: String,
+}
+
+fn project_kind(dir: &std::path::Path) -> Option<&'static str> {
+    const MARKERS: &[(&str, &str)] = &[
+        ("Cargo.toml", "rust"),
+        ("go.mod", "go"),
+        ("package.json", "node"),
+        ("pyproject.toml", "python"),
+        ("requirements.txt", "python"),
+        ("pom.xml", "java"),
+        ("build.gradle", "java"),
+        ("composer.json", "php"),
+        ("Gemfile", "ruby"),
+    ];
+    MARKERS
+        .iter()
+        .find(|(file, _)| dir.join(file).is_file())
+        .map(|(_, kind)| *kind)
+}
+
+/// Detect projects at the root and one level down (skipping hidden / build dirs), so the
+/// Agent can pin its focus to a specific project in a multi-project workspace.
+#[tauri::command]
+async fn detect_projects(root: String) -> Result<Vec<ProjectInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let mut out = Vec::new();
+        let mut push = |dir: &std::path::Path| {
+            if let Some(kind) = project_kind(dir) {
+                out.push(ProjectInfo {
+                    name: dir
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| dir.to_string_lossy().into_owned()),
+                    path: dir.to_string_lossy().into_owned(),
+                    kind: kind.to_string(),
+                });
+            }
+        };
+        push(base);
+        if let Ok(rd) = std::fs::read_dir(base) {
+            let mut subdirs: Vec<_> = rd
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| {
+                    p.is_dir()
+                        && !p
+                            .file_name()
+                            .map(|n| {
+                                let n = n.to_string_lossy();
+                                n.starts_with('.')
+                                    || matches!(
+                                        n.as_ref(),
+                                        "node_modules" | "target" | "dist" | "build" | "vendor"
+                                    )
+                            })
+                            .unwrap_or(false)
+                })
+                .collect();
+            subdirs.sort();
+            for d in subdirs {
+                push(&d);
+            }
+        }
+        out
+    })
+    .await
+    .map_err(|e| format!("detect_projects task failed: {e}"))
+}
+
 /// Dev Container presence + name for the Remote view. Looks for
 /// `.devcontainer/devcontainer.json` or a top-level `.devcontainer.json`.
 #[derive(serde::Serialize)]
@@ -1564,6 +1642,7 @@ fn main() {
             get_sandbox_engine,
             set_sandbox_engine,
             devcontainer_info,
+            detect_projects,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

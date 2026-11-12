@@ -60,6 +60,18 @@ interface ProviderInfo {
 
 let messages: ChatMsg[] = [];
 let busy = false;
+
+// ── Project focus ──────────────────────────────────────────────────────────
+// The Agent pins its context to ONE project. In a multi-project workspace the user
+// picks which one from the header selector; the grounding uses that project's path.
+interface ProjectInfo {
+  name: string;
+  path: string;
+  kind: string;
+}
+let projects: ProjectInfo[] = [];
+let focusedProject: string | null = null; // path of the focused project, or null = whole root
+const FOCUS_KEY = "dxtutor.assistant.focusedProject";
 let currentRequestId: string | null = null;
 let streamingIdx = -1; // index of the assistant message being streamed into
 let provider = "ollama"; // selected AI provider (only Ollama streams live today)
@@ -144,6 +156,13 @@ export function initAssistant(): void {
       e.preventDefault();
     });
   })();
+  // Project focus: switch which project the Agent grounds on (multi-project workspace).
+  $("#assistant-project").addEventListener("change", (e) => {
+    focusedProject = (e.target as HTMLSelectElement).value || null;
+    if (focusedProject) localStorage.setItem(FOCUS_KEY, focusedProject);
+    updateContextHint();
+  });
+
   // New chat archives the current session to history first, then clears.
   $("#assistant-new").addEventListener("click", newChat);
   // Chat history: toggle the dropdown; restore or delete an entry.
@@ -358,7 +377,59 @@ export function openAssistant(): void {
   syncDock();
   renderMessages();
   void refreshModel();
+  void refreshProjects(); // pin context to the open project(s) as soon as the Agent opens
   ($("#assistant-input") as HTMLTextAreaElement).focus();
+}
+
+/** Discover the projects in the open workspace and populate the focus selector. Auto-pins
+ *  the only project; shows the selector (to choose focus) when there is more than one. */
+async function refreshProjects(): Promise<void> {
+  const sel = document.getElementById("assistant-project") as HTMLSelectElement | null;
+  const root = workspaceRoot();
+  if (!sel) return;
+  if (!root) {
+    projects = [];
+    focusedProject = null;
+    sel.classList.add("hidden");
+    return;
+  }
+  try {
+    projects = await invoke<ProjectInfo[]>("detect_projects", { root });
+  } catch {
+    projects = [];
+  }
+  const saved = localStorage.getItem(FOCUS_KEY);
+  // Keep the saved focus if it is still a detected project; else default to the first.
+  focusedProject =
+    (saved && projects.some((p) => p.path === saved) && saved) ||
+    (projects.length ? projects[0].path : null);
+  if (projects.length > 1) {
+    sel.innerHTML = projects
+      .map(
+        (p) =>
+          `<option value="${esc(p.path)}"${p.path === focusedProject ? " selected" : ""}>${esc(p.name)} · ${esc(p.kind)}</option>`,
+      )
+      .join("");
+    sel.classList.remove("hidden");
+    updateContextHint();
+  } else {
+    sel.classList.add("hidden");
+  }
+}
+
+/** The effective root the Agent grounds on: the focused project, else the workspace root. */
+function focusRoot(): string | null {
+  return focusedProject ?? workspaceRoot();
+}
+
+/** Reflect the focused project in the input placeholder, so the dev sees the Agent's focus. */
+function updateContextHint(): void {
+  const input = document.getElementById("assistant-input") as HTMLTextAreaElement | null;
+  if (!input) return;
+  const p = projects.find((x) => x.path === focusedProject);
+  input.placeholder = p
+    ? `Ask about ${p.name} (${p.kind})… — the Agent stays focused on this project (Ctrl+Enter)`
+    : "Ask anything — paste a finding or prompt… (Ctrl+Enter to send)";
 }
 
 // ── Docking (Antigravity style) ───────────────────────────────────────────
@@ -611,8 +682,12 @@ async function refreshModel(): Promise<void> {
 /** Build the grounding context sent to the model in project mode: root, tree, active
  *  file, selection, and the dxaction protocol so it acts through the IDE. */
 async function buildWorkspaceContext(): Promise<string | null> {
-  const root = workspaceRoot();
-  if (!root) return null;
+  const wsRoot = workspaceRoot();
+  if (!wsRoot) return null;
+  // Ground on the FOCUSED project when the workspace holds several — the Agent stays
+  // aligned to the project the developer picked, not the whole folder.
+  const root = focusRoot() ?? wsRoot;
+  const focus = projects.find((p) => p.path === focusedProject);
   let tree = "";
   try {
     tree = await invoke<string>("workspace_tree", { root, maxDepth: 2, maxEntries: 200 });
@@ -630,8 +705,14 @@ async function buildWorkspaceContext(): Promise<string | null> {
     : "";
   return [
     `You are the dxtutor workspace assistant. You work INSIDE the user's open project — ` +
-      `not a generic chatbot. Ground every answer in THIS real workspace, by its actual paths.`,
-    `Workspace root: ${root}`,
+      `not a generic chatbot. You ASSIST the developer: they decide what to build; you ` +
+      `help them do it. Do not invent scope — ground every answer in THIS real project, by ` +
+      `its actual paths, and stay within the focused project below.`,
+    focus
+      ? `Focused project: ${focus.name} (${focus.kind}) at ${focus.path}. Keep ALL paths relative to this project root and do not touch files outside it.`
+      : "",
+    `Project root: ${root}`,
+    wsRoot !== root ? `(Workspace folder: ${wsRoot})` : "",
     active ? `Active file: ${active}` : `No file is currently open.`,
     sel ? `Selected code:\n${sel.slice(0, 2000)}` : "",
     bodyBlock,
