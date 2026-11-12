@@ -1006,6 +1006,40 @@ async fn run_all_tests(root: String) -> Result<tutor_eval::testnav::TestRun, Str
     .map_err(|e| format!("run_all_tests task failed: {e}"))
 }
 
+/// A rust-analyzer-resolved definition location (1-based line/col, absolute path).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedDef {
+    file: String,
+    line: u32,
+    col: u32,
+}
+
+/// Section 5: resolve the definition of the symbol at (`line`, `col`) — both 1-based — in
+/// `file` via rust-analyzer (REAL semantic navigation, not name-based). Returns `None` when
+/// rust-analyzer is absent or can't resolve, so the UI falls back to the syntactic CodeMap.
+/// Runs off the UI thread (spawns + indexes with rust-analyzer).
+#[tauri::command]
+async fn resolve_definition(
+    root: String,
+    file: String,
+    line: u32,
+    col: u32,
+) -> Result<Option<ResolvedDef>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let loc = tutor_eval::lsp::resolve_definition(
+            std::path::Path::new(&root),
+            std::path::Path::new(&file),
+            line.saturating_sub(1), // editor 1-based → LSP 0-based
+            col.saturating_sub(1),
+        )?;
+        let path = loc.uri.strip_prefix("file://").unwrap_or(&loc.uri).to_string();
+        Some(ResolvedDef { file: path, line: loc.line + 1, col: loc.character + 1 })
+    })
+    .await
+    .map_err(|e| format!("resolve_definition task failed: {e}"))
+}
+
 /// Section 5 (daily work): the working-tree changes in the git repo at `root` (read-only).
 #[tauri::command]
 async fn git_changes(root: String) -> Result<Vec<tutor_eval::git::GitChange>, String> {
@@ -1245,6 +1279,7 @@ fn main() {
             study_policy,
             symbol_relations,
             list_symbols,
+            resolve_definition,
             list_tests,
             run_test,
             run_all_tests,

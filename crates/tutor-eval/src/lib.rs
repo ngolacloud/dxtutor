@@ -23,6 +23,7 @@ pub mod container;
 pub mod dap;
 pub mod git;
 pub mod go_runner;
+pub mod lsp;
 pub mod js_runner;
 pub mod lang;
 pub mod measured;
