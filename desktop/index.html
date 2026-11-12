@@ -270,13 +270,19 @@
              column in BOTH Learning and Workspace modes (toggled with Ctrl+`). -->
         <div id="terminal-panel">
           <div class="panel-tabs" id="panel-tabs">
-            <button class="ptab active" data-ptab="terminal" data-i18n="panel.terminal">Terminal</button>
             <button class="ptab" data-ptab="problems">Problems<span class="ptab-count" id="problems-count"></span></button>
+            <button class="ptab" data-ptab="output">Output</button>
+            <button class="ptab" data-ptab="debug">Debug Console</button>
+            <button class="ptab active" data-ptab="terminal" data-i18n="panel.terminal">Terminal</button>
+            <button class="ptab" data-ptab="ports">Ports</button>
+            <button class="ptab" data-ptab="spell">Spell Checker</button>
+            <button class="ptab" data-ptab="sonar">SonarQube</button>
             <span class="panel-tabs-sp"></span>
             <button id="btn-term-close" class="icon-btn" title="Close panel (Ctrl+`)" data-i18n-title="panel.closeTerminal">&#10005;</button>
           </div>
           <div id="panel-terminal"></div>
           <div id="panel-problems" class="panel-problems hidden"></div>
+          <div id="panel-generic" class="panel-problems hidden"></div>
           <div class="term-tmux" aria-hidden="true"><span class="tmux-win">[0] bash*</span><span class="tmux-sp"></span><span class="tmux-host" id="tmux-host">dxtutor</span></div>
         </div>
 

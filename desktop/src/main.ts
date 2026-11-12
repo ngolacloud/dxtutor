@@ -2866,12 +2866,28 @@ function toggleTerminal(force?: boolean) {
 
 // ── Panel tabs: Terminal | Problems (real Monaco markers) ─────────────────────
 
-/** Switch the bottom panel tab. Problems overlays the terminal (which stays mounted). */
-function setPanelTab(tab: "terminal" | "problems"): void {
+// The non-wired panel tabs show an honest placeholder (no fabricated data) — the tab row
+// matches the prototype while only Terminal and Problems carry real content today.
+const PANEL_PLACEHOLDERS: Record<string, string> = {
+  output: "Nenhuma saída — corre um ficheiro com Run para ver stdout/stderr.",
+  debug: "Sem sessão de debug activa — abre Run and Debug para começar.",
+  ports: "Nenhum porto reencaminhado.",
+  spell: "Corrector ortográfico pt-AO (pré-AO90) activo no editor.",
+  sonar: "SonarQube não configurado neste projecto.",
+};
+
+/** Switch the bottom panel tab. Problems/placeholders overlay the terminal (kept mounted). */
+function setPanelTab(tab: string): void {
   document.querySelectorAll("#panel-tabs .ptab").forEach((b) =>
     b.classList.toggle("active", (b as HTMLElement).dataset.ptab === tab),
   );
   document.getElementById("panel-problems")?.classList.toggle("hidden", tab !== "problems");
+  const generic = document.getElementById("panel-generic");
+  if (generic) {
+    const placeholder = PANEL_PLACEHOLDERS[tab];
+    generic.classList.toggle("hidden", placeholder === undefined);
+    if (placeholder !== undefined) generic.innerHTML = `<div class="prob-empty">${esc(placeholder)}</div>`;
+  }
   if (tab === "problems") renderProblems();
 }
 
@@ -3536,7 +3552,7 @@ function wireChrome() {
   $("#btn-term-close").addEventListener("click", () => toggleTerminal(false));
   // Panel tabs (Terminal | Problems). Problems is populated live from Monaco markers.
   document.querySelectorAll("#panel-tabs .ptab").forEach((b) =>
-    b.addEventListener("click", () => setPanelTab((b as HTMLElement).dataset.ptab as "terminal" | "problems")),
+    b.addEventListener("click", () => setPanelTab((b as HTMLElement).dataset.ptab ?? "terminal")),
   );
   document.getElementById("panel-problems")?.addEventListener("click", (e) => {
     const row = (e.target as HTMLElement).closest(".prob-row") as HTMLElement | null;
