@@ -1016,6 +1016,17 @@ async fn git_changes(root: String) -> Result<Vec<tutor_eval::git::GitChange>, St
     .map_err(|e| format!("git task failed: {e}"))
 }
 
+/// Section 5 (daily work): the current git branch at `root` (or a short commit when
+/// detached), for the status bar. `None` → not a repo.
+#[tauri::command]
+async fn git_branch(root: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::current_branch(std::path::Path::new(&root))
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))
+}
+
 /// Section 5 (daily work): a unified diff of the working tree vs HEAD, optionally scoped to
 /// `file`. Read-only; empty when there is nothing to show or it is not a repo.
 #[tauri::command]
@@ -1241,6 +1252,7 @@ fn main() {
             list_files,
             git_changes,
             git_diff,
+            git_branch,
             debug_capabilities,
             assistant_models,
             assistant_chat,

@@ -38,6 +38,21 @@ pub fn is_repo(root: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// The current branch name (or a short commit when detached), for a status-bar indicator.
+/// `None` when `root` is not a git repo.
+pub fn current_branch(root: &Path) -> Option<String> {
+    let name = git(root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    if name == "HEAD" {
+        // Detached: fall back to the short commit hash.
+        return git(root, &["rev-parse", "--short", "HEAD"]).map(|s| format!("@{}", s.trim()));
+    }
+    Some(name.to_string())
+}
+
 /// The working-tree changes (`git status --porcelain`): modified, added, deleted and
 /// untracked paths. Empty when clean or not a repo.
 pub fn changed_files(root: &Path) -> Vec<GitChange> {
@@ -99,6 +114,10 @@ mod tests {
 
         let d = diff(root, Some("a.txt"));
         assert!(d.contains("+two"), "diff should show the added line:\n{d}");
+
+        // Branch name (git's default may be master or main depending on config).
+        let branch = current_branch(root).expect("a branch");
+        assert!(branch == "main" || branch == "master", "unexpected branch: {branch}");
     }
 
     #[test]
@@ -107,5 +126,6 @@ mod tests {
         assert!(!is_repo(dir.path()));
         assert!(changed_files(dir.path()).is_empty());
         assert!(diff(dir.path(), None).is_empty());
+        assert!(current_branch(dir.path()).is_none());
     }
 }

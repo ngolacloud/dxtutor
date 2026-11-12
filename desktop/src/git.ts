@@ -55,15 +55,20 @@ async function scan(): Promise<void> {
   }
   lastRoot = root;
   try {
-    changes = await invoke<GitChange[]>("git_changes", { root });
-    render();
+    const [branch, ch] = await Promise.all([
+      invoke<string | null>("git_branch", { root }),
+      invoke<GitChange[]>("git_changes", { root }),
+    ]);
+    changes = ch;
+    render(branch);
   } catch (e) {
     $("#git-list").innerHTML = `<div class="tests-note err">Git failed: ${esc(String(e))}</div>`;
   }
 }
 
-function render(): void {
-  $("#git-count").textContent = changes.length ? `${changes.length} changed` : "clean";
+function render(branch?: string | null): void {
+  const b = branch ? `⎇ ${branch} · ` : "";
+  $("#git-count").textContent = b + (changes.length ? `${changes.length} changed` : "clean");
   if (changes.length === 0) {
     $("#git-list").innerHTML = `<div class="tests-note">No working-tree changes (or not a git repo).</div>`;
     $("#git-diff").textContent = "";
