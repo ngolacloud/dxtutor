@@ -2466,6 +2466,8 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .qo-dir { color: var(--fg-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #status-git { cursor: pointer; }
 #status-git.hidden { display: none; }
+#status-session { cursor: pointer; font-weight: 600; }
+#status-session.hidden { display: none; }
 /* Localized edit under review — the proposed block, pending Accept/Reject. */
 .dx-review-block { background: color-mix(in srgb, #d29922 14%, transparent); }
 .dx-review-gutter { width: 3px !important; margin-left: 2px; background: #d29922; }

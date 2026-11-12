@@ -35,8 +35,9 @@ import { initTests, openTests } from "./tests";
 import { initSearch, openSearch } from "./search";
 import { initQuickOpen } from "./quickopen";
 import { initGit, openGit, refreshGitBranch } from "./git";
-import { initRemote, openRemote } from "./remote";
+import { initRemote, openRemote, setSessionChangeHandler } from "./remote";
 import { initExplain, explainFile, explainFolder } from "./explain";
+import { workspaceRoot } from "./workspace";
 import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3154,6 +3155,24 @@ async function attachSessionTerminal(root: string) {
   }
 }
 
+/** Reflect a running container session in the status bar (persists across restarts, since
+ *  the container keeps running) — click to re-attach a terminal to it. */
+async function refreshSessionStatus() {
+  const chip = document.getElementById("status-session");
+  if (!chip) return;
+  const root = workspaceRoot();
+  if (!root || !hasTauri) {
+    chip.classList.add("hidden");
+    return;
+  }
+  try {
+    const st = await invoke<{ running: boolean }>("devcontainer_session_status", { root });
+    chip.classList.toggle("hidden", !st.running);
+  } catch {
+    chip.classList.add("hidden");
+  }
+}
+
 // ── Mode toggle (Learning ↔ Workspace) ───────────────────────────────────────
 
 type AppMode = "learning" | "workspace";
@@ -3187,6 +3206,7 @@ function setMode(mode: AppMode) {
 
   if (ws) {
     activateWorkspace();
+    void refreshSessionStatus(); // surface a running container session (persists across restarts)
   } else {
     // Returning to Learning: relayout the guided editor (it was hidden).
     requestAnimationFrame(() => editor?.layout());
@@ -3711,6 +3731,13 @@ async function main() {
     const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
     void explainFolder(path, name);
   });
+
+  // Container session status chip: re-attach a terminal on click; refresh on session changes.
+  $("#status-session").addEventListener("click", () => {
+    const root = workspaceRoot();
+    if (root) void attachSessionTerminal(root);
+  });
+  setSessionChangeHandler(() => void refreshSessionStatus());
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing

@@ -17,6 +17,11 @@ const esc = (s: string) =>
 
 let ensureWorkspaceMode: () => void = () => {};
 let openSessionTerminal: (root: string) => void = () => {};
+let onSessionChange: () => void = () => {};
+/** Register a callback fired when the container session starts/stops (wired by main.ts). */
+export function setSessionChangeHandler(fn: () => void): void {
+  onSessionChange = fn;
+}
 
 export function initRemote(deps: {
   ensureWorkspaceMode: () => void;
@@ -103,6 +108,7 @@ async function reopenInContainer(): Promise<void> {
     log.textContent = `✗ ${String(e)}`;
   }
   await scan(); // #remote-log is a sibling of #remote-body, so it survives the rebuild
+  onSessionChange();
 }
 
 /** Stop and remove the persistent session container. */
@@ -117,6 +123,7 @@ async function stopSession(): Promise<void> {
     log.textContent = `✗ ${String(e)}`;
   }
   await scan();
+  onSessionChange();
 }
 
 export function openRemote(): void {
