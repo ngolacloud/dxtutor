@@ -566,6 +566,19 @@ fn step_language(step_id: &str) -> String {
 /// without `ANTHROPIC_API_KEY` the OfflineProvider returns a useful generic message.
 #[tauri::command]
 fn request_hint(phase_id: String, code: String, level: u8) -> Result<HintDto, String> {
+    // Prefer a curated, offline progressive hint when the phase ships one (e.g. the
+    // "count characters" scenario). Deterministic and model-free — the essential path
+    // works with no provider. Falls through to the provider otherwise.
+    if let Some(phase) = tutor_core::find_phase(&phase_id) {
+        if let Some(hint) = phase.hint(level) {
+            return Ok(HintDto {
+                text: hint.to_string(),
+                provider: "curated".to_string(),
+                level: level.clamp(1, 3),
+            });
+        }
+    }
+
     let (instructions, entry) = match course_step(&phase_id) {
         Some((_, step)) => (step.instructions.clone(), step.entry.clone()),
         None => (String::new(), String::new()),

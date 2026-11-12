@@ -24,6 +24,16 @@ pub fn load_project(id: &str) -> Option<Project> {
     builtin_projects().into_iter().find(|p| p.id == id)
 }
 
+/// Encontra uma fase pelo seu `id` em QUALQUER projecto embebido. Serve o caminho de
+/// pistas curadas (offline) sem o chamador precisar de saber a que projecto a fase
+/// pertence.
+pub fn find_phase(id: &str) -> Option<crate::model::Phase> {
+    builtin_projects()
+        .into_iter()
+        .flat_map(|p| p.phases.into_iter())
+        .find(|ph| ph.id == id)
+}
+
 fn parse(name: &str, raw: &str) -> Project {
     let mut project: Project =
         toml::from_str(raw).unwrap_or_else(|e| panic!("conteúdo inválido em {name}.toml: {e}"));
@@ -109,5 +119,15 @@ mod tests {
         assert!(phase.gabarito.solution.contains(".chars().rev().collect()"));
         assert_eq!(phase.hints.len(), 3);
         assert!(phase.hint(1).unwrap().contains("ação"));
+    }
+
+    /// `find_phase` locates a phase across every project, so the curated-hint path works
+    /// without knowing which project owns it.
+    #[test]
+    fn find_phase_atravessa_projectos() {
+        let ph = find_phase("p1-count-chars").expect("fase existe em qualquer projecto");
+        assert_eq!(ph.entry, "count_chars");
+        assert!(ph.hint(1).is_some(), "fase traz pistas curadas");
+        assert!(find_phase("fase-que-nao-existe").is_none());
     }
 }
