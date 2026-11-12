@@ -2334,6 +2334,10 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .cm-res.inferred { background: rgba(224, 160, 90, 0.18); color: var(--orange); }
 .cm-res.resolved { background: rgba(137, 209, 133, 0.18); color: var(--green); }
 .codemap-body { flex: 1; overflow-y: auto; padding: 4px 0 12px; }
+/* Debug capability chip (honest DAP vs tracer). */
+.dbg-cap { font-size: 10px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); color: var(--fg-muted); cursor: help; }
+.dbg-cap.ok { color: #3fb950; border-color: #3fb950; }
+.dbg-cap.warn { color: var(--fg-dim); }
 /* Tests panel — reuses the codemap drawer shell. */
 .tests-list { overflow: auto; flex: 1 1 auto; }
 .tests-note { padding: 14px; color: var(--fg-dim); }

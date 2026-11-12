@@ -227,9 +227,38 @@ function buildFrames(all: TraceStepDto[]): string[][] {
 
 // ── Open / close ──────────────────────────────────────────────────────────────
 
+interface DebugCapability {
+  available: boolean;
+  adapter: string | null;
+  engine: string | null;
+  note: string;
+}
+let capShown = false;
+
+/** Honest capability chip: real DAP when an adapter exists, else the tracer fallback. */
+async function showDebugCapability(): Promise<void> {
+  if (capShown) return;
+  capShown = true;
+  const el = $("#dbg-cap");
+  try {
+    const cap = await invoke<DebugCapability>("debug_capabilities");
+    if (cap.available && cap.adapter) {
+      el.textContent = `DAP: ${cap.adapter}`;
+      el.className = "dbg-cap ok";
+    } else {
+      el.textContent = "tracer (no DAP adapter)";
+      el.className = "dbg-cap warn";
+    }
+    el.setAttribute("title", cap.note);
+  } catch {
+    el.textContent = "";
+  }
+}
+
 export function openDebug() {
   const overlay = $("#debug-overlay");
   overlay.classList.remove("hidden");
+  void showDebugCapability();
   const target = ctx?.getTarget() ?? null;
 
   const notes = $("#dbg-notes");
