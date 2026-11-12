@@ -267,6 +267,11 @@ export function initAssistant(): void {
     renderMessages();
   });
 
+  // Running bar "Parar": cancel the in-flight stream (same as the Send→Stop button).
+  document.getElementById("ar-stop")?.addEventListener("click", () => {
+    if (currentRequestId) void invoke("assistant_cancel", { requestId: currentRequestId });
+  });
+
   // Restore dock mode + width. First use (no saved preference) DOCKS the Agent by default,
   // VSCode/Antigravity-style; a saved choice wins afterwards (RF-UI-01).
   const dockPref = localStorage.getItem("dx.assistant.docked");
@@ -1725,6 +1730,8 @@ function setStreaming(s: boolean): void {
   b.innerHTML = s ? STOP_ICON : SEND_ICON;
   b.title = s ? "Stop" : "Send (Ctrl+Enter)";
   b.classList.toggle("stop", s);
+  // Prototype-style running bar: a real "A executar… / Parar" surfaces while the agent streams.
+  document.getElementById("assistant-running")?.classList.toggle("hidden", !s);
 }
 
 function renderMessages(): void {
