@@ -419,6 +419,25 @@ pub fn session_running(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// O comando de teste do projecto em `root`, escolhido pelo manifesto. `None` quando não há
+/// um conhecido. Serve o ciclo observar→actuar→**verificar** do Agent (RF-AG-02).
+pub fn project_test_command(root: &Path) -> Option<&'static str> {
+    if root.join("Cargo.toml").is_file() {
+        Some("cargo test")
+    } else if root.join("go.mod").is_file() {
+        Some("go test ./...")
+    } else if root.join("package.json").is_file() {
+        Some("npm test --silent")
+    } else if root.join("pyproject.toml").is_file()
+        || root.join("pytest.ini").is_file()
+        || root.join("setup.py").is_file()
+    {
+        Some("python -m pytest -q")
+    } else {
+        None
+    }
+}
+
 /// Comando de shell para correr o ficheiro `rel` (relativo a `/work`) dentro do contentor,
 /// escolhido pela extensão. `has_cargo` encaminha `.rs` para `cargo run` quando o projecto
 /// tem `Cargo.toml`. `None` quando não há executor conhecido para a extensão.

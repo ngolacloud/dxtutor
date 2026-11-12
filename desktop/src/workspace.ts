@@ -470,6 +470,18 @@ function writeOutput(title: string, body: string, kind: "ok" | "err" | "info") {
   showOutput(true);
 }
 
+/** Render a cited test run (command + outcome + output) into the Output panel — the
+ *  Agent's verify step shows real evidence, not a claim (RF-AG-02). */
+export function showTestOutput(command: string, ok: boolean | null, stdout: string, stderr: string): void {
+  const body = (stdout || "") + (stderr ? (stdout ? "\n" : "") + stderr : "");
+  $("#ws-output").innerHTML =
+    `<div class="run-block"><div class="run-sec"><div class="run-cmd">$ ${esc(command)}</div>` +
+    (body ? `<pre class="run-pre">${esc(body)}</pre>` : "") +
+    `</div><div class="run-status ${ok == null ? "info" : ok ? "ok" : "err"}">` +
+    `${ok == null ? "running tests…" : ok ? "✓ tests passed" : "✗ tests failed"}</div></div>`;
+  showOutput(true);
+}
+
 // A run's output: "$ running <file>" header, stdout / stderr split into
 // labelled streams, and a clear exit-state footer. `running` shows a spinner
 // and omits the footer while the program is still executing.

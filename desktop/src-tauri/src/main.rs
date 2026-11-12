@@ -1225,6 +1225,48 @@ async fn git_show(root: String, hash: String) -> Result<String, String> {
     .map_err(|e| format!("git task failed: {e}"))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TestRun {
+    command: String,
+    ok: bool,
+    stdout: String,
+    stderr: String,
+}
+
+/// Run the project's test suite and return the command + its outcome, so the Agent's
+/// verify step cites real evidence (RF-AG-02) instead of claiming success. Runs inside the
+/// container session when one is active (its toolchain), else on the host.
+#[tauri::command]
+async fn run_tests(root: String) -> Result<TestRun, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let cmd = tutor_eval::project_test_command(base)
+            .ok_or_else(|| "No known test command for this project.".to_string())?;
+        let name = tutor_eval::session_name(base);
+        if tutor_eval::session_running(&name) {
+            let out = tutor_eval::session_exec(&name, &format!("cd /work && {cmd}"))
+                .map_err(|e| e.to_string())?;
+            Ok(TestRun { command: cmd.into(), ok: out.ok, stdout: out.stdout, stderr: out.stderr })
+        } else {
+            let out = std::process::Command::new("sh")
+                .arg("-lc")
+                .arg(cmd)
+                .current_dir(base)
+                .output()
+                .map_err(|e| format!("could not start tests: {e}"))?;
+            Ok(TestRun {
+                command: cmd.into(),
+                ok: out.status.success(),
+                stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            })
+        }
+    })
+    .await
+    .map_err(|e| format!("test task failed: {e}"))?
+}
+
 /// Run a delegated task in an isolated git worktree of HEAD: apply `writes` ([relPath,
 /// content] pairs) there and return the unified diff, WITHOUT touching the working tree
 /// (RF-AG-01/05). The caller reviews the patch before anything lands.
@@ -2042,6 +2084,7 @@ fn main() {
             git_checkout,
             git_create_branch,
             agent_isolated_patch,
+            run_tests,
             git_log,
             git_show,
             git_branch,

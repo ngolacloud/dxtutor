@@ -214,6 +214,7 @@ body.mode-workspace #workspace-sidebar.hidden { display: block; }
 }
 .run-sec.err .run-pre { color: #f48771; }
 .run-muted { color: var(--fg-dim); font-style: italic; }
+.run-cmd { font-family: var(--font-mono); font-size: 12px; color: var(--fg-bright); margin-bottom: 6px; }
 .run-status {
   display: flex;
   align-items: center;

@@ -41,7 +41,7 @@ pub use advisor::advise;
 pub use complexity::{Class, Confidence, Estimate, Sample};
 pub use container::{
     build_image, cache_volumes_for, current_engine, engine_available, engine_name, image_for,
-    run_file_command, session_down, session_exec, session_name, session_running,
+    project_test_command, run_file_command, session_down, session_exec, session_name, session_running,
     session_shell_command, session_up, parse_engine,
     run_in_container, run_python_in_sandbox, run_rust_snippet_in_container,
     run_rust_snippet_in_container_deps, sandbox_engine, set_engine, ContainerSpec, SandboxEngine,

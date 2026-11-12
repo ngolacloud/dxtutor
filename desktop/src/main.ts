@@ -37,7 +37,7 @@ import { initQuickOpen } from "./quickopen";
 import { initGit, openGit, refreshGitBranch } from "./git";
 import { initRemote, openRemote, setSessionChangeHandler } from "./remote";
 import { initExplain, explainFile, explainFolder } from "./explain";
-import { workspaceRoot } from "./workspace";
+import { workspaceRoot, showTestOutput } from "./workspace";
 import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint, setSettingsHandler, activeModelLabel } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3105,6 +3105,7 @@ async function loadCourse() {
 let term: Terminal;
 let fitAddon: FitAddon;
 let ptyReady = false;
+let runProjectTestsRef: () => void = () => {}; // set in init; used by the command palette
 
 function fitTerminal() {
   if (fitAddon && term) {
@@ -3714,6 +3715,7 @@ async function main() {
       { label: "Learning: Open track", hint: "View", run: () => setMode("learning") },
       { label: "Explorer: Open folder view", hint: "View", run: () => setMode("workspace") },
       { label: "Run / Submit", hint: "Action", run: () => (appMode === "workspace" ? $("#ws-btn-run") : $("#btn-run")).click() },
+      { label: "Run project tests", hint: "Action", run: () => runProjectTestsRef() },
       { label: "Request a hint", hint: "Action", run: () => { if (appMode !== "learning") setMode("learning"); void requestHint(); } },
       { label: "Search in project", hint: "View", run: () => openSearch() },
       { label: "Source Control (Git)", hint: "View", run: () => openGit() },
@@ -3758,6 +3760,24 @@ async function main() {
     if (root) void attachSessionTerminal(root);
   });
   setSessionChangeHandler(() => void refreshSessionStatus());
+
+  // RF-AG-02: run the project's tests and show the command + real outcome (cited evidence).
+  const runProjectTests = async () => {
+    const root = workspaceRoot();
+    if (!root || !hasTauri) return;
+    setMode("workspace");
+    showTestOutput("…", null, "", "");
+    try {
+      const r = await invoke<{ command: string; ok: boolean; stdout: string; stderr: string }>(
+        "run_tests",
+        { root },
+      );
+      showTestOutput(r.command, r.ok, r.stdout, r.stderr);
+    } catch (e) {
+      showTestOutput("tests", false, "", String(e));
+    }
+  };
+  runProjectTestsRef = runProjectTests; // exposed to the command palette below
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing
