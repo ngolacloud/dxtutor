@@ -46,6 +46,7 @@ const LS = {
   expanded: "dxtutor.ws.expanded", // array of expanded dir paths
   tabs: "dxtutor.ws.tabs", // {folder, paths[], active} — reopened on restart
   recents: "dxtutor.ws.recents", // array of recently opened root paths (most-recent first)
+  breakpoints: "dxtutor.ws.breakpoints", // {[absPath]: [{line,condition,enabled}]} across sessions
 } as const;
 
 const RECENTS_MAX = 8;
@@ -143,6 +144,43 @@ export function setBreakpointsChangeHandler(fn: () => void): void {
   onBreakpointsChanged = fn;
 }
 
+/** Persist all breakpoints (across files) so they survive a restart, then notify the panel. */
+function bpChanged(): void {
+  const store: Record<string, Array<{ line: number; condition: string; enabled: boolean }>> = {};
+  // Start from what's saved so breakpoints in CLOSED files are kept too.
+  try {
+    Object.assign(store, JSON.parse(localStorage.getItem(LS.breakpoints) ?? "{}"));
+  } catch {
+    /* ignore */
+  }
+  for (const [path, m] of bpById) {
+    const tab = tabByPath(path);
+    if (!tab) continue; // only re-serialize files we currently hold
+    const list: Array<{ line: number; condition: string; enabled: boolean }> = [];
+    for (const [id, st] of m) {
+      const line = bpLine(tab.model, id);
+      if (line) list.push({ line, condition: st.cond, enabled: st.enabled });
+    }
+    if (list.length) store[path] = list.sort((a, b) => a.line - b.line);
+    else delete store[path];
+  }
+  localStorage.setItem(LS.breakpoints, JSON.stringify(store));
+  onBreakpointsChanged();
+}
+
+/** Re-create the saved breakpoints for a file as it opens (decorations on its model). */
+function restoreBreakpointsFor(path: string): void {
+  let store: Record<string, Array<{ line: number; condition: string; enabled: boolean }>> = {};
+  try {
+    store = JSON.parse(localStorage.getItem(LS.breakpoints) ?? "{}");
+  } catch {
+    return;
+  }
+  for (const bp of store[path] ?? []) {
+    paintBp(path, bp.line, { cond: bp.condition, enabled: bp.enabled });
+  }
+}
+
 function bpMap(path: string): Map<string, BpState> {
   let m = bpById.get(path);
   if (!m) {
@@ -205,7 +243,7 @@ function toggleBreakpoint(path: string, line: number): void {
   } else {
     paintBp(path, line, { cond: "", enabled: true });
   }
-  onBreakpointsChanged();
+  bpChanged();
 }
 
 /** Set (or clear, with empty) a condition on the breakpoint at `line`; creates one if none. */
@@ -215,7 +253,7 @@ function setBreakpointCondition(path: string, line: number, cond: string): void 
   const id = bpIdAtLine(tab.model, bpMap(path), line);
   const enabled = id ? (bpMap(path).get(id)?.enabled ?? true) : true;
   paintBp(path, line, { cond, enabled });
-  onBreakpointsChanged();
+  bpChanged();
 }
 
 /** Enable/disable the breakpoint at `line` (kept visible but skipped when disabled). */
@@ -225,7 +263,7 @@ export function setBreakpointEnabled(path: string, line: number, enabled: boolea
   const id = bpIdAtLine(tab.model, bpMap(path), line);
   const cond = id ? (bpMap(path).get(id)?.cond ?? "") : "";
   paintBp(path, line, { cond, enabled });
-  onBreakpointsChanged();
+  bpChanged();
 }
 
 /** Remove the breakpoint at `line`. */
@@ -238,7 +276,7 @@ export function removeBreakpoint(path: string, line: number): void {
     tab.model.deltaDecorations([id], []);
     m.delete(id);
   }
-  onBreakpointsChanged();
+  bpChanged();
 }
 
 /** Remove every breakpoint across all files. */
@@ -248,6 +286,7 @@ export function removeAllBreakpoints(): void {
     if (tab) tab.model.deltaDecorations([...m.keys()], []);
     m.clear();
   }
+  localStorage.removeItem(LS.breakpoints);
   onBreakpointsChanged();
 }
 
@@ -658,6 +697,7 @@ async function openFile(path: string) {
     if (!applyingModel) renderTabs();
   });
   tabs.push({ path, name, model, saved: contents });
+  restoreBreakpointsFor(path); // re-create any breakpoints saved for this file last session
   setActiveTab(path);
 }
 
