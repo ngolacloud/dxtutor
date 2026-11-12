@@ -1040,6 +1040,34 @@ async fn resolve_definition(
     .map_err(|e| format!("resolve_definition task failed: {e}"))
 }
 
+/// Section 5: resolve ALL references to the symbol at (`line`, `col`) — both 1-based — via
+/// rust-analyzer. Empty when absent/unresolved. Runs off the UI thread.
+#[tauri::command]
+async fn resolve_references(
+    root: String,
+    file: String,
+    line: u32,
+    col: u32,
+) -> Result<Vec<ResolvedDef>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::lsp::resolve_references(
+            std::path::Path::new(&root),
+            std::path::Path::new(&file),
+            line.saturating_sub(1),
+            col.saturating_sub(1),
+        )
+        .into_iter()
+        .map(|loc| ResolvedDef {
+            file: loc.uri.strip_prefix("file://").unwrap_or(&loc.uri).to_string(),
+            line: loc.line + 1,
+            col: loc.character + 1,
+        })
+        .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|e| format!("resolve_references task failed: {e}"))
+}
+
 /// Section 5 (daily work): the working-tree changes in the git repo at `root` (read-only).
 #[tauri::command]
 async fn git_changes(root: String) -> Result<Vec<tutor_eval::git::GitChange>, String> {
@@ -1280,6 +1308,7 @@ fn main() {
             symbol_relations,
             list_symbols,
             resolve_definition,
+            resolve_references,
             list_tests,
             run_test,
             run_all_tests,
