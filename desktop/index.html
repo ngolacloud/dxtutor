@@ -546,6 +546,19 @@
       </header>
       <div id="codemap-body" class="codemap-body"></div>
     </aside>
+    <!-- Run and Debug: VSCode-style sidebar entry point for the debugger -->
+    <aside id="rundebug-overlay" class="codemap-drawer hidden" aria-label="Run and Debug">
+      <header class="codemap-hdr">
+        <span class="codemap-label">Run and Debug</span>
+        <span class="codemap-title"></span>
+        <button id="rundebug-close" class="review-close" title="Close" aria-label="Close Run and Debug">&times;</button>
+      </header>
+      <div class="rundebug-empty">
+        <button id="rundebug-start" class="welcome-btn welcome-btn-primary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span>Run and Debug</span></button>
+        <p class="rundebug-hint">Step through a real trace of the current Learning step or Workspace file.</p>
+        <p class="rundebug-hint">To customize Run and Debug, <a id="rundebug-launch" class="rundebug-link" role="button" tabindex="0">create a launch.json file</a>.</p>
+      </div>
+    </aside>
     <!-- Tests: discover #[test] functions in the open project and run one -->
     <aside id="tests-overlay" class="codemap-drawer hidden" aria-label="Tests">
       <header class="codemap-hdr">

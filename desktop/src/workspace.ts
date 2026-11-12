@@ -1298,6 +1298,48 @@ export async function openFileAt(path: string, line: number, col: number): Promi
   requestAnimationFrame(() => wsEditor?.layout());
 }
 
+/** Create a VSCode-style `.vscode/launch.json` under the open root and open it in the
+ *  editor — the "create a launch.json file" affordance of the Run and Debug view. */
+export async function createLaunchJson(): Promise<void> {
+  if (!rootPath) {
+    writeOutput("No folder open", "Open a project folder first (Explorer → Open Folder).", "info");
+    return;
+  }
+  const root = rootPath.replace(/\/$/, "");
+  const content = `{
+  // Debug configurations. See https://code.visualstudio.com/docs/editor/debugging
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug (Rust/cargo)",
+      "cargo": { "args": ["build"] },
+      "args": [],
+      "cwd": "\${workspaceFolder}"
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "Debug (Python: current file)",
+      "program": "\${file}",
+      "console": "integratedTerminal"
+    }
+  ]
+}
+`;
+  try {
+    await cmdCreatePath(`${root}/.vscode`, true).catch(() => {});
+    const path = `${root}/.vscode/launch.json`;
+    await cmdWriteFile(path, content);
+    childrenCache.delete(root);
+    await renderTree();
+    await openFile(path);
+  } catch (err) {
+    writeOutput("launch.json failed", String(err), "err");
+  }
+}
+
 /**
  * Content-identity token for a buffer — an EXACT mirror of Rust `content_version`
  * (FNV-1a, 64-bit, hex). Same input → same token on both sides, so the frontend can

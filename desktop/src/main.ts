@@ -28,7 +28,7 @@ import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler } from "./workspace";
+import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler, createLaunchJson } from "./workspace";
 import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
@@ -3426,6 +3426,7 @@ function wireChrome() {
         git: "#git-overlay",
         search: "#search-overlay",
         tests: "#tests-overlay",
+        debug: "#rundebug-overlay",
       };
       if (view && view in LEFT_VIEWS) {
         const target = document.querySelector(LEFT_VIEWS[view])!;
@@ -3434,7 +3435,11 @@ function wireChrome() {
         if (wasOpen) return; // toggle off → sidebar returns
         if (view === "git") openGit();
         else if (view === "search") openSearch();
-        else openTests();
+        else if (view === "tests") openTests();
+        else {
+          setMode("workspace"); // Run and Debug view lives in the sidebar column
+          target.classList.remove("hidden");
+        }
         return;
       }
 
@@ -3644,6 +3649,17 @@ async function main() {
   setMethodEditHandler((path, code, lang) => void startMethodEdit(path, code, lang)); // editor → edit a named method
   setEntrypointHandler((path, code, lang) => void addEntrypoint(path, code, lang)); // editor → add main entrypoint
   initDebug({ getTarget: currentDebugTarget }); // wire the Run-and-Debug panel
+  // Run and Debug sidebar view (VSCode empty-state): launch the debugger / make a launch.json.
+  $("#rundebug-close").addEventListener("click", () => $("#rundebug-overlay").classList.add("hidden"));
+  $("#rundebug-start").addEventListener("click", () => {
+    $("#rundebug-overlay").classList.add("hidden");
+    openDebug();
+  });
+  const launchJson = () => void createLaunchJson();
+  $("#rundebug-launch").addEventListener("click", launchJson);
+  $("#rundebug-launch").addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Enter") launchJson();
+  });
   await setupTerminal();
 
   profile = loadProfile();
