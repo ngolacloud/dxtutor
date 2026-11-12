@@ -152,6 +152,10 @@ pub fn symbol_relations(root: &Path, symbol: &str) -> Result<Relations> {
 
     dedup(&mut callers);
 
+    // Go definitions (syntactic): makes "go to definition" work for Go symbols too. Go
+    // references/callers need a tokenizer and are intentionally not inferred here.
+    definitions.extend(go_definitions(root, symbol));
+
     // Homonyms: more than one definition with this name means the syntactic matcher
     // cannot say which one each reference binds to — flag it so the UI is honest.
     let ambiguous = definitions.len() > 1;
@@ -278,6 +282,11 @@ fn dedup(refs: &mut Vec<SymbolRef>) {
 
 /// All `.rs` files under `root`, skipping the usual noise dirs.
 pub(crate) fn rust_files(root: &Path) -> Vec<std::path::PathBuf> {
+    files_with_ext(root, "rs")
+}
+
+/// Every file with extension `ext` under `root`, skipping heavy/VCS dirs, capped.
+pub(crate) fn files_with_ext(root: &Path, ext: &str) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     let mut seen = 0usize;
@@ -295,12 +304,61 @@ pub(crate) fn rust_files(root: &Path) -> Vec<std::path::PathBuf> {
             if path.is_dir() {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
-                if matches!(name.as_ref(), "target" | ".git" | "node_modules") {
+                if matches!(name.as_ref(), "target" | ".git" | "node_modules" | "vendor") {
                     continue;
                 }
                 stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            } else if path.extension().and_then(|e| e.to_str()) == Some(ext) {
                 out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// Top-level Go definition name on a line, if any: `func Name(`, `func (r R) Name(`,
+/// `type Name …`, `const Name …`, `var Name …`. Syntactic and conservative.
+fn go_def_name(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    if let Some(rest) = line.strip_prefix("func ") {
+        let mut rest = rest.trim_start();
+        if rest.starts_with('(') {
+            // skip the receiver "(r *R) "
+            let close = rest.find(')')?;
+            rest = rest[close + 1..].trim_start();
+        }
+        let end = rest.find(|c: char| c == '(' || c.is_whitespace() || c == '[')?;
+        return (end > 0).then(|| &rest[..end]);
+    }
+    for kw in ["type ", "const ", "var "] {
+        if let Some(rest) = line.strip_prefix(kw) {
+            let rest = rest.trim_start();
+            let end = rest.find(|c: char| c.is_whitespace() || c == '=' || c == '(')?;
+            return (end > 0).then(|| &rest[..end]);
+        }
+    }
+    None
+}
+
+/// Syntactic Go definitions of `symbol` across `.go` files under `root`. Definitions only
+/// (precise); Go references/callers need a tokenizer and are not inferred here.
+pub(crate) fn go_definitions(root: &Path, symbol: &str) -> Vec<SymbolRef> {
+    let mut out = Vec::new();
+    for path in files_with_ext(root, "go") {
+        let code = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let file = display_path(&path, root);
+        for (i, line) in code.lines().enumerate() {
+            if go_def_name(line) == Some(symbol) {
+                out.push(SymbolRef {
+                    name: symbol.to_string(),
+                    kind: SymbolKind::Other,
+                    file: file.clone(),
+                    line: (i + 1) as u32,
+                    col: 1,
+                });
             }
         }
     }
@@ -383,6 +441,35 @@ mod tests {
         assert_eq!(rel.definitions.len(), 2, "defs: {:?}", rel.definitions);
         assert!(rel.ambiguous, "two same-named defs must be ambiguous");
         assert_eq!(rel.resolution, Resolution::Inferred);
+    }
+
+    #[test]
+    fn go_def_name_reconhece_formas() {
+        assert_eq!(go_def_name("func Add(a, b int) int {"), Some("Add"));
+        assert_eq!(go_def_name("func (s *Server) Start() error {"), Some("Start"));
+        assert_eq!(go_def_name("type Node struct {"), Some("Node"));
+        assert_eq!(go_def_name("const MaxSize = 10"), Some("MaxSize"));
+        assert_eq!(go_def_name("var Logger *log.Logger"), Some("Logger"));
+        assert_eq!(go_def_name("    x := 1"), None);
+    }
+
+    #[test]
+    fn navega_para_definicoes_go() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("server.go"),
+            "package demo\nfunc (s *Server) Start() error { return nil }\ntype Node struct {}\nconst MaxSize = 10\n",
+        )
+        .unwrap();
+        for sym in ["Start", "Node", "MaxSize"] {
+            let rel = symbol_relations(root, sym).expect("relations");
+            assert!(
+                rel.definitions.iter().any(|d| d.name == sym && d.file.ends_with("server.go")),
+                "{sym}: sem definição Go em {:?}",
+                rel.definitions
+            );
+        }
     }
 
     /// Consts/statics/type aliases are navigable: jumping to `MAX` finds its definition.
