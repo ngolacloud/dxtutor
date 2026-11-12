@@ -52,7 +52,14 @@ let lastContext: string | null = null; // the workspace context sent with the la
 const appliedActions = new Set<number>(); // message indices whose dxaction was applied
 const actionErrors = new Map<number, string>(); // message index -> last apply error
 // Dev delegate: the live code-generation stream that writes INTO the editor (not chat).
-let codeStream: { requestId: string; path: string; file: string; idx: number; accum: string } | null = null;
+let codeStream: {
+  requestId: string;
+  path: string;
+  file: string;
+  idx: number;
+  accum: string;
+  original: string; // file content before the stream, to restore if the model gives nothing
+} | null = null;
 const writeState = new Map<number, "writing" | "done">(); // message idx -> code-stream state
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
@@ -123,8 +130,19 @@ export function initAssistant(): void {
   });
   void listen<{ requestId: string }>("llm://done", (e) => {
     if (codeStream && e.payload.requestId === codeStream.requestId) {
-      endEditorStream();
-      writeState.set(codeStream.idx, "done");
+      const cs = codeStream;
+      const produced = stripFences(cs.accum).trim();
+      if (!produced) {
+        // The model returned nothing usable — restore the original content rather than
+        // leaving the file wiped, and let the developer retry.
+        pushEditorStream(cs.original);
+        endEditorStream();
+        actionErrors.set(cs.idx, "the model produced no code — the file was left unchanged");
+        writeState.delete(cs.idx);
+      } else {
+        endEditorStream();
+        writeState.set(cs.idx, "done");
+      }
       codeStream = null;
       finishStream();
       return;
@@ -400,7 +418,7 @@ async function startCodeStream(idx: number): Promise<void> {
   }
   const current = currentFileContent(abs) ?? "";
   const rid = crypto.randomUUID();
-  codeStream = { requestId: rid, path: abs, file: dir.file, idx, accum: "" };
+  codeStream = { requestId: rid, path: abs, file: dir.file, idx, accum: "", original: current };
   writeState.set(idx, "writing");
 
   busy = true;
