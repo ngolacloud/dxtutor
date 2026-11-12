@@ -77,4 +77,24 @@ mod tests {
         assert!(phase.gabarito.solution.contains(".chars().count()"));
         assert!(!phase.gabarito.solution.contains(".len()"));
     }
+
+    /// As pistas curadas são progressivas: a 1ª mostra o contra-exemplo, a última aponta
+    /// para `chars()`. O helper `hint(level)` clampa aos limites (nunca entrega o código).
+    #[test]
+    fn pistas_progressivas_do_contar_caracteres() {
+        let p = load_project("rust-count-chars").expect("projecto count-chars");
+        let phase = &p.phases[0];
+        assert_eq!(phase.hints.len(), 3, "esperam-se 3 pistas progressivas");
+        // 1ª pista = o contra-exemplo "ação".
+        assert!(phase.hint(1).unwrap().contains("ação"));
+        // A última aponta a documentação / via honesta sem dar a solução completa.
+        assert!(phase.hint(3).unwrap().contains("chars()"));
+        // Clamp: nível 0 → a 1ª; nível acima do fim → a última.
+        assert_eq!(phase.hint(0), phase.hint(1));
+        assert_eq!(phase.hint(9), phase.hint(3));
+        // Nenhuma pista entrega a solução literal.
+        for h in &phase.hints {
+            assert!(!h.contains(".chars().count()"), "a pista não deve dar o código");
+        }
+    }
 }

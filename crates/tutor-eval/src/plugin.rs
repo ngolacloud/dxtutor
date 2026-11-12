@@ -566,6 +566,7 @@ mod tests {
                 justification: "Soma aritmética directa.".into(),
             },
             probe: None,
+            hints: Vec::new(),
             dependencies: Vec::new(),
         }
     }

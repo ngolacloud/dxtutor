@@ -24,6 +24,20 @@ impl Project {
     }
 }
 
+impl Phase {
+    /// A pista curada para um `level` 1-based (1 = a mais pequena). Clampa ao intervalo
+    /// disponível, por isso pedir um nível acima do último devolve a última (a mais
+    /// reveladora). `None` quando a fase não cura pistas — o chamador cai então no
+    /// fornecedor de dicas opcional.
+    pub fn hint(&self, level: u8) -> Option<&str> {
+        if self.hints.is_empty() {
+            return None;
+        }
+        let idx = (level.max(1) as usize - 1).min(self.hints.len() - 1);
+        Some(self.hints[idx].as_str())
+    }
+}
+
 /// Nível pedagógico de uma fase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -58,6 +72,12 @@ pub struct Phase {
     pub gabarito: Gabarito,
     /// Sonda opcional para medir empiricamente a complexidade da solução do aluno.
     pub probe: Option<Probe>,
+    /// Pistas pedagógicas CURADAS, por ordem crescente de ajuda (1ª = o empurrão mais
+    /// pequeno; a última aproxima-se da ideia sem dar o código). Offline e
+    /// determinísticas — o percurso essencial não depende de um modelo. Vazio quando a
+    /// fase não cura pistas (cai-se então no fornecedor de dicas opcional).
+    #[serde(default)]
+    pub hints: Vec<String>,
     /// Extra Cargo dependencies for the student crate (Rust), as raw
     /// `[dependencies]` lines — e.g. `rusqlite = { version = "0.31", features =
     /// ["bundled"] }`. Empty for std-only phases; written verbatim into the

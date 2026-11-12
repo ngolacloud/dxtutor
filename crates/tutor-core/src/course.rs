@@ -199,6 +199,9 @@ impl Step {
             tests: self.tests.clone(),
             gabarito,
             probe: None,
+            // Steps carry no curated phase-hints today; the guided hint path is the
+            // course's own (course.rs/request_hint), not Phase::hint.
+            hints: Vec::new(),
             dependencies: self.dependencies.clone(),
         })
     }

@@ -41,6 +41,7 @@ fn go_phase(tests: &str) -> Phase {
             justification: "soma directa".into(),
         },
         probe: None,
+        hints: Vec::new(),
         dependencies: Vec::new(),
     }
 }

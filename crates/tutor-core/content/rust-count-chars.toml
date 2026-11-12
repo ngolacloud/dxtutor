@@ -68,6 +68,13 @@ fn vazio_e_zero() {
 }
 """
 
+# Pistas progressivas curadas (offline, determinísticas): empurram sem dar o código.
+hints = [
+  "Contra-exemplo: experimenta `\"ação\"`. Contar bytes dá **5** (`.len()`), mas a resposta certa é **4**. O que o teu código devolve para `\"ação\"`?",
+  "Compara `\"a\"` com `\"ã\"`. Em UTF-8, `'a'` ocupa 1 byte e `'ã'` ocupa 2. Logo o número de **bytes** não é o número de **caracteres**. Precisas de percorrer os caracteres, não os bytes.",
+  "Vê a documentação de `str::chars()` — devolve um iterador de `char` (valores escalares Unicode). O que acontece se lhe pedires `.count()`?",
+]
+
 [phase.gabarito]
 time = "O(n)"
 space = "O(1)"
