@@ -169,7 +169,9 @@ body {
   padding: 0 10px;
   font-size: 12px;
   border-bottom: 1px solid #2b2b2b;
-  -webkit-app-region: drag;
+  /* Dragging comes from `data-tauri-drag-region` (set in the HTML), NOT `-webkit-app-region`
+     — the latter does not work under Tauri/WebKitGTK on Linux AND swallows clicks on the
+     menus and window buttons. */
 }
 .title-left { display: flex; align-items: center; gap: 16px; }
 .codicon-logo { color: #e06c3b; width: 16px; height: 16px; display: block; }
