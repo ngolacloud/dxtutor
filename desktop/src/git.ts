@@ -21,6 +21,7 @@ export function initGit(deps: { ensureWorkspaceMode: () => void }): void {
   ensureWorkspaceMode = deps.ensureWorkspaceMode;
   $("#git-close").addEventListener("click", () => $("#git-overlay").classList.add("hidden"));
   $("#git-refresh").addEventListener("click", () => void scan());
+  document.querySelector("#status-git")?.addEventListener("click", () => openGit());
   $("#git-list").addEventListener("click", (e) => {
     const row = (e.target as HTMLElement).closest(".git-row") as HTMLElement | null;
     const open = (e.target as HTMLElement).closest(".git-open");
@@ -28,6 +29,28 @@ export function initGit(deps: { ensureWorkspaceMode: () => void }): void {
     if (open) void openFileAt(resolve(row.dataset.path!), 1, 1);
     else void showDiff(row.dataset.path!);
   });
+}
+
+/** Update the status-bar branch indicator (shown only inside a git repo). */
+export async function refreshGitBranch(): Promise<void> {
+  const el = document.querySelector<HTMLElement>("#status-git");
+  if (!el) return;
+  const root = workspaceRoot();
+  if (!root) {
+    el.classList.add("hidden");
+    return;
+  }
+  try {
+    const b = await invoke<string | null>("git_branch", { root });
+    if (b) {
+      el.textContent = `⎇ ${b}`;
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
+  } catch {
+    el.classList.add("hidden");
+  }
 }
 
 export function openGit(): void {

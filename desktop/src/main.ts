@@ -34,7 +34,7 @@ import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
 import { initSearch, openSearch } from "./search";
 import { initQuickOpen } from "./quickopen";
-import { initGit, openGit } from "./git";
+import { initGit, openGit, refreshGitBranch } from "./git";
 import { initAssistant, openAssistant } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3148,6 +3148,7 @@ function setMode(mode: AppMode) {
   appMode = mode;
   localStorage.setItem(MODE_KEY, mode);
   const ws = mode === "workspace";
+  if (ws) void refreshGitBranch(); // show the branch in the status bar when working on a project
 
   document.body.classList.toggle("mode-workspace", ws);
   document.body.classList.toggle("mode-learning", !ws);
