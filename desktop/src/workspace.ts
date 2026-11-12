@@ -785,6 +785,55 @@ export function activeSelection(): string {
   return model.getValueInRange(sel);
 }
 
+// ── Dev delegate: stream generated code straight INTO the editor tab ──────────────
+// The assistant does not dump code in the chat — it writes it live into the file's
+// buffer, so the developer watches it being built and can edit/undo it afterwards.
+
+let editorStream: { path: string; model: monaco.editor.ITextModel } | null = null;
+
+/**
+ * Begin streaming generated code into `path`'s editor tab. Creates the file on disk if
+ * missing, opens it, focuses it, and opens a single undo group so the whole generation
+ * reverts with one Ctrl+Z. Returns false if the editor could not be prepared.
+ */
+export async function beginEditorStream(path: string): Promise<boolean> {
+  if (!rootPath) return false;
+  // Create on disk if it does not exist yet (ignore "already exists").
+  await invoke("workspace_action", { root: rootPath, op: "createFile", path, content: "" }).catch(
+    () => {},
+  );
+  await openFile(path);
+  const tab = tabByPath(path);
+  if (!wsEditor || !tab) return false;
+  editorStream = { path, model: tab.model };
+  wsEditor.pushUndoStop();
+  return true;
+}
+
+/** Replace the streamed file's content with `text` (called per token chunk). Writes to the
+ *  specific tab's model, so a tab switch mid-stream can't corrupt another file. */
+export function pushEditorStream(text: string): void {
+  if (!editorStream) return;
+  const m = editorStream.model;
+  m.pushEditOperations([], [{ range: m.getFullModelRange(), text }], () => null);
+}
+
+/** Finish the stream: close the undo group and reveal the end of the file. */
+export function endEditorStream(): void {
+  if (editorStream && wsEditor) {
+    wsEditor.pushUndoStop();
+    wsEditor.focus();
+    const lines = editorStream.model.getLineCount();
+    wsEditor.revealLine(lines);
+  }
+  editorStream = null;
+}
+
+/** The file currently being streamed into, or null. */
+export function editorStreamPath(): string | null {
+  return editorStream?.path ?? null;
+}
+
 /** Absolute path of the file in the active workspace tab, if any. */
 export function activeFilePath(): string | null {
   return activeTabPath;

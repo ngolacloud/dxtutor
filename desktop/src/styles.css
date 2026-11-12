@@ -2403,6 +2403,10 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-action-btns .as-apply { background: var(--accent); color: #fff; border-color: var(--accent); }
 .as-action-btns .as-reject { background: transparent; color: var(--fg-dim); }
 .as-action-err { color: var(--err, #f85149); font-size: 12px; }
+.as-action-sub { font-size: 11px; color: var(--fg-muted); }
+.as-action-btns .as-write { background: var(--accent); color: #fff; border-color: var(--accent); }
+.as-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: as-spin 0.7s linear infinite; vertical-align: middle; }
+@keyframes as-spin { to { transform: rotate(360deg); } }
 .as-think { display: flex; align-items: center; gap: 8px; color: var(--fg-dim); }
 .as-think .rv-spin { width: 14px; height: 14px; }
 .assistant-compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); align-items: flex-end; }

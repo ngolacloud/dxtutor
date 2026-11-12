@@ -5,7 +5,16 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { activeFilePath, activeSelection, revealPath, workspaceRoot } from "./workspace";
+import {
+  activeFilePath,
+  activeSelection,
+  beginEditorStream,
+  currentFileContent,
+  endEditorStream,
+  pushEditorStream,
+  revealPath,
+  workspaceRoot,
+} from "./workspace";
 
 interface ChatMsg {
   role: "system" | "user" | "assistant";
@@ -16,6 +25,12 @@ interface DxAction {
   op: "createDir" | "createFile" | "writeFile";
   path: string;
   content?: string;
+}
+
+interface DxCode {
+  file: string;
+  language?: string;
+  instruction: string;
 }
 
 interface ProviderInfo {
@@ -35,6 +50,9 @@ let provider = "ollama"; // selected AI provider (only Ollama streams live today
 let lastContext: string | null = null; // the workspace context sent with the last turn
 const appliedActions = new Set<number>(); // message indices whose dxaction was applied
 const actionErrors = new Map<number, string>(); // message index -> last apply error
+// Dev delegate: the live code-generation stream that writes INTO the editor (not chat).
+let codeStream: { requestId: string; path: string; file: string; idx: number; accum: string } | null = null;
+const writeState = new Map<number, "writing" | "done">(); // message idx -> code-stream state
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -49,6 +67,7 @@ export function initAssistant(): void {
     lastContext = null;
     appliedActions.clear();
     actionErrors.clear();
+    writeState.clear();
     renderMessages();
   });
   // Approve / dismiss a proposed workspace action (event delegation on the message list).
@@ -58,9 +77,13 @@ export function initAssistant(): void {
     const idx = Number(btn.dataset.idx);
     if (Number.isNaN(idx)) return;
     if (btn.classList.contains("as-apply")) void applyAction(idx);
+    else if (btn.classList.contains("as-write")) void startCodeStream(idx);
     else if (btn.classList.contains("as-reject")) {
-      // Mark as handled so the card disappears: strip the action from the message.
-      messages[idx].content = messages[idx].content.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim();
+      // Mark as handled so the card disappears: strip the directive from the message.
+      messages[idx].content = messages[idx].content
+        .replace(/```dxaction\s*\n[\s\S]*?```/, "")
+        .replace(/```dxcode\s*\n[\s\S]*?```/, "")
+        .trim();
       actionErrors.delete(idx);
       renderMessages();
     }
@@ -85,16 +108,37 @@ export function initAssistant(): void {
   $("#providers-close").addEventListener("click", () => $("#providers-overlay").classList.add("hidden"));
   $("#providers-save").addEventListener("click", () => void saveProviders());
 
-  // Live token stream from the backend.
+  // Live token stream from the backend. Tokens route to the EDITOR during a code stream
+  // (Dev delegate), or to the chat bubble otherwise.
   void listen<{ requestId: string; delta: string }>("llm://token", (e) => {
+    if (codeStream && e.payload.requestId === codeStream.requestId) {
+      codeStream.accum += e.payload.delta;
+      pushEditorStream(stripFences(codeStream.accum)); // build the code live in the tab
+      return;
+    }
     if (e.payload.requestId !== currentRequestId || streamingIdx < 0) return;
     messages[streamingIdx].content += e.payload.delta;
     renderMessages();
   });
   void listen<{ requestId: string }>("llm://done", (e) => {
+    if (codeStream && e.payload.requestId === codeStream.requestId) {
+      endEditorStream();
+      writeState.set(codeStream.idx, "done");
+      codeStream = null;
+      finishStream();
+      return;
+    }
     if (e.payload.requestId === currentRequestId) finishStream();
   });
   void listen<{ requestId: string; error: string }>("llm://error", (e) => {
+    if (codeStream && e.payload.requestId === codeStream.requestId) {
+      endEditorStream();
+      actionErrors.set(codeStream.idx, e.payload.error);
+      writeState.delete(codeStream.idx);
+      codeStream = null;
+      finishStream();
+      return;
+    }
     if (e.payload.requestId !== currentRequestId) return;
     if (streamingIdx >= 0 && !messages[streamingIdx].content) {
       messages[streamingIdx].content = `⚠ ${e.payload.error}`;
@@ -269,17 +313,111 @@ async function buildWorkspaceContext(): Promise<string | null> {
     active ? `Active file: ${active}` : `No file is currently open.`,
     sel ? `Selected code:\n${sel.slice(0, 2000)}` : "",
     `Project tree (depth-limited, build/VCS dirs skipped):\n${tree}`,
-    `When the user asks to create or modify files or folders, DO NOT give OS shell ` +
-      `instructions (mkdir, PowerShell, etc.). Act through the IDE: reply with one short ` +
-      `sentence, then EXACTLY ONE fenced block:\n` +
+    `When the user asks to create a folder or do a simple filesystem action, DO NOT give ` +
+      `OS shell instructions (mkdir, PowerShell, etc.). Act through the IDE: reply with one ` +
+      `short sentence, then EXACTLY ONE fenced block:\n` +
       "```dxaction\n" +
       `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to the workspace root>","content":"<for files>"}\n` +
       "```\n" +
       `The user approves it with one click and the IDE performs it inside the workspace. ` +
       `The path must be relative to the root and must not escape it.`,
+    `When the user asks you to WRITE or MODIFY CODE in a file, DO NOT put the code in the ` +
+      `chat. Reply with only a SHORT plan (1–3 lines) of what you will do, then EXACTLY ONE ` +
+      `fenced block:\n` +
+      "```dxcode\n" +
+      `{"file":"<path relative to the workspace root>","language":"rust","instruction":"<a precise, self-contained description of the full file to generate>"}\n` +
+      "```\n" +
+      `The code will then stream LIVE into the editor tab for that file — the developer ` +
+      `watches it being written and keeps control. Make the instruction detailed enough to ` +
+      `produce the complete file on its own.`,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** Extract the first dxcode directive from an assistant message, if valid. */
+function parseCodeDirective(text: string): DxCode | null {
+  const m = text.match(/```dxcode\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1].trim());
+    if (typeof obj.file === "string" && typeof obj.instruction === "string") return obj as DxCode;
+  } catch {
+    /* not valid JSON */
+  }
+  return null;
+}
+
+/** Strip a leading ``` fence (language tag and all) from streamed code, tolerating an
+ *  unclosed trailing fence while tokens are still arriving. */
+function stripFences(s: string): string {
+  const i = s.indexOf("```");
+  if (i < 0) return s;
+  const after = s.slice(i + 3);
+  const nl = after.indexOf("\n");
+  const body = nl >= 0 ? after.slice(nl + 1) : "";
+  const close = body.indexOf("```");
+  return close >= 0 ? body.slice(0, close) : body;
+}
+
+/** Dev delegate: stream the generated file content LIVE into the editor tab. The chat
+ *  keeps the plan; the code is built in the real buffer (undoable, interruptible). */
+async function startCodeStream(idx: number): Promise<void> {
+  if (busy) return;
+  const dir = parseCodeDirective(messages[idx]?.content ?? "");
+  const root = workspaceRoot();
+  if (!dir || !root) return;
+  const abs = `${root.replace(/\/$/, "")}/${dir.file.replace(/^\.?\//, "")}`;
+  const ok = await beginEditorStream(abs);
+  if (!ok) {
+    actionErrors.set(idx, "could not open the target file in the editor");
+    renderMessages();
+    return;
+  }
+  const current = currentFileContent(abs) ?? "";
+  const rid = crypto.randomUUID();
+  codeStream = { requestId: rid, path: abs, file: dir.file, idx, accum: "" };
+  writeState.set(idx, "writing");
+
+  busy = true;
+  currentRequestId = rid;
+  setStreaming(true);
+  renderMessages();
+
+  const genMessages: ChatMsg[] = [
+    {
+      role: "system",
+      content:
+        `You are a precise code generator writing the file "${dir.file}"` +
+        (dir.language ? ` (${dir.language})` : "") +
+        `. Output ONLY the complete, final contents of this file. No markdown, no code ` +
+        `fences, no explanation — just the file's text.`,
+    },
+    {
+      role: "user",
+      content:
+        `${dir.instruction}\n\n` +
+        (current.trim()
+          ? `Current content of the file (modify as needed):\n${current}`
+          : `The file is new/empty.`),
+    },
+  ];
+  try {
+    await invoke("assistant_chat_stream", {
+      messages: genMessages,
+      provider,
+      model: null,
+      requestId: rid,
+      mode: "workspace", // code generation is a project-mode capability
+      stepId: null,
+    });
+  } catch (e) {
+    actionErrors.set(idx, String(e));
+    endEditorStream();
+    codeStream = null;
+    writeState.delete(idx);
+    finishStream();
+  }
 }
 
 /** Extract the first dxaction block from an assistant message, if valid. */
@@ -393,19 +531,36 @@ function renderMessages(): void {
     messages
       .map((m, i) => {
         const streaming = busy && i === streamingIdx;
-        const action = m.role === "assistant" && !streaming ? parseAction(m.content) : null;
-        // Hide the raw dxaction JSON from the bubble; it's shown as an approval card.
-        const shown = action ? m.content.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim() : m.content;
+        const isDone = m.role === "assistant" && !streaming;
+        const action = isDone ? parseAction(m.content) : null;
+        const code = isDone ? parseCodeDirective(m.content) : null;
+        // Hide the raw dxaction/dxcode JSON from the bubble; shown as a card instead.
+        let shown = m.content;
+        if (action) shown = shown.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim();
+        if (code) shown = shown.replace(/```dxcode\s*\n[\s\S]*?```/, "").trim();
         const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
+        const err = actionErrors.get(i);
         let card = "";
         if (action) {
           if (appliedActions.has(i)) {
             card = `<div class="as-action done">✓ Applied: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>`;
           } else {
-            const err = actionErrors.get(i);
             card =
               `<div class="as-action"><div class="as-action-h">Proposed: <b>${esc(action.op)}</b> <code>${esc(action.path)}</code></div>` +
               `<div class="as-action-btns"><button class="as-apply" data-idx="${i}">Apply</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
+              (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
+              `</div>`;
+          }
+        } else if (code) {
+          const state = writeState.get(i);
+          if (state === "writing") {
+            card = `<div class="as-action"><div class="as-action-h">✍️ Writing <code>${esc(code.file)}</code> in the editor… <span class="as-spin"></span></div><div class="as-action-sub">Press <b>Stop</b> to interrupt — the code stays in the buffer.</div></div>`;
+          } else if (state === "done") {
+            card = `<div class="as-action done">✓ Wrote <code>${esc(code.file)}</code> in the editor — review, edit and save it.</div>`;
+          } else {
+            card =
+              `<div class="as-action"><div class="as-action-h">✍️ Write <code>${esc(code.file)}</code> directly in the editor</div>` +
+              `<div class="as-action-btns"><button class="as-write" data-idx="${i}">Write in editor</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
               (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
               `</div>`;
           }
