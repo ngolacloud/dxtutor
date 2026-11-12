@@ -6,9 +6,20 @@ description: Use when changing dxtutor editor buffers, diagnostics, review findi
 # Editor & code intelligence
 
 ## When this applies
-Changes to `crates/tutor-eval/review.rs` or `codemap.rs`, `desktop/src/review.ts`,
-`desktop/src/workspace.ts` (markers/apply/ghost), `desktop/src/edit.ts`, or the
-`review_code`/`verify_review_fix`/`symbol_relations` commands.
+Changes to `crates/tutor-eval/{review,codemap,lsp,testnav,search,git}.rs`,
+`desktop/src/{review,workspace,codemap,tests,search,git,quickopen,edit}.ts`, or the
+commands `review_code`/`verify_review_fix`/`symbol_relations`/`list_symbols`/
+`resolve_definition`/`resolve_references`/`list_tests`/`run_test`/`search_project`/
+`list_files`/`git_changes`/`git_diff`.
+
+## Navigation: resolved vs inferred (honest)
+- **Syntactic (inferred)** — `codemap::symbol_relations` (Rust defs/refs/callers; Go/Python
+  defs via line scanners); homonyms flagged `ambiguous`. Always labelled `inferred`.
+- **Resolved (rust-analyzer)** — `lsp::{resolve_definition,resolve_references}`: a minimal
+  LSP client with a watchdog + 30s budget, indexing poll, and the **live buffer** (pass
+  `text`, never stale disk). Skips non-`.rs` files instantly. URIs are percent-decoded via
+  `uri_to_path`. The editor's **F12** and the CodeMap try resolved first, fall back to the
+  syntactic map; the chip must say which (`resolved`/`inferred`). Never fake `resolved`.
 
 ## Inputs
 The real project file(s), the review scope (file/changes/project), and the buffer's
