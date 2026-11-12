@@ -205,6 +205,91 @@ pub fn symbol_ranges(code: &str, name: &str) -> Vec<SymbolRange> {
         .collect()
 }
 
+/// A file outline for ANY supported language: precise (Rust, from the AST) or heuristic
+/// (Python/Go/JS/TS, from a light line scan). Powers a line-anchored Explain.
+pub fn outline(code: &str, lang: &str) -> Vec<SymbolRange> {
+    match lang {
+        "rust" => file_outline(code),
+        other => outline_heuristic(code, other),
+    }
+}
+
+/// The identifier that follows `kw` at the start of `s` (after trimming), if any.
+fn ident_after<'a>(s: &'a str, kw: &str) -> Option<&'a str> {
+    let rest = s.trim_start().strip_prefix(kw)?.trim_start();
+    let end = rest
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    (end > 0).then(|| &rest[..end])
+}
+
+/// Heuristic, dependency-free outline for Python / Go / JS / TS: top-level (and class)
+/// functions, methods, classes and types, by a line scan. Anchors are the definition line
+/// (`end_line == start_line`). Best-effort — favours precision over recall to avoid noise.
+fn outline_heuristic(code: &str, lang: &str) -> Vec<SymbolRange> {
+    let py = matches!(lang, "python" | "py");
+    let go = matches!(lang, "go");
+    let js = matches!(lang, "javascript" | "typescript" | "js" | "ts" | "jsx" | "tsx" | "mjs" | "cjs");
+    let mut out = Vec::new();
+    let mut push = |name: &str, kind: SymbolKind, line: u32| {
+        out.push(SymbolRange {
+            name: name.to_string(),
+            kind,
+            start_line: line,
+            end_line: line,
+        });
+    };
+    for (i, raw) in code.lines().enumerate() {
+        let line = (i + 1) as u32;
+        let t = raw.trim_start();
+        if py {
+            if let Some(n) = ident_after(t, "async def ").or_else(|| ident_after(t, "def ")) {
+                push(n, SymbolKind::Function, line);
+            } else if let Some(n) = ident_after(t, "class ") {
+                push(n, SymbolKind::Struct, line);
+            }
+        } else if go {
+            if t.starts_with("func ") {
+                let after = t[5..].trim_start();
+                // Skip a method receiver `(r T)` if present.
+                let name_part = if after.starts_with('(') {
+                    after.find(')').map(|c| after[c + 1..].trim_start()).unwrap_or(after)
+                } else {
+                    after
+                };
+                let end = name_part
+                    .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .unwrap_or(name_part.len());
+                if end > 0 {
+                    push(&name_part[..end], SymbolKind::Function, line);
+                }
+            } else if let Some(n) = ident_after(t, "type ") {
+                push(n, SymbolKind::Struct, line);
+            }
+        } else if js {
+            // Normalise leading export/default modifiers.
+            let mut s = t;
+            for p in ["export ", "default "] {
+                s = s.strip_prefix(p).unwrap_or(s).trim_start();
+            }
+            if let Some(n) = ident_after(s, "async function ").or_else(|| ident_after(s, "function ")) {
+                push(n, SymbolKind::Function, line);
+            } else if let Some(n) = ident_after(s, "class ") {
+                push(n, SymbolKind::Struct, line);
+            } else if let Some(kw) = ["const ", "let ", "var "].iter().find(|k| s.starts_with(**k)) {
+                // Arrow/function assigned to a binding: `const foo = (…) => …` / `= async …`.
+                if let Some(n) = ident_after(s, kw) {
+                    let rhs = s.splitn(2, '=').nth(1).unwrap_or("");
+                    if rhs.contains("=>") || rhs.contains("function") || rhs.trim_start().starts_with("async") {
+                        push(n, SymbolKind::Function, line);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The full outline of a Rust file: every function/method with its line span, in file order.
 /// Powers a precise, LSP-grade Explain (real anchors instead of model-guessed line numbers).
 /// Empty when `code` doesn't parse as Rust.
@@ -520,6 +605,28 @@ pub(crate) fn display_path(path: &Path, root: &Path) -> String {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn heuristic_outline_python_go_js() {
+        let py = "import os\n\nclass Foo:\n    def method_a(self):\n        pass\n\nasync def run():\n    pass\n";
+        let p = outline(py, "python");
+        assert!(p.iter().any(|s| s.name == "Foo" && s.start_line == 3), "{p:?}");
+        assert!(p.iter().any(|s| s.name == "method_a" && s.start_line == 4), "{p:?}");
+        assert!(p.iter().any(|s| s.name == "run" && s.start_line == 7), "{p:?}");
+
+        let go = "package main\n\ntype User struct{}\n\nfunc (u User) Name() string { return \"\" }\n\nfunc main() {}\n";
+        let g = outline(go, "go");
+        assert!(g.iter().any(|s| s.name == "User"), "{g:?}");
+        assert!(g.iter().any(|s| s.name == "Name" && s.start_line == 5), "{g:?}");
+        assert!(g.iter().any(|s| s.name == "main" && s.start_line == 7), "{g:?}");
+
+        let js = "export function parse(x) {}\nclass Widget {}\nconst build = async (n) => n + 1;\nif (x) {}\n";
+        let j = outline(js, "js");
+        assert!(j.iter().any(|s| s.name == "parse" && s.start_line == 1), "{j:?}");
+        assert!(j.iter().any(|s| s.name == "Widget"), "{j:?}");
+        assert!(j.iter().any(|s| s.name == "build" && s.start_line == 3), "{j:?}");
+        assert!(!j.iter().any(|s| s.name == "if"), "control keywords excluded: {j:?}");
+    }
 
     #[test]
     fn finds_definition_references_and_callers_across_files() {

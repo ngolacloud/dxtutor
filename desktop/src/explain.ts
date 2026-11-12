@@ -104,7 +104,7 @@ export async function explainFile(path: string, code: string, lang: string, name
   try {
     const outline = await invoke<Array<{ name: string; kind: string; startLine: number; endLine: number }>>(
       "file_outline",
-      { code },
+      { code, lang },
     );
     if (outline.length) {
       outlineBlock =
