@@ -17,6 +17,7 @@
 //! aditivo.
 
 pub mod advisor;
+pub mod arch;
 pub mod codemap;
 pub mod complexity;
 pub mod container;

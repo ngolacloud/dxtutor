@@ -1267,6 +1267,15 @@ async fn run_tests(root: String) -> Result<TestRun, String> {
     .map_err(|e| format!("test task failed: {e}"))?
 }
 
+/// Validate a System Design (Architecture Studio): run the structural rules over the drawn
+/// components + connections and return the findings (errors first). Pure; no I/O.
+#[tauri::command]
+async fn arch_validate(
+    arch: tutor_eval::arch::Architecture,
+) -> Result<Vec<tutor_eval::arch::Finding>, String> {
+    Ok(arch.validate())
+}
+
 /// Run a delegated task in an isolated git worktree of HEAD: apply `writes` ([relPath,
 /// content] pairs) there and return the unified diff, WITHOUT touching the working tree
 /// (RF-AG-01/05). The caller reviews the patch before anything lands.
@@ -2143,6 +2152,7 @@ fn main() {
             agent_task_submit,
             agent_task_status,
             agent_task_cancel,
+            arch_validate,
             run_tests,
             git_log,
             git_show,
