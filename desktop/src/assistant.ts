@@ -15,6 +15,7 @@ import {
   applyReviewedBlock,
   endEditorStream,
   endRangeStream,
+  rangeStreamConflicted,
   enterRangeReview,
   isDirty,
   openFileAt,
@@ -286,7 +287,20 @@ export function initAssistant(): void {
   void listen<{ requestId: string; delta: string }>("llm://token", (e) => {
     if (localStream && e.payload.requestId === localStream.requestId) {
       localStream.accum += e.payload.delta;
-      pushRangeStream(stripFences(localStream.accum)); // build into the target block only
+      const applied = pushRangeStream(stripFences(localStream.accum)); // into the target block only
+      if (!applied && rangeStreamConflicted()) {
+        // The dev edited the buffer mid-stream — stop clobbering it, keep their change.
+        const rid = localStream.requestId;
+        void invoke("assistant_cancel", { requestId: rid });
+        messages.push({
+          role: "assistant",
+          content: "✋ You edited the file while I was writing, so I stopped — your change is kept. Re-run the edit if you still want it.",
+        });
+        localStream = null;
+        endRangeStream();
+        finishStream();
+        renderMessages();
+      }
       return;
     }
     if (codeStream && e.payload.requestId === codeStream.requestId) {

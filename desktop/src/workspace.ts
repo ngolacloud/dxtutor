@@ -1347,7 +1347,14 @@ let rangeStream: {
   curEndLine: number; // moves as the generated text grows/shrinks
   original: string; // the block's original text, to restore on empty/error
   deco: monaco.editor.IEditorDecorationsCollection; // live highlight on the block
+  expectedVersion: number; // model version after our last edit — detects manual edits
+  conflicted: boolean; // the dev edited the buffer mid-stream → stop clobbering it
 } | null = null;
+
+/** True once a manual edit was detected mid-stream (the dev's change is preserved). */
+export function rangeStreamConflicted(): boolean {
+  return rangeStream?.conflicted ?? false;
+}
 
 /** Paint the "AI is writing here" highlight over the block's current line range. */
 function paintRangeHighlight(): void {
@@ -1380,21 +1387,41 @@ export async function beginRangeStream(
   const sl = Math.max(1, Math.min(startLine, max));
   const el = Math.max(sl, Math.min(endLine, max));
   const original = model.getValueInRange(new monaco.Range(sl, 1, el, model.getLineMaxColumn(el)));
-  rangeStream = { model: tab.model, startLine: sl, curEndLine: el, original, deco: wsEditor.createDecorationsCollection([]) };
+  rangeStream = {
+    model: tab.model,
+    startLine: sl,
+    curEndLine: el,
+    original,
+    deco: wsEditor.createDecorationsCollection([]),
+    expectedVersion: tab.model.getVersionId(),
+    conflicted: false,
+  };
   paintRangeHighlight(); // highlight the block so the dev sees where the AI is writing
   wsEditor.pushUndoStop();
   return true;
 }
 
-/** Replace the current target range with `text` (per token chunk); only the block changes. */
-export function pushRangeStream(text: string): void {
-  if (!rangeStream) return;
+/** Replace the current target range with `text` (per token chunk); only the block changes.
+ *  Returns false when a MANUAL edit was detected since our last write (conflict): we stop
+ *  touching the buffer so the dev's change is preserved — the caller should halt the stream. */
+export function pushRangeStream(text: string): boolean {
+  if (!rangeStream) return false;
+  if (rangeStream.conflicted) return false;
   const { model, startLine, curEndLine } = rangeStream;
+  // The model version only changes on content edits; if it moved since our last write, the
+  // dev typed into the buffer mid-stream → conflict. Stop, keep their edit.
+  if (model.getVersionId() !== rangeStream.expectedVersion) {
+    rangeStream.conflicted = true;
+    rangeStream.deco.clear();
+    return false;
+  }
   const endCol = model.getLineMaxColumn(curEndLine);
   model.pushEditOperations([], [{ range: new monaco.Range(startLine, 1, curEndLine, endCol), text }], () => null);
   rangeStream.curEndLine = startLine + text.split("\n").length - 1; // track the moved end
+  rangeStream.expectedVersion = model.getVersionId(); // our edit is the new baseline
   paintRangeHighlight(); // follow the block as it grows, live
   wsEditor?.revealLineInCenterIfOutsideViewport(rangeStream.curEndLine); // keep the edit in view
+  return true;
 }
 
 /** Finish the localized stream: close the undo group, clear the highlight, reveal the block. */
