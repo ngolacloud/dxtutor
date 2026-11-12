@@ -92,11 +92,17 @@ export async function explainFile(path: string, code: string, lang: string, name
   $("#explain-body").innerHTML = `<div class="explain-loading">Reading ${esc(name)} and writing a summary…</div>`;
   openExplainTab(name, path); // open as a real tab that splits code | summary
 
-  // Number the lines so the model can reference exact positions as [L<n>].
-  const numbered = code
-    .split("\n")
-    .map((l, i) => `${String(i + 1).padStart(4)}: ${l}`)
-    .join("\n");
+  // Number the lines so the model can reference exact positions as [L<n>]. For very large
+  // files, cap the listing (the outline below still covers the WHOLE file's structure) so the
+  // prompt and the UI stay responsive (RF-UI-05).
+  const MAX_LINES = 1600;
+  const lines = code.split("\n");
+  const truncated = lines.length > MAX_LINES;
+  const numbered =
+    lines
+      .slice(0, MAX_LINES)
+      .map((l, i) => `${String(i + 1).padStart(4)}: ${l}`)
+      .join("\n") + (truncated ? `\n… (listing truncated at line ${MAX_LINES}; the outline covers the rest)` : "");
 
   // Ground the model in the REAL symbol outline (exact line spans from the parser) so the
   // sections and [L<n>] anchors are precise, not guessed. Best-effort (Rust today).

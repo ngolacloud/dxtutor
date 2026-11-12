@@ -93,7 +93,8 @@ interface Tab {
   path: string;
   name: string;
   model: monaco.editor.ITextModel;
-  saved: string; // last persisted content, for the dirty indicator
+  saved: string; // last persisted content (for restore + non-hot-path checks)
+  savedVersionId: number; // Monaco alternativeVersionId at save — O(1) dirty check for big files
 }
 const tabs: Tab[] = [];
 let activeTabPath: string | null = null;
@@ -595,7 +596,9 @@ function renderTabs() {
   $("#ws-welcome").classList.add("hidden");
   let html = tabs
     .map((t) => {
-      const dirty = t.model.getValue() !== t.saved;
+      // O(1) dirty check (alternativeVersionId) — avoids a full-buffer compare per keystroke,
+      // which would lag on large files (RF-UI-05).
+      const dirty = t.model.getAlternativeVersionId() !== t.savedVersionId;
       const active = t.path === activeTabPath;
       const mark = dirty
         ? `<span class="ws-tab-dot" title="Unsaved changes">●</span>`
@@ -706,7 +709,7 @@ async function openFile(path: string) {
   model.onDidChangeContent(() => {
     if (!applyingModel) renderTabs();
   });
-  tabs.push({ path, name, model, saved: contents });
+  tabs.push({ path, name, model, saved: contents, savedVersionId: model.getAlternativeVersionId() });
   restoreBreakpointsFor(path); // re-create any breakpoints saved for this file last session
   setActiveTab(path);
 }
@@ -763,6 +766,7 @@ async function saveActive(): Promise<boolean> {
   try {
     await cmdWriteFile(tab.path, value);
     tab.saved = value;
+    tab.savedVersionId = tab.model.getAlternativeVersionId();
     renderTabs();
     return true;
   } catch (err) {
@@ -778,6 +782,7 @@ async function saveAll() {
     try {
       await cmdWriteFile(tab.path, value);
       tab.saved = value;
+      tab.savedVersionId = tab.model.getAlternativeVersionId();
     } catch (err) {
       writeOutput("Save All failed", `${tab.name}: ${String(err)}`, "err");
       renderTabs();
