@@ -936,6 +936,17 @@ async fn symbol_relations(
     .map_err(|e| format!("codemap failed: {e}"))
 }
 
+/// Section 5: discover the `#[test]` functions under `root` so the UI can list them and
+/// run one individually. Syntactic (`syn`); notes `#[ignore]`. Runs off the UI thread.
+#[tauri::command]
+async fn list_tests(root: String) -> Result<Vec<tutor_eval::testnav::TestItem>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::testnav::discover_tests(std::path::Path::new(&root))
+    })
+    .await
+    .map_err(|e| format!("test discovery task failed: {e}"))
+}
+
 /// Compile and run a COMPLETE Rust program (a drill's target the student retyped)
 /// and return its output. Never judges an exercise — it just executes.
 #[tauri::command]
@@ -1108,6 +1119,7 @@ fn main() {
             verify_review_fix,
             study_policy,
             symbol_relations,
+            list_tests,
             assistant_models,
             assistant_chat,
             assistant_chat_stream,

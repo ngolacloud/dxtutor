@@ -272,7 +272,7 @@ fn dedup(refs: &mut Vec<SymbolRef>) {
 // ── File discovery ───────────────────────────────────────────────────────────────
 
 /// All `.rs` files under `root`, skipping the usual noise dirs.
-fn rust_files(root: &Path) -> Vec<std::path::PathBuf> {
+pub(crate) fn rust_files(root: &Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     let mut seen = 0usize;
@@ -302,7 +302,7 @@ fn rust_files(root: &Path) -> Vec<std::path::PathBuf> {
     out
 }
 
-fn display_path(path: &Path, root: &Path) -> String {
+pub(crate) fn display_path(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| path.to_string_lossy().to_string())

@@ -27,6 +27,7 @@ pub mod measured;
 pub mod plugin;
 pub mod review;
 pub mod runner;
+pub mod testnav;
 pub mod rust_tracer;
 pub mod tracer;
 
