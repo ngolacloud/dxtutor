@@ -1,0 +1,145 @@
+// Explain: delegate to the Agent to produce an organized, read-first summary of the open
+// file — an overview plus a section per function/method/attribute, each tagged with its
+// line as [L<n>]. Rendered in a panel parallel to the code; clicking a line link jumps
+// straight to that part of the code. Helps a dev understand third-party code fast.
+
+import { invoke } from "@tauri-apps/api/core";
+import { openFileAt } from "./workspace";
+
+interface ChatReply {
+  content: string;
+}
+
+const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+const esc = (s: string) =>
+  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+let currentPath: string | null = null;
+let lastReq: { path: string; code: string; lang: string; name: string } | null = null;
+let busy = false;
+
+export function initExplain(): void {
+  $("#explain-close").addEventListener("click", () => $("#explain-panel").classList.add("hidden"));
+  $("#explain-refresh").addEventListener("click", () => {
+    if (lastReq) void explainFile(lastReq.path, lastReq.code, lastReq.lang, lastReq.name);
+  });
+  // Jump links: reveal the referenced line in the editor.
+  $("#explain-body").addEventListener("click", (e) => {
+    const a = (e.target as HTMLElement).closest(".explain-jump") as HTMLElement | null;
+    if (a?.dataset.line && currentPath) void openFileAt(currentPath, Number(a.dataset.line), 1);
+  });
+}
+
+/** Run an Explain pass on a file and render it into the parallel panel. */
+export async function explainFile(path: string, code: string, lang: string, name: string): Promise<void> {
+  if (busy) return;
+  currentPath = path;
+  lastReq = { path, code, lang, name };
+  const panel = $("#explain-panel");
+  panel.classList.remove("hidden");
+  $("#explain-file").textContent = name;
+  $("#explain-body").innerHTML = `<div class="explain-loading">Reading ${esc(name)} and writing a summary…</div>`;
+
+  // Number the lines so the model can reference exact positions as [L<n>].
+  const numbered = code
+    .split("\n")
+    .map((l, i) => `${String(i + 1).padStart(4)}: ${l}`)
+    .join("\n");
+  const system =
+    "You explain existing code to a developer reading it for the FIRST time, so they " +
+    "understand third-party code fast. You do NOT rewrite or judge the code — you clarify " +
+    "intent and logic. Answer in clear Markdown, concise and well organized.";
+  const user =
+    `Explain the file \`${name}\` (${lang}). Structure your answer EXACTLY as:\n\n` +
+    "1. **Overview** — one short paragraph: what this file is for and how it fits together.\n" +
+    "2. A section per function / method / struct / class / important field, IN FILE ORDER. " +
+    "Begin each with a heading naming it and its line, e.g. `### parse_reference [L12]`. " +
+    "In 1–4 sentences explain its logic, inputs/outputs and any side effects.\n\n" +
+    "Whenever you mention a specific part, cite its line as `[L<number>]` so the reader can " +
+    "jump there. Use the line numbers shown in the listing. Do not repeat the code verbatim.\n\n" +
+    `\`\`\`${lang}\n${numbered}\n\`\`\``;
+
+  busy = true;
+  try {
+    const reply = await invoke<ChatReply>("assistant_chat", {
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      model: null,
+    });
+    $("#explain-body").innerHTML = renderMarkdown(reply.content || "_(empty response)_");
+  } catch (e) {
+    $("#explain-body").innerHTML = `<div class="explain-err">Explain failed: ${esc(String(e))}</div>`;
+  } finally {
+    busy = false;
+  }
+}
+
+// ── Minimal, safe Markdown → HTML (headings, lists, code, emphasis) + [L<n>] links ──
+function renderMarkdown(md: string): string {
+  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let inCode = false;
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+  };
+  for (const raw of lines) {
+    const fence = raw.match(/^```(\w*)/);
+    if (fence) {
+      closeList();
+      if (!inCode) {
+        out.push(`<pre class="explain-code"><code>`);
+        inCode = true;
+      } else {
+        out.push("</code></pre>");
+        inCode = false;
+      }
+      continue;
+    }
+    if (inCode) {
+      out.push(esc(raw));
+      continue;
+    }
+    const h = raw.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      closeList();
+      const lvl = h[1].length;
+      out.push(`<h${lvl} class="explain-h">${inline(h[2])}</h${lvl}>`);
+      continue;
+    }
+    const li = raw.match(/^\s*[-*]\s+(.*)$/);
+    if (li) {
+      if (!inList) {
+        out.push("<ul>");
+        inList = true;
+      }
+      out.push(`<li>${inline(li[1])}</li>`);
+      continue;
+    }
+    if (raw.trim() === "") {
+      closeList();
+      continue;
+    }
+    closeList();
+    out.push(`<p>${inline(raw)}</p>`);
+  }
+  if (inCode) out.push("</code></pre>");
+  closeList();
+  return out.join("\n");
+}
+
+/** Inline formatting on an escaped string: code, bold, italic, then [L<n>] jump links. */
+function inline(s: string): string {
+  let t = esc(s);
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  // [L12] or [L12-20] or bare L12 → a clickable jump to the first line.
+  t = t.replace(/\[?L(\d+)(?:-\d+)?\]?/g, (_m, n) => `<a class="explain-jump" data-line="${n}">L${n}</a>`);
+  return t;
+}

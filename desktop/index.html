@@ -200,12 +200,24 @@
               <div class="editor-topbar">
                 <div id="ws-tabs" class="tabs"></div>
                 <div class="panel-actions">
+                  <button id="ws-btn-explain" class="btn btn-secondary" title="Explain this file — AI summary with jump links"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 9a2.5 2.5 0 1 1 3 2.4c-.9.3-1.5 1-1.5 2.1"/><path d="M11 17h.01"/><circle cx="12" cy="12" r="9"/></svg><span>Explain</span></button>
+                  <button id="ws-btn-review" class="btn btn-secondary" title="Code Review — offline analysis"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 11l2 2 4-4"/></svg><span>Review</span></button>
+                  <button id="ws-btn-debug" class="btn btn-secondary" title="Run and Debug — step through a real trace"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0"/><rect x="6" y="8" width="12" height="10" rx="6"/><path d="M12 12v6M6 11H3M6 15H3.2M18 11h3M18 15h2.8M7.3 8 5.3 6M16.7 8l2-2"/></svg><span>Debug</span></button>
                   <button id="ws-btn-save" class="btn btn-secondary" title="Save (Ctrl+S)" data-i18n="ws.save" data-i18n-title="ws.saveTitle">Save</button>
                   <button id="ws-btn-saveall" class="btn btn-secondary" title="Save all modified files" data-i18n="ws.saveAll" data-i18n-title="ws.saveAllTitle">Save All</button>
                   <button id="ws-btn-run" class="btn btn-primary" title="Run the active file" data-i18n-title="ws.runTitle"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span data-i18n="ws.run">Run</span></button>
                 </div>
               </div>
               <div id="ws-editor" class="editor"></div>
+              <aside id="explain-panel" class="explain-panel hidden" aria-label="Code explanation">
+                <header class="explain-hdr">
+                  <span class="explain-title">Explain</span>
+                  <span id="explain-file" class="explain-file"></span>
+                  <button id="explain-refresh" class="icon-btn" title="Re-explain">&#8635;</button>
+                  <button id="explain-close" class="icon-btn" title="Close">&#10005;</button>
+                </header>
+                <div id="explain-body" class="explain-body"></div>
+              </aside>
               <div id="ws-welcome" class="ws-welcome">
                 <div class="ws-welcome-inner">
                   <div class="ws-welcome-brand">

@@ -28,7 +28,7 @@ import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler, createLaunchJson } from "./workspace";
+import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler, createLaunchJson, activeFilePath, currentFileContent, langForFile } from "./workspace";
 import { initReview, openReview } from "./review";
 import { initCodeMap, openCodeMap } from "./codemap";
 import { initTests, openTests } from "./tests";
@@ -36,6 +36,7 @@ import { initSearch, openSearch } from "./search";
 import { initQuickOpen } from "./quickopen";
 import { initGit, openGit, refreshGitBranch } from "./git";
 import { initRemote, openRemote } from "./remote";
+import { initExplain, explainFile } from "./explain";
 import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3668,6 +3669,20 @@ async function main() {
     ensureWorkspaceMode: () => setMode("workspace"),
     openSessionTerminal: (root) => void attachSessionTerminal(root),
   }); // Remote / Dev Containers
+  initExplain(); // AI code-summary panel
+
+  // Workspace editor actions: Explain (AI summary), Review, Debug.
+  const explainActive = () => {
+    const path = activeFilePath();
+    if (!path) return;
+    const code = currentFileContent(path);
+    if (code == null) return;
+    const name = path.split(/[\\/]/).pop() ?? path;
+    void explainFile(path, code, langForFile(name), name);
+  };
+  $("#ws-btn-explain").addEventListener("click", explainActive);
+  $("#ws-btn-review").addEventListener("click", () => openReview());
+  $("#ws-btn-debug").addEventListener("click", () => openDebug());
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing
