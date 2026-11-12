@@ -27,6 +27,31 @@ Inferir a complexidade (Big-O) de código arbitrário é **indecidível** em ger
 Os agentes de engenharia que modificam o repositório são distintos do tutor dentro da
 IDE: as permissões de um não se tornam, por herança, as do outro.
 
+## IDE de código (modo Projecto)
+
+Em *Projecto* a casca desktop aproxima-se da experiência VSCode / Antigravity, mantendo
+os contratos de honestidade acima:
+
+- **Casca** — ecrã de boas-vindas (abrir pasta / clonar / espaços recentes), *activity bar*
+  com cada ícone a abrir a sua vista, *command palette* (`Ctrl+Shift+P`), e vistas que
+  **substituem a sidebar** (não flutuam).
+- **Editor** — Monaco multi-aba, *go-to-definition* resolvido por LSP, CodeMap sintáctico.
+- **Git** — *Source Control* real: *stage/unstage*, *commit*, troca/criação de *branch*, e um
+  **grafo de commits multi-faixa** (DAG) com diff por commit.
+- **Run and Debug** — *breakpoints* no *gutter* do editor: **resilientes à edição** (ancorados
+  em decorações do modelo), **condicionais** (`Alt+clique`, avaliados contra as variáveis do
+  passo), **persistentes** entre sessões, com um **painel** (lista / activar / remover / salto).
+- **Remote / Dev Containers** — detecta/cria `devcontainer.json`, **abre no contentor** uma
+  **sessão persistente** (constrói do `Dockerfile` se preciso), com **terminal interactivo**
+  (PTY), *Run* e **LSP** a correr **dentro** do contentor, e um indicador na barra de estado
+  para reatar.
+- **Explain** — resumo de código gerado pela IA, organizado (visão geral + secção por
+  símbolo), em **aba real** com **divisão lado-a-lado** código\|resumo (divisor arrastável),
+  **em streaming**, para um ficheiro ou uma **pasta/módulo**. As âncoras `[L<n>]` e os saltos
+  usam o **outline real** (documentSymbol via LSP → AST do Rust → heurística Py/Go/JS/TS).
+- **Dev Assistant (Agent)** — focado no **projecto seleccionado**, com *templates* de *prompt*
+  (`/`) que o programador preenche; assiste a intenção do *dev*, não a define.
+
 ## Estrutura
 
 | Crate / pasta       | Papel                                                                |
