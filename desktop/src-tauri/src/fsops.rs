@@ -271,35 +271,25 @@ fn run_file_container(file: &Path, ext: &str) -> Result<RunResult, String> {
         }
         "rs" => {
             let image = image_for("rust").ok_or("no rust image configured")?;
-            let start = file.parent().unwrap_or_else(|| Path::new("."));
-            if let Some(root) = cargo_root(start) {
-                // Inside a Cargo project: mount the root and `cargo run`.
-                let mut s =
-                    ContainerSpec::new(image, root, vec!["cargo".into(), "run".into()]);
-                s.timeout = CONTAINER_RUN_TIMEOUT;
-                s.cache_volumes = cache_volumes_for("rust");
-                s.network = true;
-                s
-            } else {
-                // Standalone single file: rustc then run the produced binary.
-                let name = file
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("main.rs");
-                let script = format!(
-                    "rustc {name} -o /tmp/dxtutor-prog && /tmp/dxtutor-prog",
-                    name = shell_single_quote(name)
-                );
-                let mut s = ContainerSpec::new(
-                    image,
-                    start,
-                    vec!["sh".into(), "-c".into(), script],
-                );
-                s.timeout = CONTAINER_RUN_TIMEOUT;
-                s.cache_volumes = cache_volumes_for("rust");
-                s.network = true;
-                s
-            }
+            let start = file.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+            let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("main.rs");
+            // `cargo run` ONLY for a crate's real bin entry; a loose file (example/snippet)
+            // compiles standalone with rustc — so a multi-binary workspace never makes
+            // `cargo run` ambiguous.
+            let (mount, cmd): (PathBuf, Vec<String>) = cargo_root(&start)
+                .and_then(|root| cargo_run_cmd(file, &root).map(|c| (root, c)))
+                .unwrap_or_else(|| {
+                    let script = format!(
+                        "rustc {name} -o /tmp/dxtutor-prog && /tmp/dxtutor-prog",
+                        name = shell_single_quote(name)
+                    );
+                    (start.clone(), vec!["sh".into(), "-c".into(), script])
+                });
+            let mut s = ContainerSpec::new(image, &mount, cmd);
+            s.timeout = CONTAINER_RUN_TIMEOUT;
+            s.cache_volumes = cache_volumes_for("rust");
+            s.network = true;
+            s
         }
         "go" => {
             let image = image_for("go").ok_or("no go image configured")?;
@@ -348,9 +338,12 @@ fn shell_single_quote(s: &str) -> String {
 fn run_rust(file: &Path) -> Result<RunResult, String> {
     let start = file.parent().unwrap_or_else(|| Path::new("."));
     if let Some(root) = cargo_root(start) {
-        let mut cmd = Command::new("cargo");
-        cmd.arg("run").current_dir(&root);
-        return run_guarded(cmd);
+        if let Some(argv) = cargo_run_cmd(file, &root) {
+            let mut cmd = Command::new(&argv[0]);
+            cmd.args(&argv[1..]).current_dir(&root);
+            return run_guarded(cmd);
+        }
+        // Loose file inside a workspace → fall through to standalone `rustc` below.
     }
 
     // Standalone single file: rustc then run the produced binary.
@@ -388,6 +381,23 @@ fn cargo_root(start: &Path) -> Option<PathBuf> {
             None => return None,
         }
     }
+}
+
+/// The `cargo` argv to run `file` ONLY when it is a crate's real binary entry
+/// (`<root>/src/main.rs`, or `<root>/src/bin/<name>.rs`). A LOOSE file — a teaching
+/// snippet, an `examples/…/main.rs` — returns `None`, so the caller compiles it standalone
+/// with `rustc`. This is what a tutor wants (run THIS file), and it stops a bare
+/// `cargo run` from being ambiguous in a multi-binary workspace (the delonix-runtime bug).
+fn cargo_run_cmd(file: &Path, root: &Path) -> Option<Vec<String>> {
+    if file == root.join("src/main.rs") {
+        return Some(vec!["cargo".into(), "run".into()]);
+    }
+    if file.starts_with(root.join("src/bin")) {
+        if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
+            return Some(vec!["cargo".into(), "run".into(), "--bin".into(), stem.into()]);
+        }
+    }
+    None
 }
 
 /// Run `cmd` with its own process group, stdout/stderr spooled to temp files
