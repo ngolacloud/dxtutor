@@ -932,7 +932,23 @@ let rangeStream: {
   startLine: number;
   curEndLine: number; // moves as the generated text grows/shrinks
   original: string; // the block's original text, to restore on empty/error
+  deco: monaco.editor.IEditorDecorationsCollection; // live highlight on the block
 } | null = null;
+
+/** Paint the "AI is writing here" highlight over the block's current line range. */
+function paintRangeHighlight(): void {
+  if (!rangeStream) return;
+  rangeStream.deco.set([
+    {
+      range: new monaco.Range(rangeStream.startLine, 1, rangeStream.curEndLine, 1),
+      options: {
+        isWholeLine: true,
+        className: "dx-streaming-block", // tinted background
+        linesDecorationsClassName: "dx-streaming-gutter", // animated left bar
+      },
+    },
+  ]);
+}
 
 /** Begin streaming a replacement into lines `[startLine..endLine]` (1-based, inclusive) of
  *  `path`'s editor tab. Opens the file, clamps the range to the buffer, and opens one undo
@@ -950,7 +966,8 @@ export async function beginRangeStream(
   const sl = Math.max(1, Math.min(startLine, max));
   const el = Math.max(sl, Math.min(endLine, max));
   const original = model.getValueInRange(new monaco.Range(sl, 1, el, model.getLineMaxColumn(el)));
-  rangeStream = { model: tab.model, startLine: sl, curEndLine: el, original };
+  rangeStream = { model: tab.model, startLine: sl, curEndLine: el, original, deco: wsEditor.createDecorationsCollection([]) };
+  paintRangeHighlight(); // highlight the block so the dev sees where the AI is writing
   wsEditor.pushUndoStop();
   return true;
 }
@@ -962,11 +979,14 @@ export function pushRangeStream(text: string): void {
   const endCol = model.getLineMaxColumn(curEndLine);
   model.pushEditOperations([], [{ range: new monaco.Range(startLine, 1, curEndLine, endCol), text }], () => null);
   rangeStream.curEndLine = startLine + text.split("\n").length - 1; // track the moved end
+  paintRangeHighlight(); // follow the block as it grows, live
+  wsEditor?.revealLineInCenterIfOutsideViewport(rangeStream.curEndLine); // keep the edit in view
 }
 
-/** Finish the localized stream: close the undo group and reveal the block. */
+/** Finish the localized stream: close the undo group, clear the highlight, reveal the block. */
 export function endRangeStream(): void {
   if (rangeStream && wsEditor) {
+    rangeStream.deco.clear();
     wsEditor.pushUndoStop();
     wsEditor.focus();
     wsEditor.revealLineInCenterIfOutsideViewport(rangeStream.startLine);
