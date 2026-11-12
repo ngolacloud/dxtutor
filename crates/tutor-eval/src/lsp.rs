@@ -205,6 +205,39 @@ fn read_msg(reader: &mut impl BufRead) -> Option<Value> {
     serde_json::from_slice(&buf).ok()
 }
 
+/// Convert a `file://` URI to a filesystem path, percent-decoding it (rust-analyzer
+/// returns e.g. `file:///home/my%20project/src/lib.rs` for paths with spaces/accents).
+pub fn uri_to_path(uri: &str) -> String {
+    percent_decode(uri.strip_prefix("file://").unwrap_or(uri))
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn hex(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 /// Normalise a definition/references result (`Location`, `Location[]`, or `LocationLink[]`)
 /// into our `Location`s.
 fn parse_locations(result: &Value) -> Vec<Location> {
@@ -252,6 +285,14 @@ mod tests {
 
         assert!(parse_locations(&Value::Null).is_empty());
         assert!(parse_locations(&json!([])).is_empty());
+    }
+
+    #[test]
+    fn uri_to_path_decodes_percent_escapes() {
+        assert_eq!(uri_to_path("file:///home/u/src/a.rs"), "/home/u/src/a.rs");
+        assert_eq!(uri_to_path("file:///home/my%20project/a.rs"), "/home/my project/a.rs");
+        assert_eq!(uri_to_path("file:///p/a%C3%A7%C3%A3o.rs"), "/p/ação.rs"); // UTF-8 bytes
+        assert_eq!(uri_to_path("/already/plain"), "/already/plain");
     }
 
     #[test]

@@ -1035,7 +1035,7 @@ async fn resolve_definition(
             col.saturating_sub(1),
             text.as_deref(),
         )?;
-        let path = loc.uri.strip_prefix("file://").unwrap_or(&loc.uri).to_string();
+        let path = tutor_eval::lsp::uri_to_path(&loc.uri);
         Some(ResolvedDef { file: path, line: loc.line + 1, col: loc.character + 1 })
     })
     .await
@@ -1062,7 +1062,7 @@ async fn resolve_references(
         )
         .into_iter()
         .map(|loc| ResolvedDef {
-            file: loc.uri.strip_prefix("file://").unwrap_or(&loc.uri).to_string(),
+            file: tutor_eval::lsp::uri_to_path(&loc.uri),
             line: loc.line + 1,
             col: loc.character + 1,
         })
