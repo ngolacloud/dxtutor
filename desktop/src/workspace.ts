@@ -115,6 +115,41 @@ export function closeExplainTab(): void {
   closeTab(EXPLAIN_TAB);
 }
 
+// ── Breakpoints ────────────────────────────────────────────────────────────
+// Line breakpoints per file, set by clicking the editor glyph margin. The debugger
+// (tracer) seeds its stops from the active file's set (see debugTarget()).
+const breakpoints = new Map<string, Set<number>>();
+let bpDeco: monaco.editor.IEditorDecorationsCollection | null = null;
+
+function bpSet(path: string): Set<number> {
+  let s = breakpoints.get(path);
+  if (!s) {
+    s = new Set();
+    breakpoints.set(path, s);
+  }
+  return s;
+}
+
+function toggleBreakpoint(path: string, line: number): void {
+  const s = bpSet(path);
+  if (s.has(line)) s.delete(line);
+  else s.add(line);
+  renderBreakpoints();
+}
+
+/** Paint the breakpoint glyphs for the active file onto the editor. */
+function renderBreakpoints(): void {
+  if (!wsEditor) return;
+  if (!bpDeco) bpDeco = wsEditor.createDecorationsCollection([]);
+  const s = activeTabPath && activeTabPath !== EXPLAIN_TAB ? breakpoints.get(activeTabPath) : null;
+  bpDeco.set(
+    [...(s ?? [])].map((line) => ({
+      range: new monaco.Range(line, 1, line, 1),
+      options: { glyphMarginClassName: "ws-bp-glyph", stickiness: 1 },
+    })),
+  );
+}
+
 // ── DOM helpers ──────────────────────────────────────────────────────────────
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T =>
@@ -462,6 +497,7 @@ function setActiveTab(path: string) {
   $("#ws-welcome").classList.add("hidden");
   saveOpenTabs();
   renderTabs();
+  renderBreakpoints(); // breakpoints are per-file — repaint for the newly active file
   highlightActiveRow();
   requestAnimationFrame(() => {
     wsEditor?.layout();
@@ -803,6 +839,17 @@ export function initWorkspace() {
     scrollBeyondLastLine: false,
     padding: { top: 10 },
     tabSize: 4,
+    glyphMargin: true, // breakpoint dots live here
+  });
+
+  // Click the glyph margin / line-number to toggle a breakpoint on that line (VSCode-style).
+  // Debug (the tracer) stops at these lines.
+  wsEditor.onMouseDown((e) => {
+    const t = monaco.editor.MouseTargetType;
+    if (e.target.type === t.GUTTER_GLYPH_MARGIN || e.target.type === t.GUTTER_LINE_NUMBERS) {
+      const line = e.target.position?.lineNumber;
+      if (line && activeTabPath && activeTabPath !== EXPLAIN_TAB) toggleBreakpoint(activeTabPath, line);
+    }
   });
 
   // Ctrl+S inside the editor saves the active tab.
@@ -1007,6 +1054,7 @@ function debugTarget(): DebugTarget | null {
     title: tab.name,
     monacoLang: langForFile(tab.name),
     traceLang: traceLangForFile(tab.name),
+    breakpoints: [...bpSet(tab.path)].sort((a, b) => a - b),
   };
 }
 

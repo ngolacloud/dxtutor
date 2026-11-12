@@ -51,6 +51,7 @@ export interface DebugTarget {
   title: string; // header label (file name or step title)
   monacoLang: string; // monaco language id for syntax highlighting
   traceLang: string; // language passed to trace_execution ("python" | "rust" | …)
+  breakpoints?: number[]; // lines pre-set in the editor gutter (seed the debugger)
 }
 export interface DebugContext {
   getTarget: () => DebugTarget | null;
@@ -298,6 +299,11 @@ export function openDebug() {
   if (codeChanged) {
     breakpoints.clear();
     stopSession(); // clears the run state + decorations
+  }
+  // Seed from breakpoints set in the editor gutter, so clicking the margin and pressing
+  // Debug stops exactly there.
+  if (target.breakpoints) {
+    for (const line of target.breakpoints) breakpoints.add(line);
   }
 
   $("#dbg-target-name").textContent = target.title || "Current code";
