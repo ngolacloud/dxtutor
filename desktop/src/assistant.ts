@@ -11,6 +11,7 @@ import {
   beginEditorStream,
   currentFileContent,
   endEditorStream,
+  isDirty,
   pushEditorStream,
   revealPath,
   workspaceRoot,
@@ -132,8 +133,12 @@ export function initAssistant(): void {
       const idx = streamingIdx; // the assistant message that just completed
       finishStream();
       // Dev delegate: as soon as the plan is in and it carries a dxcode, start writing the
-      // code live into the editor — no extra click. Stop / Ctrl+Z keep the developer in control.
-      if (idx >= 0 && parseCodeDirective(messages[idx]?.content ?? "") && !writeState.has(idx)) {
+      // code live into the editor — no extra click. Stop / Ctrl+Z keep the developer in
+      // control. EXCEPTION: if the target file has unsaved edits, don't silently overwrite
+      // them — fall through to the button so the developer decides.
+      const dc = idx >= 0 ? parseCodeDirective(messages[idx]?.content ?? "") : null;
+      const abs = dc ? codeTargetAbs(dc.file) : null;
+      if (dc && !writeState.has(idx) && !(abs && isDirty(abs))) {
         void startCodeStream(idx);
       }
     }
@@ -373,6 +378,12 @@ function stripFences(s: string): string {
   return close >= 0 ? body.slice(0, close) : body;
 }
 
+/** Absolute path of a dxcode target, resolved under the workspace root. */
+function codeTargetAbs(file: string): string | null {
+  const root = workspaceRoot();
+  return root ? `${root.replace(/\/$/, "")}/${file.replace(/^\.?\//, "")}` : null;
+}
+
 /** Dev delegate: stream the generated file content LIVE into the editor tab. The chat
  *  keeps the plan; the code is built in the real buffer (undoable, interruptible). */
 async function startCodeStream(idx: number): Promise<void> {
@@ -380,7 +391,7 @@ async function startCodeStream(idx: number): Promise<void> {
   const dir = parseCodeDirective(messages[idx]?.content ?? "");
   const root = workspaceRoot();
   if (!dir || !root) return;
-  const abs = `${root.replace(/\/$/, "")}/${dir.file.replace(/^\.?\//, "")}`;
+  const abs = codeTargetAbs(dir.file)!;
   const ok = await beginEditorStream(abs);
   if (!ok) {
     actionErrors.set(idx, "could not open the target file in the editor");
@@ -563,8 +574,13 @@ function renderMessages(): void {
           } else if (state === "done") {
             card = `<div class="as-action done">✓ Wrote <code>${esc(code.file)}</code> in the editor — review, edit and save it.</div>`;
           } else {
+            const abs = codeTargetAbs(code.file);
+            const dirty = abs ? isDirty(abs) : false;
             card =
               `<div class="as-action"><div class="as-action-h">✍️ Write <code>${esc(code.file)}</code> directly in the editor</div>` +
+              (dirty
+                ? `<div class="as-action-sub">⚠ This file has unsaved changes — writing replaces them (undoable with Ctrl+Z).</div>`
+                : "") +
               `<div class="as-action-btns"><button class="as-write" data-idx="${i}">Write in editor</button><button class="as-reject" data-idx="${i}">Dismiss</button></div>` +
               (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
               `</div>`;

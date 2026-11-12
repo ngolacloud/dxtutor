@@ -857,6 +857,12 @@ export function currentFileContent(path: string): string | null {
   return tab ? tab.model.getValue() : null;
 }
 
+/** True when `path` is open with unsaved edits (buffer differs from last-saved). */
+export function isDirty(path: string): boolean {
+  const tab = tabByPath(path);
+  return !!tab && tab.model.getValue() !== tab.saved;
+}
+
 /** Replace the ENTIRE content of `path` with `content`, as one undoable edit. */
 export async function replaceFileContent(path: string, content: string): Promise<boolean> {
   await openFileAt(path, 1, 1);
