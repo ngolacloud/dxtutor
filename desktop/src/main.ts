@@ -38,7 +38,7 @@ import { initGit, openGit, refreshGitBranch } from "./git";
 import { initRemote, openRemote, setSessionChangeHandler } from "./remote";
 import { initExplain, explainFile, explainFolder } from "./explain";
 import { workspaceRoot, showTestOutput } from "./workspace";
-import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint, setSettingsHandler, activeModelLabel } from "./assistant";
+import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint, setSettingsHandler, activeModelLabel, setPlanCompleteHandler } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
 import { t, initI18n, getLocale, setLocale, onLocaleChange, type Locale } from "./i18n";
@@ -3791,6 +3791,8 @@ async function main() {
     }
   };
   runProjectTestsRef = runProjectTests; // exposed to the command palette below
+  // Autonomous loop: when the Agent's plan finishes its steps, verify by running the tests.
+  setPlanCompleteHandler(() => void runProjectTests());
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing

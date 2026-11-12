@@ -114,6 +114,12 @@ interface Plan {
 }
 const plans = new Map<number, Plan>(); // message idx → plan
 let activePlanIdx = -1;
+// When a plan finishes its action steps, auto-run the verify step (project tests) — the
+// "verify" of observe→plan→act→verify. Wired by main.ts to run_tests.
+let onPlanComplete: () => void = () => {};
+export function setPlanCompleteHandler(fn: () => void): void {
+  onPlanComplete = fn;
+}
 
 /** Extract a `dxplan` directive ({title, steps[]}) from an assistant message, if valid. */
 function parsePlanDirective(text: string): { title: string; steps: string[] } | null {
@@ -135,7 +141,12 @@ function advancePlan(): void {
   const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
   if (!p || p.done) return;
   p.current += 1;
-  if (p.current >= p.steps.length) p.done = true;
+  if (p.current >= p.steps.length) {
+    p.done = true;
+    renderMessages();
+    onPlanComplete(); // all steps done → auto-verify (run the project tests)
+    return;
+  }
   renderMessages();
 }
 
