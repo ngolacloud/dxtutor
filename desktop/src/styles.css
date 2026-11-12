@@ -471,24 +471,23 @@ body.term-open #terminal-panel {
   display: grid;
 }
 
-/* Explain panel: a read-first AI summary docked parallel to the code (right side of the
-   workspace editor), with [L<n>] links that jump to the code. */
+/* Explain view: a read-first AI summary shown as a REAL tab — it occupies the editor area
+   (beside the code tabs), with [L<n>] links that jump to the code. */
 #ws-editor-region { position: relative; }
 .explain-panel {
   position: absolute;
   top: 35px; /* below the editor topbar */
+  left: 0;
   right: 0;
   bottom: 0;
-  width: 42%;
-  min-width: 320px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-sidebar);
-  border-left: 1px solid var(--border-strong);
-  box-shadow: -8px 0 20px rgba(0, 0, 0, 0.25);
+  background: var(--bg-editor);
   z-index: 25;
 }
 .explain-panel.hidden { display: none; }
+/* Explain tab accent (lightbulb). */
+.ws-tab.explain-tab .ws-tab-name { font-style: italic; }
 .explain-hdr { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--seam); }
 .explain-title { font-weight: 600; letter-spacing: 0.3px; color: var(--fg-dim); }
 .explain-file { flex: 1; font-family: var(--font-mono); font-size: 11px; color: var(--fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

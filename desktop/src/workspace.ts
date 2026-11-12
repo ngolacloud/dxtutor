@@ -98,6 +98,23 @@ const tabs: Tab[] = [];
 let activeTabPath: string | null = null;
 let applyingModel = false; // guard: suppress dirty updates during programmatic swaps
 
+// The Explain view is a REAL tab (sentinel path) that occupies the editor area when active,
+// sitting in the tab bar beside the file tabs. `explainTab` holds its label when present.
+const EXPLAIN_TAB = "__explain__";
+let explainTab: { name: string } | null = null;
+
+/** Open (or focus) the Explain tab, labelled for `name`. Called by the Explain action once
+ *  the summary has been rendered into #explain-body. */
+export function openExplainTab(name: string): void {
+  explainTab = { name };
+  setActiveTab(EXPLAIN_TAB);
+}
+
+/** Close the Explain tab (from its panel header or the tab's ✕). */
+export function closeExplainTab(): void {
+  closeTab(EXPLAIN_TAB);
+}
+
 // ── DOM helpers ──────────────────────────────────────────────────────────────
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T =>
@@ -363,13 +380,13 @@ async function refreshDir(dir: string) {
 
 function renderTabs() {
   const host = $("#ws-tabs");
-  if (!tabs.length) {
+  if (!tabs.length && !explainTab) {
     host.innerHTML = "";
     $("#ws-welcome").classList.toggle("hidden", rootPath != null);
     return;
   }
   $("#ws-welcome").classList.add("hidden");
-  host.innerHTML = tabs
+  let html = tabs
     .map((t) => {
       const dirty = t.model.getValue() !== t.saved;
       const active = t.path === activeTabPath;
@@ -383,6 +400,15 @@ function renderTabs() {
       );
     })
     .join("");
+  if (explainTab) {
+    const active = activeTabPath === EXPLAIN_TAB;
+    html +=
+      `<div class="tab ws-tab explain-tab${active ? " active" : ""}" data-tab="${EXPLAIN_TAB}" title="Explain: ${esc(explainTab.name)}">` +
+      `<span class="file-icon">💡</span>` +
+      `<span class="ws-tab-name">Explain: ${esc(explainTab.name)}</span>` +
+      `<span class="ws-tab-close" data-close="${EXPLAIN_TAB}" title="Close">✕</span></div>`;
+  }
+  host.innerHTML = html;
 }
 
 function tabByPath(path: string): Tab | undefined {
@@ -415,9 +441,21 @@ async function restoreTabs(root: string) {
 }
 
 function setActiveTab(path: string) {
+  // Explain tab: take over the editor area (show the summary panel, hide Monaco).
+  if (path === EXPLAIN_TAB) {
+    if (!explainTab) return;
+    activeTabPath = EXPLAIN_TAB;
+    $("#ws-welcome").classList.add("hidden");
+    $("#ws-editor").classList.add("hidden");
+    $("#explain-panel").classList.remove("hidden");
+    renderTabs();
+    return;
+  }
   const tab = tabByPath(path);
   if (!tab || !wsEditor) return;
   activeTabPath = path;
+  $("#explain-panel").classList.add("hidden"); // leaving Explain → show the code again
+  $("#ws-editor").classList.remove("hidden");
   applyingModel = true;
   wsEditor.setModel(tab.model);
   applyingModel = false;
@@ -454,6 +492,23 @@ async function openFile(path: string) {
 }
 
 function closeTab(path: string) {
+  // Close the Explain tab: drop it and fall back to a file tab (or empty).
+  if (path === EXPLAIN_TAB) {
+    explainTab = null;
+    $("#explain-panel").classList.add("hidden");
+    if (activeTabPath === EXPLAIN_TAB) {
+      activeTabPath = null;
+      const next = tabs[tabs.length - 1];
+      if (next) setActiveTab(next.path);
+      else {
+        $("#ws-editor").classList.remove("hidden");
+        renderTabs();
+      }
+    } else {
+      renderTabs();
+    }
+    return;
+  }
   const idx = tabs.findIndex((t) => t.path === path);
   if (idx < 0) return;
   const tab = tabs[idx];

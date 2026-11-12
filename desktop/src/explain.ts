@@ -4,7 +4,7 @@
 // straight to that part of the code. Helps a dev understand third-party code fast.
 
 import { invoke } from "@tauri-apps/api/core";
-import { openFileAt } from "./workspace";
+import { openFileAt, openExplainTab, closeExplainTab } from "./workspace";
 
 interface ChatReply {
   content: string;
@@ -19,7 +19,7 @@ let lastReq: { path: string; code: string; lang: string; name: string } | null =
 let busy = false;
 
 export function initExplain(): void {
-  $("#explain-close").addEventListener("click", () => $("#explain-panel").classList.add("hidden"));
+  $("#explain-close").addEventListener("click", () => closeExplainTab());
   $("#explain-refresh").addEventListener("click", () => {
     if (lastReq) void explainFile(lastReq.path, lastReq.code, lastReq.lang, lastReq.name);
   });
@@ -35,10 +35,9 @@ export async function explainFile(path: string, code: string, lang: string, name
   if (busy) return;
   currentPath = path;
   lastReq = { path, code, lang, name };
-  const panel = $("#explain-panel");
-  panel.classList.remove("hidden");
   $("#explain-file").textContent = name;
   $("#explain-body").innerHTML = `<div class="explain-loading">Reading ${esc(name)} and writing a summary…</div>`;
+  openExplainTab(name); // open as a real tab in the editor area
 
   // Number the lines so the model can reference exact positions as [L<n>].
   const numbered = code
