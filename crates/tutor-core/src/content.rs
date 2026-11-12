@@ -7,12 +7,14 @@
 use crate::model::Project;
 
 const RUST_WORD_FREQUENCY: &str = include_str!("../content/rust-word-frequency.toml");
+const RUST_COUNT_CHARS: &str = include_str!("../content/rust-count-chars.toml");
 const JS_TEXT_METRICS: &str = include_str!("../content/js-text-metrics.toml");
 
 /// Todos os projectos-tutor embebidos.
 pub fn builtin_projects() -> Vec<Project> {
     vec![
         parse("rust-word-frequency", RUST_WORD_FREQUENCY),
+        parse("rust-count-chars", RUST_COUNT_CHARS),
         parse("js-text-metrics", JS_TEXT_METRICS),
     ]
 }
@@ -55,5 +57,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Secção 4: o cenário "contar caracteres" existe e ancora a sua lição honesta no
+    /// contra-exemplo bytes-vs-escalares — uma solução que conta bytes devolveria 5 para
+    /// "ação", por isso o teste tem de exigir 4.
+    #[test]
+    fn contar_caracteres_ancora_o_contra_exemplo_unicode() {
+        let p = load_project("rust-count-chars").expect("projecto count-chars embebido");
+        let phase = &p.phases[0];
+        assert_eq!(phase.entry, "count_chars");
+        assert_eq!(phase.language, "rust"); // herdada do projecto
+        // O teste oculto exige a contagem por valores escalares (4), não por bytes (5).
+        assert!(
+            phase.tests.contains("count_chars(\"ação\"), 4"),
+            "falta o contra-exemplo bytes-vs-escalares"
+        );
+        // O gabarito usa a via honesta (chars), não .len() (bytes).
+        assert!(phase.gabarito.solution.contains(".chars().count()"));
+        assert!(!phase.gabarito.solution.contains(".len()"));
     }
 }

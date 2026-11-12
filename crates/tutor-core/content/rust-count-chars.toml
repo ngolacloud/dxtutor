@@ -1,0 +1,97 @@
+id = "rust-count-chars"
+language = "rust"
+title = "Contar Caracteres (bytes vs Unicode)"
+summary = """
+O primeiro cenário verificável do percurso Rust: contar caracteres. Parece
+trivial, mas esconde a diferença entre **bytes** e **valores escalares Unicode**.
+Uma solução que conta bytes passa em `"casa"` e falha em `"ação"`. Aqui aprendes
+a contar o que um humano chama «caracteres» — de forma honesta.
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FASE 1 — Contar caracteres (valores escalares Unicode)
+# ─────────────────────────────────────────────────────────────────────────────
+[[phase]]
+id = "p1-count-chars"
+title = "Fase 1 — Contar caracteres, não bytes"
+level = "básico"
+entry = "count_chars"
+instructions = """
+## Objectivo
+
+Implementa `count_chars`, que recebe um texto e devolve **quantos caracteres**
+tem — onde «caractere» significa **valor escalar Unicode** (o que o tipo `char`
+do Rust representa).
+
+- `"casa"` → `4`
+- `"ação"` → `4`  (atenção: são **5 bytes** em UTF-8, mas **4** caracteres)
+- `"Rust 🦀"` → `6`  (o emoji conta como **um** caractere, não como 4 bytes)
+- `""` → `0`
+
+## A armadilha
+
+Em Rust, `&str` guarda texto em **UTF-8**. `input.len()` devolve o número de
+**bytes**, não de caracteres — e `'ç'`, `'ã'` ou `'🦀'` ocupam mais de um byte.
+Contar bytes dá a resposta certa só para texto ASCII. O que queres é percorrer os
+**valores escalares Unicode**.
+
+A eficiência e a referência discutimos no gabarito.
+"""
+starter = """
+pub fn count_chars(input: &str) -> usize {
+    todo!("conta os caracteres (valores escalares Unicode), não os bytes")
+}
+"""
+tests = """
+use student::count_chars;
+
+#[test]
+fn ascii_simples() {
+    assert_eq!(count_chars("casa"), 4);
+}
+
+#[test]
+fn acentos_contam_como_um() {
+    // "ação" tem 5 bytes em UTF-8 mas 4 caracteres. Contar bytes daria 5.
+    assert_eq!(count_chars("ação"), 4);
+}
+
+#[test]
+fn emoji_conta_como_um() {
+    // "Rust 🦀" = R u s t espaço 🦀 = 6 caracteres (o emoji são 4 bytes).
+    assert_eq!(count_chars("Rust 🦀"), 6);
+}
+
+#[test]
+fn vazio_e_zero() {
+    assert_eq!(count_chars(""), 0);
+}
+"""
+
+[phase.gabarito]
+time = "O(n)"
+space = "O(1)"
+solution = """
+pub fn count_chars(input: &str) -> usize {
+    // `chars()` descodifica o UTF-8 em valores escalares Unicode (`char`);
+    // `count()` consome o iterador uma vez. Percorre os bytes uma só vez → O(n).
+    input.chars().count()
+}
+"""
+justification = """
+`str::chars()` descodifica a sequência UTF-8 em **valores escalares Unicode**,
+avançando byte a byte mas emitindo um `char` por caractere. `count()` percorre o
+iterador uma única vez, logo o tempo é **O(n)** no comprimento em bytes do texto,
+e o espaço é **O(1)** (não acumula nada).
+
+**Porque é que contar bytes está errado:** `str::len()` devolve bytes. Em UTF-8,
+um valor escalar ocupa 1 a 4 bytes (`'a'`=1, `'ç'`/`'ã'`=2, `'🦀'`=4). Logo
+`"ação".len()` = 5 e `"Rust 🦀".len()` = 9 — contagens que não correspondem ao
+que um humano chama «caracteres».
+
+**Nota de honestidade:** nem «caractere» é um conceito único. Um valor escalar
+Unicode ainda não é um *grapheme cluster* percebido (ex.: `'e'` + acento
+combinante podem formar um só símbolo visual com dois escalares). Para a maioria
+dos casos, contar `char`s é a resposta correcta e honesta; contar *graphemes*
+exige a crate `unicode-segmentation` e é um passo posterior.
+"""
