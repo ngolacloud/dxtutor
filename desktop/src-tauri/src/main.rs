@@ -992,6 +992,21 @@ async fn run_all_tests(root: String) -> Result<tutor_eval::testnav::TestRun, Str
     .map_err(|e| format!("run_all_tests task failed: {e}"))
 }
 
+/// Section 5 (daily work): global literal search across the project at `root`. Returns up
+/// to `max` hits (file-relative). Offline, bounded; runs off the UI thread.
+#[tauri::command]
+async fn search_project(
+    root: String,
+    query: String,
+    max: Option<usize>,
+) -> Result<Vec<tutor_eval::search::SearchHit>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::search::search_project(std::path::Path::new(&root), &query, max.unwrap_or(500))
+    })
+    .await
+    .map_err(|e| format!("search task failed: {e}"))
+}
+
 /// Section 5 (DAP): what the host can really do for debugging. Honest — `available` is
 /// true only when a real DAP adapter is installed; otherwise the note points at the
 /// instrumentation tracer (Visualize) as the fallback. Detection only, starts nothing.
@@ -1175,6 +1190,7 @@ fn main() {
             list_tests,
             run_test,
             run_all_tests,
+            search_project,
             debug_capabilities,
             assistant_models,
             assistant_chat,

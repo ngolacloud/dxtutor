@@ -1,0 +1,126 @@
+//! Global text search across a real project (section 5 — daily work).
+//!
+//! A dependency-free, offline "find in files": literal, case-sensitive substring match
+//! over the project's text files, skipping heavy/VCS dirs and binary files. Bounded by a
+//! result cap so a huge repo or a common term can't flood the UI.
+
+use std::path::Path;
+
+use serde::Serialize;
+
+/// One match: the file (project-relative), 1-based line/column, and the (trimmed) line.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub file: String,
+    pub line: u32,
+    pub col: u32,
+    pub text: String,
+}
+
+const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "vendor", "dist", "__pycache__"];
+const MAX_FILE_BYTES: u64 = 1_048_576; // 1 MiB — skip anything bigger (likely generated/binary)
+const MAX_LINE: usize = 240; // trim very long lines in the result
+
+/// Search `root` for literal `query`, returning up to `max` hits (file-relative paths).
+/// An empty query returns nothing. Never panics.
+pub fn search_project(root: &Path, query: &str, max: usize) -> Vec<SearchHit> {
+    let mut out = Vec::new();
+    if query.is_empty() {
+        return out;
+    }
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let rd = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        for entry in rd.flatten() {
+            if out.len() >= max {
+                return out;
+            }
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            // Skip oversized/binary files cheaply.
+            if entry.metadata().map(|m| m.len() > MAX_FILE_BYTES).unwrap_or(true) {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c, // non-UTF-8 (binary) fails read_to_string → skipped
+                Err(_) => continue,
+            };
+            let rel = relative(root, &path);
+            for (i, line) in content.lines().enumerate() {
+                if let Some(col) = line.find(query) {
+                    out.push(SearchHit {
+                        file: rel.clone(),
+                        line: (i + 1) as u32,
+                        col: (col + 1) as u32,
+                        text: trim_line(line),
+                    });
+                    if out.len() >= max {
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn trim_line(line: &str) -> String {
+    let t = line.trim_end();
+    if t.chars().count() > MAX_LINE {
+        let s: String = t.chars().take(MAX_LINE).collect();
+        format!("{s}…")
+    } else {
+        t.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_literal_matches_with_location() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/a.rs"), "fn main() {\n    let needle = 1;\n}\n").unwrap();
+        std::fs::write(root.join("b.txt"), "no match here\nanother needle line\n").unwrap();
+        // A skipped dir must be ignored.
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        std::fs::write(root.join("target/x.rs"), "needle in build output\n").unwrap();
+
+        let hits = search_project(root, "needle", 100);
+        assert_eq!(hits.len(), 2, "hits: {hits:?}");
+        assert!(hits.iter().any(|h| h.file.ends_with("a.rs") && h.line == 2 && h.col == 9));
+        assert!(hits.iter().any(|h| h.file.ends_with("b.txt") && h.line == 2));
+        assert!(!hits.iter().any(|h| h.file.contains("target")), "build dir must be skipped");
+    }
+
+    #[test]
+    fn respects_the_cap_and_empty_query() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "x\nx\nx\nx\nx\n").unwrap();
+        assert_eq!(search_project(root, "x", 3).len(), 3);
+        assert!(search_project(root, "", 100).is_empty());
+    }
+}
