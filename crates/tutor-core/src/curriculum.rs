@@ -69,6 +69,12 @@ pub struct Unit {
     #[serde(default)]
     pub activity: String,
     pub evidence: EvidenceKind,
+    /// Critérios de avaliação (rubrica) — o que conta para o domínio.
+    #[serde(default)]
+    pub rubric: Vec<String>,
+    /// Pergunta de transferência: aplicar o aprendido a um caso inédito.
+    #[serde(default)]
+    pub transfer: String,
 }
 
 /// Um currículo completo adaptável a um programa.
@@ -118,6 +124,18 @@ impl Curriculum {
             self.competencies.iter().partition(|c| mastered.contains(&c.id));
         (done, todo)
     }
+}
+
+/// The curricula embedded in the binary (the pilot, for now).
+pub fn builtin_curricula() -> Vec<Curriculum> {
+    const CS_FOUNDATIONS: &str = include_str!("../content/curriculum-cs-foundations.toml");
+    vec![toml::from_str(CS_FOUNDATIONS)
+        .unwrap_or_else(|e| panic!("currículo inválido em curriculum-cs-foundations.toml: {e}"))]
+}
+
+/// Load a curriculum by id.
+pub fn load_curriculum(id: &str) -> Option<Curriculum> {
+    builtin_curricula().into_iter().find(|c| c.id == id)
 }
 
 #[cfg(test)]
@@ -187,5 +205,21 @@ mod tests {
         // The complexity lab is an empirical MEASUREMENT, never a proof (honesty contract).
         assert_eq!(c.unit("u2").unwrap().evidence, EvidenceKind::Measurement);
         assert_eq!(c.unit("u1").unwrap().evidence, EvidenceKind::Tests);
+    }
+
+    #[test]
+    fn pilot_curriculum_has_three_labs_with_rubric_and_transfer() {
+        let c = load_curriculum("cs-foundations").expect("embedded pilot");
+        // The three pilot labs, each with the right honest evidence kind.
+        assert_eq!(c.unit("lab.cs.compare").unwrap().evidence, EvidenceKind::Measurement);
+        assert_eq!(c.unit("lab.ce.memory").unwrap().evidence, EvidenceKind::Simulation);
+        assert_eq!(c.unit("lab.se.regression").unwrap().evidence, EvidenceKind::Tests);
+        // Every lab carries a rubric and a transfer question (RF-LT-03).
+        for u in &c.units {
+            assert!(!u.rubric.is_empty(), "{} has a rubric", u.id);
+            assert!(!u.transfer.is_empty(), "{} has a transfer question", u.id);
+        }
+        // Competencies map to CS2023 areas.
+        assert!(c.competency("c.cost").unwrap().cs2023.contains(&"AL".to_string()));
     }
 }

@@ -1,0 +1,80 @@
+# Currículo-piloto: fundações, com três laboratórios verticais (CS / CE / SE).
+# Mapeado a áreas de conhecimento do CS2023 (ACM/IEEE). A evidência distingue, honestamente,
+# medição empírica de simulação e de prova — nunca uma medição é apresentada como prova.
+
+id = "cs-foundations"
+title = "Fundações — piloto universitário"
+program = "computer-science"
+
+# ── Competências (resultados de aprendizagem) ──────────────────────────────
+[[competency]]
+id = "c.iteration"
+title = "Iteração e agregação sobre sequências"
+description = "Percorrer dados e acumular um resultado com custo linear."
+cs2023 = ["SDF"]          # Software Development Fundamentals
+
+[[competency]]
+id = "c.cost"
+title = "Análise de custo (complexidade)"
+description = "Estimar empiricamente a classe de custo e justificar a leitura."
+cs2023 = ["AL"]           # Algorithmic Foundations
+
+[[competency]]
+id = "c.memory"
+title = "Localidade e padrões de acesso à memória"
+description = "Prever e observar o efeito do padrão de acesso no desempenho."
+cs2023 = ["AR", "SF"]     # Architecture; Systems Fundamentals
+
+[[competency]]
+id = "c.regression"
+title = "Reproduzir, corrigir e proteger contra regressões"
+description = "Isolar um defeito com um teste que falha, corrigir, e justificar o teste."
+cs2023 = ["SE"]           # Software Engineering
+
+# ── Laboratório CS: comparar algoritmos e explicar o custo (MEDIÇÃO) ────────
+[[unit]]
+id = "lab.cs.compare"
+title = "CS — Comparar algoritmos e explicar o custo"
+objective = "Medir dois algoritmos correctos em tamanhos crescentes e ler a classe de custo."
+prerequisites = ["c.iteration"]
+develops = ["c.cost"]
+activity = "phase.top_k"
+evidence = "measurement"
+rubric = [
+  "Ambas as soluções passam os testes de correcção (fonte da verdade).",
+  "A sonda cronometra em n crescente e a classe é lida da medição (R²/expoente), rotulada como ESTIMATIVA.",
+  "A justificação não confunde medição com prova.",
+]
+transfer = "Dado um terceiro algoritmo inédito para o mesmo problema, prevê a classe antes de medir e confirma."
+
+# ── Laboratório CE: padrão de acesso à memória (SIMULAÇÃO/tracer) ───────────
+[[unit]]
+id = "lab.ce.memory"
+title = "CE — Prever e observar acessos à memória"
+objective = "Prever o efeito de percorrer uma matriz por linhas vs por colunas e observá-lo num tracer declarado."
+prerequisites = ["c.iteration"]
+develops = ["c.memory"]
+activity = "phase.matrix_traversal"
+evidence = "simulation"
+rubric = [
+  "Previsão escrita ANTES de observar (linhas vs colunas).",
+  "Observação num simulador/tracer DECLARADO (não hardware real não instrumentado).",
+  "A conclusão separa o que o modelo simula do que se provaria.",
+]
+transfer = "Para uma estrutura 3D, prevê qual ordem de iteração é mais amiga da cache e verifica no tracer."
+
+# ── Laboratório SE: reproduzir, corrigir, justificar o teste (TESTES) ───────
+[[unit]]
+id = "lab.se.regression"
+title = "SE — Reproduzir uma regressão, corrigir e proteger"
+objective = "Partir de um defeito, escrever o teste que o expõe, corrigir, e justificar porque o teste protege."
+prerequisites = ["c.iteration"]
+develops = ["c.regression"]
+activity = "phase.fix_bug"
+evidence = "tests"
+rubric = [
+  "Um teste NOVO que falha antes da correcção e passa depois (mostra a regressão).",
+  "A correcção é mínima e localizada ao defeito.",
+  "A justificação explica que invariante o teste fixa.",
+]
+transfer = "Encontra uma segunda entrada que também teria falhado e confirma que o teste a cobre."
