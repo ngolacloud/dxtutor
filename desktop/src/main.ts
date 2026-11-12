@@ -35,6 +35,7 @@ import { initTests, openTests } from "./tests";
 import { initSearch, openSearch } from "./search";
 import { initQuickOpen } from "./quickopen";
 import { initGit, openGit, refreshGitBranch } from "./git";
+import { initRemote, openRemote } from "./remote";
 import { initAssistant, openAssistant, startLocalizedEdit, startMethodEdit, addEntrypoint } from "./assistant";
 import { initEdit, startEdit } from "./edit";
 import { initDebug, openDebug, type DebugTarget } from "./debug";
@@ -3427,6 +3428,7 @@ function wireChrome() {
         search: "#search-overlay",
         tests: "#tests-overlay",
         debug: "#rundebug-overlay",
+        remote: "#remote-overlay",
       };
       if (view && view in LEFT_VIEWS) {
         const target = document.querySelector(LEFT_VIEWS[view])!;
@@ -3436,6 +3438,7 @@ function wireChrome() {
         if (view === "git") openGit();
         else if (view === "search") openSearch();
         else if (view === "tests") openTests();
+        else if (view === "remote") openRemote();
         else {
           setMode("workspace"); // Run and Debug view lives in the sidebar column
           target.classList.remove("hidden");
@@ -3523,7 +3526,8 @@ function initActiveViewIndicators() {
     search: "#search-overlay",
     tests: "#tests-overlay",
     review: "#review-overlay",
-    debug: "#debug-overlay",
+    debug: "#rundebug-overlay",
+    remote: "#remote-overlay",
     assistant: "#assistant-overlay",
     glossary: "#glossary-overlay",
     underhood: "#underhood-overlay",
@@ -3630,6 +3634,7 @@ async function main() {
       { label: "Request a hint", hint: "Action", run: () => { if (appMode !== "learning") setMode("learning"); void requestHint(); } },
       { label: "Search in project", hint: "View", run: () => openSearch() },
       { label: "Source Control (Git)", hint: "View", run: () => openGit() },
+      { label: "Remote: Dev Containers", hint: "View", run: () => openRemote() },
       { label: "Run and Debug", hint: "View", run: () => openDebug() },
       { label: "Tests", hint: "View", run: () => openTests() },
       { label: "Code Review", hint: "View", run: () => openReview() },
@@ -3641,6 +3646,7 @@ async function main() {
     ],
   }); // Ctrl+P quick-open · Ctrl+Shift+P command palette
   initGit({ ensureWorkspaceMode: () => setMode("workspace") }); // Git panel
+  initRemote({ ensureWorkspaceMode: () => setMode("workspace") }); // Remote / Dev Containers
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
   initEdit(); // "Edit with me" interruptible assisted editing

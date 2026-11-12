@@ -1410,6 +1410,85 @@ fn set_sandbox_engine(engine: String) -> Result<String, String> {
     Ok(tutor_eval::engine_name(parsed).to_string())
 }
 
+/// Dev Container presence + name for the Remote view. Looks for
+/// `.devcontainer/devcontainer.json` or a top-level `.devcontainer.json`.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevcontainerInfo {
+    present: bool,
+    name: Option<String>,
+    path: Option<String>,
+}
+
+#[tauri::command]
+async fn devcontainer_info(root: String) -> Result<DevcontainerInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        for rel in [".devcontainer/devcontainer.json", ".devcontainer.json"] {
+            let p = base.join(rel);
+            if p.is_file() {
+                // devcontainer.json is JSONC; strip // and /* */ comments before parsing so
+                // a commented template still yields its name. Best-effort (None on failure).
+                let name = std::fs::read_to_string(&p).ok().and_then(|s| {
+                    let stripped = strip_jsonc_comments(&s);
+                    serde_json::from_str::<serde_json::Value>(&stripped)
+                        .ok()
+                        .and_then(|v| v.get("name").and_then(|n| n.as_str().map(String::from)))
+                });
+                return DevcontainerInfo {
+                    present: true,
+                    name,
+                    path: Some(p.to_string_lossy().into_owned()),
+                };
+            }
+        }
+        DevcontainerInfo { present: false, name: None, path: None }
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))
+}
+
+/// Strip `//` line and `/* */` block comments (JSONC) outside of string literals.
+fn strip_jsonc_comments(src: &str) -> String {
+    let b = src.as_bytes();
+    let mut out = String::with_capacity(src.len());
+    let (mut i, mut in_str, mut esc) = (0usize, false, false);
+    while i < b.len() {
+        let c = b[i] as char;
+        if in_str {
+            out.push(c);
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_str = true;
+            out.push(c);
+            i += 1;
+        } else if c == '/' && i + 1 < b.len() && b[i + 1] == b'/' {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+        } else if c == '/' && i + 1 < b.len() && b[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                i += 1;
+            }
+            i += 2;
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn main() {
     // Default the desktop to running student/user code inside Delonix containers
     // (real isolation + package caches). The user can switch at runtime via
@@ -1484,6 +1563,7 @@ fn main() {
             run_path,
             get_sandbox_engine,
             set_sandbox_engine,
+            devcontainer_info,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

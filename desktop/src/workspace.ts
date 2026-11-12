@@ -1340,6 +1340,38 @@ export async function createLaunchJson(): Promise<void> {
   }
 }
 
+/** Create a `.devcontainer/devcontainer.json` template under the open root and open it —
+ *  the Remote view's "Create Dev Container" action. No-op (with a note) if no folder. */
+export async function createDevcontainer(): Promise<void> {
+  if (!rootPath) {
+    writeOutput("No folder open", "Open a project folder first (Explorer → Open Folder).", "info");
+    return;
+  }
+  const root = rootPath.replace(/\/$/, "");
+  const name = root.split(/[\\/]/).filter(Boolean).pop() ?? "project";
+  const content = `{
+  // Dev Container for this project. See https://containers.dev
+  "name": "${name}",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {},
+  "customizations": {
+    "vscode": { "extensions": [] }
+  },
+  "postCreateCommand": ""
+}
+`;
+  try {
+    await cmdCreatePath(`${root}/.devcontainer`, true).catch(() => {});
+    const path = `${root}/.devcontainer/devcontainer.json`;
+    await cmdWriteFile(path, content);
+    childrenCache.delete(root);
+    await renderTree();
+    await openFile(path);
+  } catch (err) {
+    writeOutput("devcontainer.json failed", String(err), "err");
+  }
+}
+
 /**
  * Content-identity token for a buffer — an EXACT mirror of Rust `content_version`
  * (FNV-1a, 64-bit, hex). Same input → same token on both sides, so the frontend can

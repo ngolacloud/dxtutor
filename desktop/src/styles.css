@@ -2384,6 +2384,20 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .dx-streaming-gutter { width: 3px !important; margin-left: 2px; background: var(--accent); animation: dx-pulse 1.1s ease-in-out infinite; }
 @keyframes dx-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 /* Git panel — reuses the codemap drawer shell. */
+/* Remote / Dev Containers view. */
+.remote-body { overflow-y: auto; flex: 1 1 auto; padding: 4px 0 12px; }
+.remote-group { padding: 10px 12px 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--fg-dim); }
+.remote-row { display: flex; align-items: center; gap: 8px; padding: 5px 12px; }
+.remote-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-muted); }
+.remote-dot.ok { background: var(--green, #4ec9b0); }
+.remote-name { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-link { font: inherit; font-size: 11px; background: none; border: none; color: var(--accent-hover, var(--accent)); cursor: pointer; }
+.remote-link:hover { text-decoration: underline; }
+.remote-note { padding: 4px 12px 8px; font-size: 11px; line-height: 1.5; color: var(--fg-muted); }
+.remote-note code { font-family: var(--font-mono); font-size: 10px; }
+.remote-create { margin: 6px 12px; font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--fg); cursor: pointer; }
+.remote-create:hover { background: var(--bg-selected-inactive); }
+
 /* Run and Debug empty-state (VSCode-style sidebar view). */
 .rundebug-empty { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; }
 .rundebug-empty .welcome-btn { padding: 7px 12px; }

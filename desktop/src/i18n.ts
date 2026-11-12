@@ -75,6 +75,7 @@ const en: Record<string, string> = {
   "ws.runTitle": "Run the active file",
   "ws.welcomeTitle": "Workspace",
   "ws.welcomeText": "Open a folder and build a real project with the skills from your Learning track.",
+  "act.remote": "Remote — Dev Containers & sandbox",
   "ws.cloneRepo": "Clone Repository",
   "ws.clone": "Clone",
   "ws.workspaces": "Workspaces",
@@ -272,6 +273,7 @@ const ptAO: Record<string, string> = {
   "ws.welcomeTitle": "Espaço de trabalho",
   "ws.welcomeText":
     "Abre uma pasta e constrói um projecto real com as competências do teu percurso de aprendizagem.",
+  "act.remote": "Remoto — Dev Containers & sandbox",
   "ws.cloneRepo": "Clonar repositório",
   "ws.clone": "Clonar",
   "ws.workspaces": "Espaços de trabalho",
