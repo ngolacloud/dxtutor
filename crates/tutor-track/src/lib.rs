@@ -16,6 +16,9 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod sqlite;
+pub use sqlite::SqliteStore;
+
 /// Papel de uma identidade na instituição.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
