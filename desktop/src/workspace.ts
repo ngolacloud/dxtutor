@@ -522,8 +522,28 @@ async function runActive() {
   $("#ws-output").innerHTML = runOutputHtml(tab.name, null, true);
   showOutput(true);
   try {
-    const r = await cmdRunPath(tab.path);
-    $("#ws-output").innerHTML = runOutputHtml(tab.name, r, false);
+    // Agent routing: when a persistent container session is running, execute the file
+    // with the CONTAINER's toolchain (devcontainer_session_run); else run on the host.
+    let inContainer = false;
+    if (rootPath) {
+      try {
+        inContainer = (
+          await invoke<{ running: boolean }>("devcontainer_session_status", { root: rootPath })
+        ).running;
+      } catch {
+        /* no session → host */
+      }
+    }
+    if (inContainer && rootPath) {
+      const r = await invoke<RunResult>("devcontainer_session_run", {
+        root: rootPath,
+        file: tab.path,
+      });
+      $("#ws-output").innerHTML = runOutputHtml(`${tab.name}  ·  in container`, r, false);
+    } else {
+      const r = await cmdRunPath(tab.path);
+      $("#ws-output").innerHTML = runOutputHtml(tab.name, r, false);
+    }
     showOutput(true);
   } catch (err) {
     writeOutput("Run failed", String(err), "err");

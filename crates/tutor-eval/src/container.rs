@@ -416,6 +416,28 @@ pub fn session_running(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Comando de shell para correr o ficheiro `rel` (relativo a `/work`) dentro do contentor,
+/// escolhido pela extensão. `has_cargo` encaminha `.rs` para `cargo run` quando o projecto
+/// tem `Cargo.toml`. `None` quando não há executor conhecido para a extensão.
+pub fn run_file_command(rel: &str, has_cargo: bool) -> Option<String> {
+    let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("");
+    // Cita o caminho para espaços; tudo corre com /work como cwd.
+    let q = format!("'{}'", rel.replace('\'', "'\\''"));
+    let cmd = match ext {
+        "py" => format!("python3 {q} || python {q}"),
+        "js" | "mjs" | "cjs" => format!("node {q}"),
+        "ts" => format!("npx --yes tsx {q} || npx --yes ts-node {q}"),
+        "go" => format!("go run {q}"),
+        "rb" => format!("ruby {q}"),
+        "sh" => format!("sh {q}"),
+        "php" => format!("php {q}"),
+        "rs" if has_cargo => "cargo run".to_string(),
+        "rs" => format!("rustc {q} -o /tmp/dxrun && /tmp/dxrun"),
+        _ => return None,
+    };
+    Some(cmd)
+}
+
 /// Programa + argumentos para um shell INTERACTIVO dentro da sessão (`exec -it <name> sh`),
 /// para ligar a um PTY. O chamador deve confirmar [`session_running`] primeiro.
 pub fn session_shell_command(root: &Path) -> (String, Vec<String>) {
@@ -790,6 +812,15 @@ mod tests {
         if std::env::var(ENGINE_ENV).is_err() {
             assert_eq!(sandbox_engine(), SandboxEngine::Host);
         }
+    }
+
+    #[test]
+    fn comando_de_execucao_por_extensao() {
+        assert_eq!(run_file_command("main.py", false).as_deref(), Some("python3 'main.py' || python 'main.py'"));
+        assert_eq!(run_file_command("app.go", false).as_deref(), Some("go run 'app.go'"));
+        assert_eq!(run_file_command("src/main.rs", true).as_deref(), Some("cargo run"));
+        assert!(run_file_command("src/main.rs", false).unwrap().starts_with("rustc "));
+        assert_eq!(run_file_command("README.md", false), None);
     }
 
     #[test]

@@ -1749,6 +1749,38 @@ async fn devcontainer_session_exec(root: String, cmd: String) -> Result<Devconta
     .map_err(|e| format!("devcontainer task failed: {e}"))?
 }
 
+/// Run the active file INSIDE the persistent session (the container's toolchain), picking
+/// the runner by extension and executing from /work. The project agent for execution.
+#[tauri::command]
+async fn devcontainer_session_run(root: String, file: String) -> Result<DevcontainerUp, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = std::path::Path::new(&root);
+        let name = tutor_eval::session_name(base);
+        if !tutor_eval::session_running(&name) {
+            return Err("No running session — press Reopen in Container first.".to_string());
+        }
+        let rel = std::path::Path::new(&file)
+            .strip_prefix(base)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(file.clone());
+        let has_cargo = base.join("Cargo.toml").is_file();
+        let runner = tutor_eval::run_file_command(&rel, has_cargo)
+            .ok_or_else(|| format!("No in-container runner for `{rel}`."))?;
+        let out = tutor_eval::session_exec(&name, &format!("cd /work && {runner}"))
+            .map_err(|e| e.to_string())?;
+        Ok(DevcontainerUp {
+            ok: out.ok,
+            image: name,
+            built: false,
+            ran: runner,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
+    })
+    .await
+    .map_err(|e| format!("devcontainer task failed: {e}"))?
+}
+
 #[tauri::command]
 async fn devcontainer_session_status(root: String) -> Result<SessionStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1936,6 +1968,7 @@ fn main() {
             devcontainer_exec,
             devcontainer_session_up,
             devcontainer_session_exec,
+            devcontainer_session_run,
             devcontainer_session_status,
             devcontainer_session_down,
             detect_projects,
