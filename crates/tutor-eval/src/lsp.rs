@@ -78,6 +78,11 @@ fn request(
     include_decl: bool,
     text: Option<&str>,
 ) -> Vec<Location> {
+    // rust-analyzer only speaks Rust: skip it (and its multi-second cold start) for other
+    // files, so the caller falls back to the syntactic map immediately.
+    if file.extension().and_then(|e| e.to_str()) != Some("rs") {
+        return Vec::new();
+    }
     let spawn = Command::new("rust-analyzer")
         .current_dir(root)
         .stdin(Stdio::piped())
@@ -247,6 +252,19 @@ mod tests {
 
         assert!(parse_locations(&Value::Null).is_empty());
         assert!(parse_locations(&json!([])).is_empty());
+    }
+
+    #[test]
+    fn non_rust_files_skip_the_server_fast() {
+        // A .py file must return immediately (no rust-analyzer spawn / 30s budget),
+        // letting the caller fall back to the syntactic map. Timed to prove it's instant.
+        let dir = tempfile::tempdir().unwrap();
+        let py = dir.path().join("app.py");
+        std::fs::write(&py, "def f():\n    pass\n").unwrap();
+        let t0 = std::time::Instant::now();
+        assert!(resolve_definition(dir.path(), &py, 0, 4, None).is_none());
+        assert!(resolve_references(dir.path(), &py, 0, 4, None).is_empty());
+        assert!(t0.elapsed().as_secs() < 2, "non-Rust must not pay the LSP cold start");
     }
 
     #[test]
