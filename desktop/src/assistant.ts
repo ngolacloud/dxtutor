@@ -11,13 +11,16 @@ import {
   beginEditorStream,
   beginRangeStream,
   currentFileContent,
+  acceptRange,
   endEditorStream,
   endRangeStream,
+  enterRangeReview,
   isDirty,
   openFileAt,
   pushEditorStream,
   pushRangeStream,
   rangeStreamOriginal,
+  rejectRange,
   revealPath,
   workspaceRoot,
 } from "./workspace";
@@ -75,6 +78,12 @@ const writeState = new Map<number, "writing" | "done">(); // message idx -> code
 const shrinkWarn = new Set<number>(); // done writes where the file shrank a lot (review it)
 // Localized edit: a code stream scoped to ONE block/range in the editor (not a whole file).
 let localStream: { requestId: string; path: string; idx: number; accum: string } | null = null;
+// Proposed localized edits awaiting the developer's Accept/Reject (keyed by message index).
+interface DiffLine {
+  op: "context" | "add" | "del";
+  text: string;
+}
+const reviews = new Map<number, DiffLine[]>();
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -91,6 +100,7 @@ export function initAssistant(): void {
     actionErrors.clear();
     writeState.clear();
     shrinkWarn.clear();
+    reviews.clear();
     renderMessages();
   });
   // Approve / dismiss a proposed workspace action (event delegation on the message list).
@@ -101,7 +111,17 @@ export function initAssistant(): void {
     if (Number.isNaN(idx)) return;
     if (btn.classList.contains("as-apply")) void applyAction(idx);
     else if (btn.classList.contains("as-write")) void startCodeStream(idx);
-    else if (btn.classList.contains("as-reject")) {
+    else if (btn.classList.contains("as-accept")) {
+      acceptRange(); // keep the proposed block (it's one undo step)
+      reviews.delete(idx);
+      messages[idx].content += " — ✓ accepted.";
+      renderMessages();
+    } else if (btn.classList.contains("as-revreject")) {
+      rejectRange(); // restore the original block
+      reviews.delete(idx);
+      messages[idx].content += " — ✗ rejected (original restored).";
+      renderMessages();
+    } else if (btn.classList.contains("as-reject")) {
       // Mark as handled so the card disappears: strip the directive from the message.
       messages[idx].content = messages[idx].content
         .replace(/```dxaction\s*\n[\s\S]*?```/, "")
@@ -154,12 +174,24 @@ export function initAssistant(): void {
       const produced = stripFences(ls.accum).trim();
       if (!produced) {
         pushRangeStream(rangeStreamOriginal()); // nothing usable — restore the block
+        endRangeStream();
         messages[ls.idx].content += " — ⚠ no replacement; block left unchanged.";
+        writeState.delete(ls.idx);
       } else {
-        messages[ls.idx].content += " — ✓ done (review it; Ctrl+Z to revert).";
+        // Enter REVIEW: keep the proposed block highlighted, show the diff, and let the
+        // developer Accept or Reject it.
+        const info = enterRangeReview();
+        writeState.delete(ls.idx);
+        if (info) {
+          void invoke<DiffLine[]>("diff_lines", { old: info.original, new: info.proposed })
+            .then((d) => {
+              reviews.set(ls.idx, d);
+              renderMessages();
+            })
+            .catch(() => {});
+          messages[ls.idx].content += " — review the change below:";
+        }
       }
-      writeState.delete(ls.idx);
-      endRangeStream();
       localStream = null;
       finishStream();
       return;
@@ -861,6 +893,16 @@ function renderMessages(): void {
               (err ? `<div class="as-action-err">⚠ ${esc(err)}</div>` : "") +
               `</div>`;
           }
+        }
+        // Localized-edit review: the proposed block's diff + Accept / Reject.
+        const review = reviews.get(i);
+        if (review) {
+          const diffHtml = review
+            .map((l) => `<span class="dl ${l.op}">${esc(l.text)}</span>`)
+            .join("");
+          card +=
+            `<div class="as-review"><pre class="as-review-diff">${diffHtml}</pre>` +
+            `<div class="as-review-btns"><button class="as-accept" data-idx="${i}">Accept</button><button class="as-revreject" data-idx="${i}">Reject</button></div></div>`;
         }
         return `<div class="as-msg ${m.role}"><div class="as-role">${m.role === "user" ? "You" : "Assistant"}</div><div class="as-body">${body || (streaming ? '<span class="as-cursor">▍</span>' : "")}</div>${card}</div>`;
       })

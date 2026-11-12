@@ -994,6 +994,58 @@ export function endRangeStream(): void {
   rangeStream = null;
 }
 
+// After a localized stream finishes with content, the block enters REVIEW: it stays in the
+// buffer (so the diff is visible) but highlighted as pending; Accept keeps it, Reject
+// restores the original — both one undoable edit.
+let rangeReview: {
+  model: monaco.editor.ITextModel;
+  startLine: number;
+  endLine: number;
+  original: string;
+  deco: monaco.editor.IEditorDecorationsCollection;
+} | null = null;
+
+/** End the stream and enter review: keep the proposed block, re-highlight it as "pending",
+ *  and return {startLine, endLine, original, proposed} for the panel to diff. */
+export function enterRangeReview(): { startLine: number; endLine: number; original: string; proposed: string } | null {
+  if (!rangeStream || !wsEditor) return null;
+  const { model, startLine, curEndLine, original, deco } = rangeStream;
+  const proposed = model.getValueInRange(new monaco.Range(startLine, 1, curEndLine, model.getLineMaxColumn(curEndLine)));
+  deco.set([
+    {
+      range: new monaco.Range(startLine, 1, curEndLine, 1),
+      options: { isWholeLine: true, className: "dx-review-block", linesDecorationsClassName: "dx-review-gutter" },
+    },
+  ]);
+  wsEditor.pushUndoStop();
+  rangeReview = { model, startLine, endLine: curEndLine, original, deco };
+  rangeStream = null; // streaming done; now under review
+  wsEditor.revealLineInCenterIfOutsideViewport(startLine);
+  return { startLine, endLine: curEndLine, original, proposed };
+}
+
+/** Accept the proposed block as-is: just drop the review highlight (the buffer already
+ *  holds it; it's one undo step). */
+export function acceptRange(): void {
+  rangeReview?.deco.clear();
+  rangeReview = null;
+}
+
+/** Reject the proposal: restore the original block (one undoable edit) and drop the review. */
+export function rejectRange(): void {
+  if (rangeReview && wsEditor) {
+    const { model, startLine, endLine, original, deco } = rangeReview;
+    model.pushEditOperations(
+      [],
+      [{ range: new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine)), text: original }],
+      () => null,
+    );
+    wsEditor.pushUndoStop();
+    deco.clear();
+  }
+  rangeReview = null;
+}
+
 /** The block's original text (to restore when a localized stream yields nothing/errors). */
 export function rangeStreamOriginal(): string {
   return rangeStream?.original ?? "";
