@@ -91,7 +91,7 @@ let codeStream: {
 const writeState = new Map<number, "writing" | "done">(); // message idx -> code-stream state
 const shrinkWarn = new Set<number>(); // done writes where the file shrank a lot (review it)
 // Localized edit: a code stream scoped to ONE block/range in the editor (not a whole file).
-let localStream: { requestId: string; path: string; idx: number; accum: string } | null = null;
+let localStream: { requestId: string; path: string; idx: number; accum: string; prefix?: string } | null = null;
 // Proposed localized edits awaiting the developer's Accept/Reject (keyed by message index).
 interface DiffLine {
   op: "context" | "add" | "del";
@@ -292,7 +292,8 @@ export function initAssistant(): void {
   void listen<{ requestId: string; delta: string }>("llm://token", (e) => {
     if (localStream && e.payload.requestId === localStream.requestId) {
       localStream.accum += e.payload.delta;
-      const applied = pushRangeStream(stripFences(localStream.accum)); // into the target block only
+      // prefix keeps existing content when APPENDING (continue), empty when replacing a block.
+      const applied = pushRangeStream((localStream.prefix ?? "") + stripFences(localStream.accum));
       if (!applied && rangeStreamConflicted()) {
         // The dev edited the buffer mid-stream — stop clobbering it, keep their change.
         const rid = localStream.requestId;
@@ -382,6 +383,13 @@ export function initAssistant(): void {
       // control. EXCEPTION: if the target file has unsaved edits, don't silently overwrite
       // them — fall through to the button so the developer decides.
       if (idx < 0 || writeState.has(idx)) return;
+      // Continue/complete an existing file (append) — for "continue where it stopped".
+      const cont = parseContinueDirective(messages[idx]?.content ?? "");
+      if (cont) {
+        const absC = codeTargetAbs(cont.file);
+        if (absC) void startContinue(absC, cont.instruction);
+        return;
+      }
       // Localized edit (modify one method) takes precedence over a whole-file write.
       const de = parseEditDirective(messages[idx]?.content ?? "");
       if (de) {
@@ -912,6 +920,15 @@ async function buildWorkspaceContext(): Promise<string | null> {
       `into that editor tab. NEVER paste the code in the chat and NEVER say you "will" create ` +
       `it later — emit the block now. Use dxcode only for a NEW file or a deliberate full ` +
       `rewrite; to change one method, use dxedit.`,
+    `• To CONTINUE or COMPLETE an existing, unfinished file (the user says "continue", ` +
+      `"finish", "complete", "it's incomplete") WITHOUT rewriting it, reply with a SHORT note ` +
+      `then EXACTLY ONE:\n` +
+      "```dxcontinue\n" +
+      `{"file":"<path relative to root>","instruction":"<what to finish>"}\n` +
+      "```\n" +
+      `This APPENDS the generated continuation at the end of the file — it never repeats or ` +
+      `rewrites the existing code. PREFER dxcontinue over dxcode when the file already has ` +
+      `content and only needs to be finished.`,
     `• ONLY for a pure EMPTY folder or empty file (no code at all), use exactly one block:\n` +
       "```dxaction\n" +
       `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to root>","content":"<optional>"}\n` +
@@ -936,6 +953,21 @@ function parseCodeDirective(text: string): DxCode | null {
     if (typeof obj.file === "string" && typeof obj.instruction === "string") return obj as DxCode;
   } catch {
     /* not valid JSON */
+  }
+  return null;
+}
+
+/** Extract the first dxcontinue directive (append/complete a file), if valid. */
+function parseContinueDirective(text: string): { file: string; instruction: string } | null {
+  const m = text.match(/```dxcontinue\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1].trim());
+    if (typeof obj.file === "string") {
+      return { file: obj.file, instruction: typeof obj.instruction === "string" ? obj.instruction : "continue the file" };
+    }
+  } catch {
+    /* malformed */
   }
   return null;
 }
@@ -977,14 +1009,83 @@ async function startChatMethodEdit(idx: number): Promise<void> {
     ranges = [];
   }
   if (ranges.length === 0) {
-    messages[idx].content += ` — ⚠ no method \`${dir.method}\` found in ${dir.file} (edit skipped).`;
+    // The method isn't there (often because the file is INCOMPLETE and doesn't parse yet).
+    // Don't give up — continue/complete the file by appending from where it stops.
+    messages[idx].content += ` — \`${dir.method}\` not found; continuing the file instead.`;
     renderMessages();
+    await startContinue(abs, `${dir.instruction} (continue \`${dir.method}\` / complete the file)`);
     return;
   }
   const t = ranges[0]; // chat path targets the first match (editor actions disambiguate)
   const lang = abs.endsWith(".rs") ? "rust" : "plaintext";
   const selected = code.split("\n").slice(t.startLine - 1, t.endLine).join("\n");
   await startLocalizedEdit(abs, t.startLine, t.endLine, selected, lang, dir.instruction);
+}
+
+/** Continue/complete a file by APPENDING the generated continuation at its end — never
+ *  rewriting existing code. Used when the dev asks to "continue where it stopped" or when a
+ *  method edit can't find its target (incomplete file). Streams live into the buffer. */
+export async function startContinue(path: string, instruction: string): Promise<void> {
+  if (busy) return;
+  await openFileAt(path, 1, 1);
+  const code = currentFileContent(path);
+  if (code == null) return;
+  const rel = path.split("/").pop() ?? path;
+  const lang = path.endsWith(".rs") ? "rust" : path.endsWith(".py") ? "python" : path.endsWith(".go") ? "go" : "plaintext";
+  const lines = code.split("\n");
+  const lastLine = Math.max(1, lines.length);
+  const lastText = lines[lastLine - 1] ?? "";
+
+  openAssistant();
+  const idx = messages.push({ role: "assistant", content: `➕ Continuing \`${rel}\` from where it stops…` }) - 1;
+  writeState.set(idx, "writing");
+  renderMessages();
+
+  const ok = await beginRangeStream(path, lastLine, lastLine);
+  if (!ok) {
+    actionErrors.set(idx, "could not open the file to continue");
+    writeState.delete(idx);
+    renderMessages();
+    return;
+  }
+  const rid = crypto.randomUUID();
+  // The block is the last line; prefix keeps it and a newline, so tokens APPEND after it.
+  localStream = { requestId: rid, path, idx, accum: "", prefix: lastText.length ? `${lastText}\n` : "" };
+  busy = true;
+  currentRequestId = rid;
+  setStreaming(true);
+
+  const genMessages: ChatMsg[] = [
+    {
+      role: "system",
+      content:
+        `You are completing an UNFINISHED ${lang} file "${rel}". Output ONLY the code to ` +
+        `APPEND so the file becomes complete and compiles — the continuation from exactly ` +
+        `where it stops. Do NOT repeat any existing code, do NOT restate the whole file, no ` +
+        `fences, no explanation. Match the file's style and indentation.`,
+    },
+    {
+      role: "user",
+      content: `${instruction}\n\nThe file so far (continue after the last line):\n${code.slice(-6000)}`,
+    },
+  ];
+  try {
+    await invoke("assistant_chat_stream", {
+      messages: genMessages,
+      provider,
+      model: null,
+      requestId: rid,
+      mode: "workspace",
+      stepId: null,
+    });
+  } catch (e) {
+    pushRangeStream(rangeStreamOriginal());
+    endRangeStream();
+    actionErrors.set(idx, String(e));
+    writeState.delete(idx);
+    localStream = null;
+    finishStream();
+  }
 }
 
 /** Strip a leading ``` fence (language tag and all) from streamed code, tolerating an
@@ -1354,6 +1455,7 @@ function renderMessages(): void {
         if (action) shown = shown.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim();
         if (code) shown = shown.replace(/```dxcode\s*\n[\s\S]*?```/, "").trim();
         shown = shown.replace(/```dxedit\s*\n[\s\S]*?```/, "").trim();
+        shown = shown.replace(/```dxcontinue\s*\n[\s\S]*?```/, "").trim();
         const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
         const err = actionErrors.get(i);
         let card = "";
