@@ -27,6 +27,7 @@ import "./styles.css";
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { initWorkspace, activateWorkspace, workspaceActions, setCodeMapHandler, setEditHandler, setLocalizedEditHandler, setMethodEditHandler, setEntrypointHandler, createLaunchJson, activeFilePath, currentFileContent, langForFile, allBreakpoints, setBreakpointEnabled, removeBreakpoint, removeAllBreakpoints, setBreakpointsChangeHandler, openFileAt, setExplainFolderHandler } from "./workspace";
 import { initReview, openReview } from "./review";
@@ -3552,6 +3553,18 @@ function wireChrome() {
     clickBtn('.act[data-view="assistant"]');
   });
   document.getElementById("tb-account")?.addEventListener("click", () => menuToast("angolar.devops — Plano Max"));
+  // Frameless window (decorations:false) → our own min/max/close in the titlebar, so the app
+  // has ONE integrated bar like the prototype (no second native OS titlebar on top).
+  if ("__TAURI_INTERNALS__" in window) {
+    const appWin = getCurrentWindow();
+    document.getElementById("win-min")?.addEventListener("click", () => void appWin.minimize());
+    document.getElementById("win-max")?.addEventListener("click", () => void appWin.toggleMaximize());
+    document.getElementById("win-close")?.addEventListener("click", () => void appWin.close());
+    const syncMax = () =>
+      void appWin.isMaximized().then((m) => document.getElementById("win-max")?.classList.toggle("is-max", m));
+    syncMax();
+    void appWin.onResized(syncMax);
+  }
   $("#btn-reset-profile").addEventListener("click", (e) => {
     e.stopPropagation(); // don't also toggle the section header underneath
     resetProfile();

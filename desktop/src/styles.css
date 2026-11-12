@@ -176,7 +176,7 @@ body {
 .menu { display: flex; gap: 14px; color: var(--fg-dim); -webkit-app-region: no-drag; }
 .menu span { cursor: default; }
 .menu span:hover { color: var(--fg-bright); }
-.title-center { color: var(--fg-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-center { flex: 1; text-align: center; color: var(--fg-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Title-bar right extras (prototype parity): update pill + layout/assistant/account icons. */
 .tb-extras { display: flex; align-items: center; gap: 3px; -webkit-app-region: no-drag; flex: none; }
 .tb-update {
