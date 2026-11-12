@@ -60,6 +60,11 @@ pub struct Relations {
     pub references: Vec<SymbolRef>,
     /// Functions whose body references the symbol (inferred call sites).
     pub callers: Vec<SymbolRef>,
+    /// True when more than one definition shares this name (homonyms). With only the
+    /// syntactic matcher, references/callers cannot be attributed to a specific
+    /// definition — the UI must warn that navigation here is ambiguous until a semantic
+    /// engine (rust-analyzer) binds each occurrence. Honest signal, not a guess.
+    pub ambiguous: bool,
 }
 
 // ── Internal per-file model ─────────────────────────────────────────────────────
@@ -147,12 +152,17 @@ pub fn symbol_relations(root: &Path, symbol: &str) -> Result<Relations> {
 
     dedup(&mut callers);
 
+    // Homonyms: more than one definition with this name means the syntactic matcher
+    // cannot say which one each reference binds to — flag it so the UI is honest.
+    let ambiguous = definitions.len() > 1;
+
     Ok(Relations {
         symbol: symbol.to_string(),
         resolution: Resolution::Inferred,
         definitions,
         references,
         callers,
+        ambiguous,
     })
 }
 
@@ -344,5 +354,29 @@ mod tests {
             rel.callers
         );
         assert!(!rel.callers.iter().any(|c| c.name == "helper"));
+        assert!(!rel.ambiguous, "a single definition is unambiguous");
+    }
+
+    /// Section 5: two homonymous symbols (same name, different modules) must be flagged
+    /// `ambiguous` — the syntactic matcher can't bind a reference to one of them, and the
+    /// UI needs to say so until rust-analyzer resolves it.
+    #[test]
+    fn homonymous_definitions_are_flagged_ambiguous() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        // Two different `helper` functions, one per module.
+        fs::write(root.join("src/a.rs"), "pub fn helper(n: i32) -> i32 {\n    n + 1\n}\n").unwrap();
+        fs::write(root.join("src/b.rs"), "pub fn helper(s: &str) -> usize {\n    s.len()\n}\n").unwrap();
+        fs::write(
+            root.join("src/main.rs"),
+            "mod a;\nmod b;\nfn main() {\n    let _ = a::helper(1);\n    let _ = b::helper(\"x\");\n}\n",
+        )
+        .unwrap();
+
+        let rel = symbol_relations(root, "helper").expect("relations");
+        assert_eq!(rel.definitions.len(), 2, "defs: {:?}", rel.definitions);
+        assert!(rel.ambiguous, "two same-named defs must be ambiguous");
+        assert_eq!(rel.resolution, Resolution::Inferred);
     }
 }

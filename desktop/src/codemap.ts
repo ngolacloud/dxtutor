@@ -23,6 +23,7 @@ interface Relations {
   definitions: SymbolRef[];
   references: SymbolRef[];
   callers: SymbolRef[];
+  ambiguous: boolean;
 }
 
 let ensureWorkspaceMode: () => void = () => {};
@@ -69,7 +70,14 @@ function render(rel: Relations, root: string): void {
     return `<div class="cm-sec"><div class="cm-sec-h">${title} <span>${items.length}</span></div>${rows}</div>`;
   };
 
+  // Homonyms: be honest that syntactic navigation can't bind to one of several
+  // same-named definitions until a semantic engine (rust-analyzer) resolves them.
+  const warn = rel.ambiguous
+    ? `<div class="cm-note warn">⚠ ${rel.definitions.length} definitions share this name — references and callers are inferred by name and may belong to any of them. Semantic resolution (rust-analyzer) will disambiguate.</div>`
+    : "";
+
   $("#codemap-body").innerHTML =
+    warn +
     section("Definitions", rel.definitions, "No definition found in this project.") +
     section("Callers", rel.callers, "No callers found (inferred by name).") +
     section("References", rel.references, "No references found.");
