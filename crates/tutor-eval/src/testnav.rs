@@ -104,16 +104,75 @@ pub fn run_test(root: &Path, path: &str) -> TestRun {
 
 /// Run the WHOLE test suite (`cargo test -- --nocapture`) in the project at `root`,
 /// returning the overall pass/fail and the captured output. Complements single-test runs.
-pub fn run_suite(root: &Path) -> TestRun {
-    let mut cmd = Command::new("cargo");
-    cmd.args(["test", "--", "--nocapture"]);
-    cmd.current_dir(root);
-    configure_cargo_env(&mut cmd);
+/// Which test suite a project root carries, picked by marker files (Rust/Go win over a
+/// stray Python test file; a repo usually has one primary suite).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SuiteKind {
+    Cargo,
+    Go,
+    Python,
+    None,
+}
 
+pub(crate) fn suite_kind(root: &Path) -> SuiteKind {
+    if root.join("Cargo.toml").exists() {
+        return SuiteKind::Cargo;
+    }
+    if root.join("go.mod").exists() {
+        return SuiteKind::Go;
+    }
+    let mut py = Vec::new();
+    walk_python(root, 0, &mut py);
+    if !py.is_empty() {
+        return SuiteKind::Python;
+    }
+    SuiteKind::None
+}
+
+/// Run the whole suite, dispatched by the project's toolchain (the "Run all" button).
+/// Honest when the root carries no recognised suite.
+pub fn run_suite(root: &Path) -> TestRun {
+    match suite_kind(root) {
+        SuiteKind::Cargo => run_whole(root, "cargo", &["test", "--", "--nocapture"], false, suite_passed),
+        SuiteKind::Go => run_whole(root, "go", &["test", "./..."], true, go_suite_passed),
+        SuiteKind::Python => run_whole(
+            root,
+            "python3",
+            &["-m", "unittest", "discover", "-s", ".", "-t", ".", "-v"],
+            true,
+            |o| python_test_outcome(o) == Outcome::Passed,
+        ),
+        SuiteKind::None => TestRun {
+            ran: false,
+            passed: false,
+            output: "No Rust (Cargo.toml), Go (go.mod) or Python test suite found at the project root.".into(),
+        },
+    }
+}
+
+/// Shared whole-suite runner: builds the command with the right env, runs it guarded, and
+/// judges the combined output with `verdict`.
+fn run_whole(
+    root: &Path,
+    prog: &str,
+    args: &[&str],
+    go_or_py_env: bool,
+    verdict: fn(&str) -> bool,
+) -> TestRun {
     let scratch = match tempfile::tempdir() {
         Ok(d) => d,
         Err(e) => return TestRun { ran: false, passed: false, output: format!("scratch: {e}") },
     };
+    let mut cmd = Command::new(prog);
+    cmd.args(args);
+    cmd.current_dir(root);
+    if prog == "cargo" {
+        configure_cargo_env(&mut cmd);
+    } else if go_or_py_env && prog == "go" {
+        crate::go_runner::configure_go_env(&mut cmd, scratch.path());
+    } else {
+        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+    }
     match run_guarded(cmd, scratch.path(), "test-all", TEST_TIMEOUT, None) {
         Ok(o) if o.timed_out => TestRun {
             ran: false,
@@ -122,10 +181,18 @@ pub fn run_suite(root: &Path) -> TestRun {
         },
         Ok(o) => {
             let combined = format!("{}{}", o.stdout, o.stderr);
-            TestRun { ran: true, passed: suite_passed(&combined), output: combined }
+            TestRun { ran: true, passed: verdict(&combined), output: combined }
         }
         Err(e) => TestRun { ran: false, passed: false, output: format!("spawn: {e}") },
     }
+}
+
+/// Go whole-suite verdict: any `FAIL`/`[build failed]` fails it; a clean run shows `ok`
+/// (or `no test files`).
+pub(crate) fn go_suite_passed(output: &str) -> bool {
+    !output.contains("FAIL")
+        && !output.contains("[build failed]")
+        && (output.contains("ok") || output.contains("no test files"))
 }
 
 /// Whole-suite verdict: it passed iff cargo reported a result and nothing failed or failed
@@ -612,6 +679,26 @@ mod tests {
         assert!(!suite_passed("test foo ... FAILED\ntest result: FAILED. 2 passed; 1 failed"));
         assert!(!suite_passed("error[E0425]: cannot find value"));
         assert!(!suite_passed("sem resultado")); // nada correu
+    }
+
+    #[test]
+    fn go_suite_verdict() {
+        assert!(go_suite_passed("ok  \tdemo\t0.10s"));
+        assert!(go_suite_passed("ok  \tdemo\nok  \tdemo/sub [no test files]"));
+        assert!(!go_suite_passed("--- FAIL: TestX\nFAIL\tdemo"));
+        assert!(!go_suite_passed("./x.go:1:1: syntax error\nFAIL\tdemo [build failed]"));
+    }
+
+    #[test]
+    fn suite_kind_detecta_pela_raiz() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(suite_kind(d.path()), SuiteKind::None);
+        std::fs::write(d.path().join("test_x.py"), "def test_a(): pass\n").unwrap();
+        assert_eq!(suite_kind(d.path()), SuiteKind::Python);
+        std::fs::write(d.path().join("go.mod"), "module m\n").unwrap();
+        assert_eq!(suite_kind(d.path()), SuiteKind::Go); // go wins over a stray .py
+        std::fs::write(d.path().join("Cargo.toml"), "[package]\n").unwrap();
+        assert_eq!(suite_kind(d.path()), SuiteKind::Cargo); // cargo wins
     }
 
     fn write_project(root: &Path) {
