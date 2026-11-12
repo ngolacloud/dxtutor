@@ -592,10 +592,12 @@
     </div>
     <!-- Dev Assistant: chat drawer (local Ollama; streaming/providers in P4) -->
     <aside id="assistant-overlay" class="assistant-drawer hidden" aria-label="Dev Assistant">
+      <div id="assistant-resizer" title="Drag to resize"></div>
       <header class="assistant-hdr">
         <span class="assistant-title">Dev Assistant</span>
         <select id="assistant-provider" class="assistant-provider" aria-label="AI provider"></select>
         <span id="assistant-model" class="assistant-model off">…</span>
+        <button id="assistant-dock" class="assistant-iconbtn" title="Dock / float panel" aria-label="Dock or float the panel">&#9707;</button>
         <button id="assistant-settings" class="assistant-iconbtn" title="AI providers &amp; keys" aria-label="AI settings">&#9881;</button>
         <button id="assistant-clear" class="assistant-iconbtn" title="New chat" aria-label="New chat">+</button>
         <button id="assistant-close" class="review-close" title="Close" aria-label="Close assistant">&times;</button>

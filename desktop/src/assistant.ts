@@ -110,7 +110,40 @@ const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 export function initAssistant(): void {
-  $("#assistant-close").addEventListener("click", () => $("#assistant-overlay").classList.add("hidden"));
+  $("#assistant-close").addEventListener("click", () => {
+    $("#assistant-overlay").classList.add("hidden");
+    document.getElementById("body")?.classList.remove("dock-open"); // free the editor column
+  });
+
+  // Restore dock mode + width, then wire the dock toggle and the resize handle.
+  docked = localStorage.getItem("dx.assistant.docked") === "1";
+  const savedW = Number(localStorage.getItem("dx.assistant.dockw"));
+  if (Number.isFinite(savedW) && savedW > 0) setDockWidth(savedW);
+  $("#assistant-dock").addEventListener("click", () => {
+    docked = !docked;
+    localStorage.setItem("dx.assistant.docked", docked ? "1" : "0");
+    syncDock();
+  });
+  (() => {
+    const handle = document.getElementById("assistant-resizer");
+    if (!handle) return;
+    let startX = 0;
+    let startW = 0;
+    const onMove = (e: PointerEvent) => setDockWidth(startW + (startX - e.clientX));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const w = getComputedStyle(document.documentElement).getPropertyValue("--dock-w").trim();
+      if (w) localStorage.setItem("dx.assistant.dockw", String(parseInt(w, 10)));
+    };
+    handle.addEventListener("pointerdown", (e) => {
+      startX = e.clientX;
+      startW = $("#assistant-overlay").getBoundingClientRect().width;
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      e.preventDefault();
+    });
+  })();
   $("#assistant-clear").addEventListener("click", () => {
     if (busy) return;
     messages = [];
@@ -319,9 +352,31 @@ export function initAssistant(): void {
 export function openAssistant(): void {
   $("#review-overlay")?.classList.add("hidden"); // the two right drawers are exclusive
   $("#assistant-overlay").classList.remove("hidden");
+  syncDock();
   renderMessages();
   void refreshModel();
   ($("#assistant-input") as HTMLTextAreaElement).focus();
+}
+
+// ── Docking (Antigravity style) ───────────────────────────────────────────
+// Floating = overlay with a shadow; docked = reserves a right column so the
+// editor reflows beside it (Monaco's automaticLayout handles the reflow).
+let docked = false;
+const DOCK_MIN = 320;
+function dockMax(): number {
+  return Math.min(760, Math.round(window.innerWidth * 0.92));
+}
+function setDockWidth(px: number): void {
+  const w = Math.max(DOCK_MIN, Math.min(dockMax(), Math.round(px)));
+  document.documentElement.style.setProperty("--dock-w", `${w}px`);
+}
+/** Reconcile DOM with the current dock mode + open state. */
+function syncDock(): void {
+  const drawer = $("#assistant-overlay");
+  const open = !drawer.classList.contains("hidden");
+  drawer.classList.toggle("docked", docked);
+  document.getElementById("assistant-dock")?.classList.toggle("is-docked", docked);
+  document.getElementById("body")?.classList.toggle("dock-open", docked && open);
 }
 
 /** The AI provider the user has selected (so Edit-with-me / Ask AI use the same one). */
