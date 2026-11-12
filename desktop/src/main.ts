@@ -3220,6 +3220,12 @@ function setMode(mode: AppMode) {
     el.classList.toggle("active", (el as HTMLElement).dataset.mode === mode);
   });
 
+  // Observable mode + active-project indicator (RF-UI-04).
+  const modeEl = document.getElementById("status-mode");
+  if (modeEl) {
+    const name = workspaceRoot()?.split(/[\\/]/).filter(Boolean).pop();
+    modeEl.textContent = ws ? (name ? `Project · ${name}` : "Project") : "Learning";
+  }
   if (ws) {
     activateWorkspace();
     void refreshSessionStatus(); // surface a running container session (persists across restarts)
@@ -3755,9 +3761,16 @@ async function main() {
   });
 
   // Container session status chip: re-attach a terminal on click; refresh on session changes.
-  $("#status-session").addEventListener("click", () => {
+  const openSessionFromStatus = () => {
     const root = workspaceRoot();
     if (root) void attachSessionTerminal(root);
+  };
+  $("#status-session").addEventListener("click", openSessionFromStatus);
+  $("#status-session").addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
+      e.preventDefault();
+      openSessionFromStatus();
+    }
   });
   setSessionChangeHandler(() => void refreshSessionStatus());
 
