@@ -741,6 +741,21 @@ export function initWorkspace() {
     },
   });
 
+  // "Add main entrypoint" — append a runnable entry (fn main / func main / __main__) if
+  // the file lacks one, as a reviewed edit. Context menu.
+  wsEditor.addAction({
+    id: "dxtutor.addEntrypoint",
+    label: "Add main entrypoint (AI)",
+    contextMenuGroupId: "modification",
+    contextMenuOrder: 1.46,
+    run: (ed) => {
+      const model = ed.getModel();
+      if (activeTabPath && model && entrypointHandler) {
+        entrypointHandler(activeTabPath, model.getValue(), model.getLanguageId());
+      }
+    },
+  });
+
   // "Improve a method by name" — localized edit of a named Rust fn/method (no selection
   // needed); disambiguates homonyms. Context menu + command palette.
   wsEditor.addAction({
@@ -1152,6 +1167,12 @@ export function setLocalizedEditHandler(
 let methodEditHandler: ((path: string, code: string, lang: string) => void) | null = null;
 export function setMethodEditHandler(fn: (path: string, code: string, lang: string) => void): void {
   methodEditHandler = fn;
+}
+
+/** Register the handler that adds a main entry point (wired by main.ts). */
+let entrypointHandler: ((path: string, code: string, lang: string) => void) | null = null;
+export function setEntrypointHandler(fn: (path: string, code: string, lang: string) => void): void {
+  entrypointHandler = fn;
 }
 
 /** Current in-editor content of `path` if a tab is open, else null (unopened). */

@@ -949,6 +949,18 @@ async fn symbol_relations(
     .map_err(|e| format!("codemap failed: {e}"))
 }
 
+/// Add-entrypoint: propose the idiomatic `main` for `lang` given `code`, or `None` when one
+/// already exists. The UI appends the snippet as a reviewed localized edit. Pure.
+#[tauri::command]
+async fn propose_entrypoint(
+    lang: String,
+    code: String,
+) -> Result<Option<tutor_eval::entrypoint::EntrypointProposal>, String> {
+    tauri::async_runtime::spawn_blocking(move || tutor_eval::entrypoint::propose_entrypoint(&lang, &code))
+        .await
+        .map_err(|e| format!("propose_entrypoint task failed: {e}"))
+}
+
 /// Localized editing review: a line-level diff of the original block `old` vs the proposed
 /// `new`, each line tagged context/add/del — the basis for the "show what changes" highlight
 /// and "accept selected lines". Pure; runs off the UI thread.
@@ -1365,6 +1377,7 @@ fn main() {
             list_symbols,
             symbol_ranges,
             diff_lines,
+            propose_entrypoint,
             resolve_definition,
             resolve_references,
             resolve_hover,

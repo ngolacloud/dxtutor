@@ -611,6 +611,52 @@ interface SymbolRange {
   endLine: number;
 }
 
+interface EntrypointProposal {
+  snippet: string;
+  note: string;
+}
+
+/** Add a runnable entry point (fn main / func main / __main__ guard) if the active file
+ *  lacks one, appended at the end as a REVIEWED localized edit (diff + Accept/Reject). */
+export async function addEntrypoint(path: string, code: string, lang: string): Promise<void> {
+  if (busy) return;
+  let proposal: EntrypointProposal | null = null;
+  try {
+    proposal = await invoke<EntrypointProposal | null>("propose_entrypoint", { lang, code });
+  } catch {
+    return;
+  }
+  openAssistant();
+  const rel = path.split("/").pop() ?? path;
+  if (!proposal) {
+    messages.push({ role: "assistant", content: `\`${rel}\` already has an entry point.` });
+    renderMessages();
+    return;
+  }
+  const idx = messages.push({ role: "assistant", content: `➕ ${proposal.note}` }) - 1;
+  const lines = code.split("\n");
+  const lastLine = Math.max(1, lines.length);
+  const ok = await beginRangeStream(path, lastLine, lastLine);
+  if (!ok) {
+    messages[idx].content += " — ⚠ could not open the file";
+    renderMessages();
+    return;
+  }
+  pushRangeStream((lines[lastLine - 1] ?? "") + proposal.snippet); // append after the last line
+  const info = enterRangeReview();
+  if (info) {
+    const d = await invoke<DiffLine[]>("diff_lines", { old: info.original, new: info.proposed }).catch(() => []);
+    reviews.set(idx, d);
+    const sel = new Set<number>();
+    d.forEach((l, k) => {
+      if (l.op !== "context") sel.add(k);
+    });
+    reviewSel.set(idx, sel);
+    messages[idx].content += " — review below, then run the project to validate.";
+    renderMessages();
+  }
+}
+
 /** Localized edit of a NAMED Rust fn/method: find the target range via symbol_ranges
  *  (disambiguating homonyms), then run the scoped block edit. Rust-only (syntactic). */
 export async function startMethodEdit(path: string, code: string, lang: string): Promise<void> {

@@ -21,6 +21,7 @@ pub mod codemap;
 pub mod complexity;
 pub mod container;
 pub mod dap;
+pub mod entrypoint;
 pub mod git;
 pub mod go_runner;
 pub mod lsp;
