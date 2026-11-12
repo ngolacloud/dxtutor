@@ -959,6 +959,14 @@ async fn run_test(root: String, path: String) -> Result<tutor_eval::testnav::Tes
     .map_err(|e| format!("run_test task failed: {e}"))
 }
 
+/// Section 5 (DAP): what the host can really do for debugging. Honest — `available` is
+/// true only when a real DAP adapter is installed; otherwise the note points at the
+/// instrumentation tracer (Visualize) as the fallback. Detection only, starts nothing.
+#[tauri::command]
+fn debug_capabilities() -> tutor_eval::dap::DebugCapability {
+    tutor_eval::dap::detect_debug_adapter()
+}
+
 /// Compile and run a COMPLETE Rust program (a drill's target the student retyped)
 /// and return its output. Never judges an exercise — it just executes.
 #[tauri::command]
@@ -1133,6 +1141,7 @@ fn main() {
             symbol_relations,
             list_tests,
             run_test,
+            debug_capabilities,
             assistant_models,
             assistant_chat,
             assistant_chat_stream,
