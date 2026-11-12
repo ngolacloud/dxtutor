@@ -590,17 +590,26 @@
         <span class="codemap-label">Source Control</span>
         <button id="git-branch" class="git-branch-btn" title="Switch or create branch" aria-label="Switch or create branch">⎇ —</button>
         <span id="git-count" class="codemap-title"></span>
+        <button id="git-graph-toggle" class="assistant-iconbtn" title="Toggle commit graph" aria-label="Toggle commit graph">&#9696;</button>
         <button id="git-stageall" class="assistant-iconbtn" title="Stage all changes" aria-label="Stage all changes">&#43;</button>
         <button id="git-refresh" class="assistant-iconbtn" title="Refresh" aria-label="Refresh git changes">&#8635;</button>
         <button id="git-close" class="review-close" title="Close" aria-label="Close Source Control">&times;</button>
       </header>
       <div id="git-branches" class="git-branches hidden" role="listbox" aria-label="Branches"></div>
-      <div class="git-commit">
-        <textarea id="git-message" class="git-message" rows="2" placeholder="Message (Ctrl+Enter to commit)" aria-label="Commit message"></textarea>
-        <button id="git-commit-btn" class="git-commit-btn" title="Commit staged changes (Ctrl+Enter)">&#10003; Commit</button>
+      <!-- SCM (changes) view -->
+      <div id="git-scm-view">
+        <div class="git-commit">
+          <textarea id="git-message" class="git-message" rows="2" placeholder="Message (Ctrl+Enter to commit)" aria-label="Commit message"></textarea>
+          <button id="git-commit-btn" class="git-commit-btn" title="Commit staged changes (Ctrl+Enter)">&#10003; Commit</button>
+        </div>
+        <div id="git-list" class="tests-list git-scm"></div>
+        <pre id="git-diff" class="git-diff" aria-label="Diff"></pre>
       </div>
-      <div id="git-list" class="tests-list git-scm"></div>
-      <pre id="git-diff" class="git-diff" aria-label="Diff"></pre>
+      <!-- Commit graph view -->
+      <div id="git-graph-view" class="hidden">
+        <div id="git-graph-list" class="git-graph-list"></div>
+        <pre id="git-graph-detail" class="git-diff" aria-label="Commit detail"></pre>
+      </div>
     </aside>
     <!-- Global search: find literal text across the open project -->
     <!-- Quick-open (Ctrl/Cmd+P): go to a file by name -->

@@ -12,6 +12,16 @@ interface GitChange {
   work: string; // Y column (worktree)
 }
 
+interface GitCommit {
+  hash: string;
+  short: string;
+  parents: string[];
+  subject: string;
+  author: string;
+  date: string;
+  refs: string[];
+}
+
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -28,6 +38,11 @@ export function initGit(deps: { ensureWorkspaceMode: () => void }): void {
   $("#git-stageall").addEventListener("click", () => void stageAll());
   $("#git-commit-btn").addEventListener("click", () => void commit());
   $("#git-branch").addEventListener("click", () => void toggleBranches());
+  $("#git-graph-toggle").addEventListener("click", () => void toggleGraph());
+  $("#git-graph-list").addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest(".git-commit-row") as HTMLElement | null;
+    if (row?.dataset.hash) void showCommit(row.dataset.hash);
+  });
   $("#git-branches").addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
     if (t.closest(".git-branch-new")) {
@@ -170,6 +185,70 @@ function render(branch?: string | null): void {
     );
 }
 
+// ── Commit graph ───────────────────────────────────────────────────────────
+let graphOpen = false;
+
+async function toggleGraph(): Promise<void> {
+  graphOpen = !graphOpen;
+  $("#git-scm-view").classList.toggle("hidden", graphOpen);
+  $("#git-graph-view").classList.toggle("hidden", !graphOpen);
+  $("#git-graph-toggle").classList.toggle("view-open", graphOpen);
+  if (graphOpen) await loadGraph();
+}
+
+async function loadGraph(): Promise<void> {
+  const root = lastRoot || workspaceRoot();
+  if (!root) return;
+  $("#git-graph-list").innerHTML = `<div class="tests-note">loading history…</div>`;
+  let commits: GitCommit[] = [];
+  try {
+    commits = await invoke<GitCommit[]>("git_log", { root, max: 200 });
+  } catch (e) {
+    $("#git-graph-list").innerHTML = `<div class="tests-note err">log failed: ${esc(String(e))}</div>`;
+    return;
+  }
+  if (commits.length === 0) {
+    $("#git-graph-list").innerHTML = `<div class="tests-note">No commits yet.</div>`;
+    return;
+  }
+  $("#git-graph-list").innerHTML = commits.map(commitRow).join("");
+  $("#git-graph-detail").textContent = "";
+}
+
+/** One commit row with a simple lane rail (hollow dot = merge) and ref chips. */
+function commitRow(c: GitCommit): string {
+  const merge = c.parents.length > 1;
+  const chips = c.refs
+    .map((r) => {
+      const tag = r.startsWith("tag:");
+      const name = tag ? r.slice(4).trim() : r;
+      return `<span class="git-ref${tag ? " tag" : ""}">${esc(name)}</span>`;
+    })
+    .join("");
+  return `<div class="git-commit-row" data-hash="${esc(c.hash)}" title="${esc(c.hash)}">
+      <span class="git-rail"><span class="git-node${merge ? " merge" : ""}"></span></span>
+      <span class="git-commit-main">
+        <span class="git-commit-subject">${chips}${esc(c.subject)}</span>
+        <span class="git-commit-meta">${esc(c.short)} · ${esc(c.author)} · ${esc(c.date)}</span>
+      </span>
+    </div>`;
+}
+
+async function showCommit(hash: string): Promise<void> {
+  const root = lastRoot || workspaceRoot();
+  if (!root) return;
+  document.querySelectorAll("#git-graph-list .git-commit-row").forEach((el) =>
+    el.classList.toggle("sel", (el as HTMLElement).dataset.hash === hash),
+  );
+  $("#git-graph-detail").textContent = "loading…";
+  try {
+    const patch = await invoke<string>("git_show", { root, hash });
+    renderDiffInto("#git-graph-detail", patch || "(no changes)");
+  } catch (e) {
+    $("#git-graph-detail").textContent = `show failed: ${String(e)}`;
+  }
+}
+
 async function toggleBranches(): Promise<void> {
   const panel = $("#git-branches");
   if (!panel.classList.contains("hidden")) {
@@ -287,8 +366,12 @@ async function showDiff(path: string, staged: boolean): Promise<void> {
 }
 
 function renderDiff(diff: string): void {
-  // Colourise unified-diff lines: additions, deletions, hunk headers.
-  $("#git-diff").innerHTML = diff
+  renderDiffInto("#git-diff", diff);
+}
+
+/** Colourise unified-diff lines (additions, deletions, hunk headers) into `sel`. */
+function renderDiffInto(sel: string, diff: string): void {
+  $(sel).innerHTML = diff
     .split("\n")
     .map((l) => {
       const cls =

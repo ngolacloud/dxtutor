@@ -87,6 +87,62 @@ pub fn changed_files(root: &Path) -> Vec<GitChange> {
         .collect()
 }
 
+/// One commit for the graph view: hash + parents (for lane drawing), subject, author,
+/// relative date and any refs (branches/tags) pointing at it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommit {
+    pub hash: String,
+    pub short: String,
+    pub parents: Vec<String>,
+    pub subject: String,
+    pub author: String,
+    pub date: String,
+    pub refs: Vec<String>,
+}
+
+/// The last `max` commits reachable from all refs (`git log --all`), newest first, for the
+/// commit graph. Empty when not a repo. Uses an unambiguous unit-separator format so
+/// subjects with any punctuation parse cleanly.
+pub fn log(root: &Path, max: usize) -> Vec<GitCommit> {
+    // %x1f = unit separator between fields, %x1e = record separator between commits.
+    let fmt = "--pretty=format:%H%x1f%h%x1f%P%x1f%s%x1f%an%x1f%cr%x1f%D%x1e";
+    let arg_max = format!("--max-count={max}");
+    let out = match git(root, &["log", "--all", "--topo-order", &arg_max, fmt]) {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+    out.split('\u{1e}')
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .filter_map(|rec| {
+            let f: Vec<&str> = rec.split('\u{1f}').collect();
+            if f.len() < 7 {
+                return None;
+            }
+            let refs = f[6]
+                .split(',')
+                .map(|s| s.trim().trim_start_matches("HEAD -> ").to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            Some(GitCommit {
+                hash: f[0].to_string(),
+                short: f[1].to_string(),
+                parents: f[2].split_whitespace().map(String::from).collect(),
+                subject: f[3].to_string(),
+                author: f[4].to_string(),
+                date: f[5].to_string(),
+                refs,
+            })
+        })
+        .collect()
+}
+
+/// A unified diff for a single commit (`git show`), for the graph's detail pane.
+pub fn show(root: &Path, hash: &str) -> String {
+    git(root, &["show", "--no-color", "--stat", "--patch", hash]).unwrap_or_default()
+}
+
 /// Local branch names (`git branch`), current branch first. Empty when not a repo.
 pub fn branches(root: &Path) -> Vec<String> {
     let out = match git(root, &["branch", "--format=%(refname:short)"]) {
@@ -333,6 +389,34 @@ mod tests {
 
         checkout(root, &base).unwrap();
         assert_eq!(current_branch(root).as_deref(), Some(base.as_str()));
+    }
+
+    #[test]
+    fn log_lists_commits_newest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        run(root, &["init", "-q"]);
+        run(root, &["config", "user.email", "t@t"]);
+        run(root, &["config", "user.name", "Tester"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        run(root, &["add", "a.txt"]);
+        run(root, &["commit", "-q", "-m", "first: with punctuation, commas"]);
+        std::fs::write(root.join("a.txt"), "one\ntwo\n").unwrap();
+        run(root, &["add", "a.txt"]);
+        run(root, &["commit", "-q", "-m", "second"]);
+
+        let commits = log(root, 10);
+        assert_eq!(commits.len(), 2, "{commits:?}");
+        assert_eq!(commits[0].subject, "second");
+        assert_eq!(commits[1].subject, "first: with punctuation, commas");
+        assert_eq!(commits[0].author, "Tester");
+        assert_eq!(commits[0].parents, vec![commits[1].hash.clone()]);
+        assert!(commits[1].parents.is_empty(), "root has no parent");
+        // HEAD/branch ref is attached to the tip.
+        assert!(commits[0].refs.iter().any(|r| r.contains("main") || r.contains("master")));
+
+        let patch = show(root, &commits[0].hash);
+        assert!(patch.contains("+two"), "{patch}");
     }
 
     #[test]

@@ -1179,6 +1179,24 @@ async fn git_commit(root: String, message: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn git_log(root: String, max: Option<usize>) -> Result<Vec<tutor_eval::git::GitCommit>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::log(std::path::Path::new(&root), max.unwrap_or(200))
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))
+}
+
+#[tauri::command]
+async fn git_show(root: String, hash: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tutor_eval::git::show(std::path::Path::new(&root), &hash)
+    })
+    .await
+    .map_err(|e| format!("git task failed: {e}"))
+}
+
+#[tauri::command]
 async fn git_branches(root: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         tutor_eval::git::branches(std::path::Path::new(&root))
@@ -1648,6 +1666,8 @@ fn main() {
             git_branches,
             git_checkout,
             git_create_branch,
+            git_log,
+            git_show,
             git_branch,
             debug_capabilities,
             assistant_models,
