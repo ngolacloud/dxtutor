@@ -1,9 +1,16 @@
 // Quick-open palette (section 5 — daily work). Ctrl/Cmd+P opens a file by name;
-// Ctrl/Cmd+Shift+O opens a symbol by name (backend list_files / list_symbols). Both
-// fuzzy-filter and open the chosen target at its location.
+// Ctrl/Cmd+Shift+O opens a symbol by name (backend list_files / list_symbols);
+// Ctrl/Cmd+Shift+P opens the Command Palette (views + actions). All fuzzy-filter and
+// run the chosen target (open at its location, or execute its command).
 
 import { invoke } from "@tauri-apps/api/core";
 import { openFileAt, workspaceRoot } from "./workspace";
+
+export interface PaletteCommand {
+  label: string; // shown + fuzzy-matched
+  hint?: string; // dim detail (e.g. shortcut or category)
+  run: () => void;
+}
 
 interface SymbolRef {
   name: string;
@@ -16,9 +23,10 @@ interface QOItem {
   key: string; // fuzzy-matched against
   primary: string; // bold label
   secondary: string; // dim detail
-  file: string; // absolute path
+  file: string; // absolute path (file/symbol modes)
   line: number;
   col: number;
+  run?: () => void; // command mode: execute instead of opening a file
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -26,13 +34,18 @@ const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 let ensureWorkspaceMode: () => void = () => {};
+let commandsProvider: () => PaletteCommand[] = () => [];
 let items: QOItem[] = [];
 let shown: QOItem[] = [];
 let sel = 0;
 let lastRoot = "";
 
-export function initQuickOpen(deps: { ensureWorkspaceMode: () => void }): void {
+export function initQuickOpen(deps: {
+  ensureWorkspaceMode: () => void;
+  commands?: () => PaletteCommand[];
+}): void {
   ensureWorkspaceMode = deps.ensureWorkspaceMode;
+  if (deps.commands) commandsProvider = deps.commands;
   const input = $("#qo-input") as HTMLInputElement;
   input.addEventListener("input", () => filter(input.value));
   input.addEventListener("keydown", (e) => {
@@ -63,7 +76,11 @@ export function initQuickOpen(deps: { ensureWorkspaceMode: () => void }): void {
     "keydown",
     (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && (e.key === "p" || e.key === "P") && !e.shiftKey) {
+      if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        e.stopPropagation();
+        void openPalette("command");
+      } else if (mod && (e.key === "p" || e.key === "P") && !e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
         void openPalette("file");
@@ -79,15 +96,35 @@ export function initQuickOpen(deps: { ensureWorkspaceMode: () => void }): void {
 
 export const openQuickOpen = () => openPalette("file");
 export const openSymbols = () => openPalette("symbol");
+export const openCommandPalette = () => openPalette("command");
 
-async function openPalette(mode: "file" | "symbol"): Promise<void> {
-  ensureWorkspaceMode();
-  const root = workspaceRoot();
+type Mode = "file" | "symbol" | "command";
+
+async function openPalette(mode: Mode): Promise<void> {
   const input = $("#qo-input") as HTMLInputElement;
   $("#quickopen-overlay").classList.remove("hidden");
   input.value = "";
-  input.placeholder = mode === "file" ? "Go to file…" : "Go to symbol…";
+  input.placeholder =
+    mode === "file" ? "Go to file…" : mode === "symbol" ? "Go to symbol…" : "Run a command…";
   input.focus();
+
+  // Command mode: list views + actions, no workspace/root needed.
+  if (mode === "command") {
+    items = commandsProvider().map((c) => ({
+      key: c.label,
+      primary: c.label,
+      secondary: c.hint ?? "",
+      file: "",
+      line: 0,
+      col: 0,
+      run: c.run,
+    }));
+    filter("");
+    return;
+  }
+
+  ensureWorkspaceMode();
+  const root = workspaceRoot();
   if (!root) {
     items = [];
     $("#qo-list").innerHTML = `<div class="qo-note">Open a project folder first.</div>`;
@@ -175,7 +212,8 @@ function choose(i: number): void {
   const it = shown[i];
   if (!it) return;
   close();
-  void openFileAt(it.file, it.line, it.col);
+  if (it.run) it.run();
+  else void openFileAt(it.file, it.line, it.col);
 }
 
 function render(): void {

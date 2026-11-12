@@ -3598,7 +3598,25 @@ async function main() {
   initCodeMap({ ensureWorkspaceMode: () => setMode("workspace") }); // CodeMap panel
   initTests({ ensureWorkspaceMode: () => setMode("workspace") }); // Tests panel
   initSearch({ ensureWorkspaceMode: () => setMode("workspace") }); // Search panel
-  initQuickOpen({ ensureWorkspaceMode: () => setMode("workspace") }); // Ctrl+P quick-open
+  initQuickOpen({
+    ensureWorkspaceMode: () => setMode("workspace"),
+    commands: () => [
+      { label: "Learning: Open track", hint: "View", run: () => setMode("learning") },
+      { label: "Explorer: Open folder view", hint: "View", run: () => setMode("workspace") },
+      { label: "Run / Submit", hint: "Action", run: () => (appMode === "workspace" ? $("#ws-btn-run") : $("#btn-run")).click() },
+      { label: "Request a hint", hint: "Action", run: () => { if (appMode !== "learning") setMode("learning"); void requestHint(); } },
+      { label: "Search in project", hint: "View", run: () => openSearch() },
+      { label: "Source Control (Git)", hint: "View", run: () => openGit() },
+      { label: "Run and Debug", hint: "View", run: () => openDebug() },
+      { label: "Tests", hint: "View", run: () => openTests() },
+      { label: "Code Review", hint: "View", run: () => openReview() },
+      { label: "Dev Assistant", hint: "View", run: () => openAssistant() },
+      { label: "Glossary", hint: "View", run: () => openGlossary() },
+      { label: "Under the hood", hint: "View", run: () => void openUnderHood() },
+      { label: "Visualize execution", hint: "View", run: () => openVisualize() },
+      { label: "Settings", hint: "View", run: () => openSettings() },
+    ],
+  }); // Ctrl+P quick-open · Ctrl+Shift+P command palette
   initGit({ ensureWorkspaceMode: () => setMode("workspace") }); // Git panel
   setCodeMapHandler((symbol, pos) => void openCodeMap(symbol, pos)); // editor → CodeMap (resolved when possible)
   initAssistant(); // Dev Assistant chat panel
