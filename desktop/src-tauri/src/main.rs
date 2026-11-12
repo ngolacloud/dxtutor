@@ -1533,6 +1533,74 @@ async fn detect_projects(root: String) -> Result<Vec<ProjectInfo>, String> {
     .map_err(|e| format!("detect_projects task failed: {e}"))
 }
 
+/// One source file gathered for a folder-level Explain.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderSource {
+    path: String,
+    content: String,
+}
+
+/// Collect source files under `dir` (recursive, skipping hidden / build dirs), bounded by
+/// `max_files` and `max_bytes` total, for a module-level Explain. Honest truncation: stops
+/// adding once a cap is hit.
+#[tauri::command]
+async fn read_folder_sources(
+    dir: String,
+    max_files: Option<usize>,
+    max_bytes: Option<usize>,
+) -> Result<Vec<FolderSource>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        const EXTS: &[&str] = &[
+            "rs", "py", "js", "mjs", "ts", "tsx", "jsx", "go", "java", "rb", "php", "c", "h",
+            "cpp", "hpp", "cs", "swift", "kt",
+        ];
+        let max_files = max_files.unwrap_or(10);
+        let max_bytes = max_bytes.unwrap_or(48_000);
+        let base = std::path::Path::new(&dir);
+        let mut out: Vec<FolderSource> = Vec::new();
+        let mut total = 0usize;
+        let mut stack = vec![base.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let rd = match std::fs::read_dir(&d) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let mut entries: Vec<_> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+            entries.sort();
+            for p in entries {
+                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                if name.starts_with('.') {
+                    continue;
+                }
+                if p.is_dir() {
+                    if !matches!(name.as_str(), "node_modules" | "target" | "dist" | "build" | "vendor") {
+                        stack.push(p);
+                    }
+                    continue;
+                }
+                if out.len() >= max_files || total >= max_bytes {
+                    return out;
+                }
+                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !EXTS.contains(&ext) {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    total += content.len();
+                    out.push(FolderSource {
+                        path: p.to_string_lossy().into_owned(),
+                        content,
+                    });
+                }
+            }
+        }
+        out
+    })
+    .await
+    .map_err(|e| format!("read_folder_sources task failed: {e}"))
+}
+
 /// Dev Container presence + name for the Remote view. Looks for
 /// `.devcontainer/devcontainer.json` or a top-level `.devcontainer.json`.
 #[derive(serde::Serialize)]
@@ -1963,6 +2031,7 @@ fn main() {
             run_path,
             get_sandbox_engine,
             set_sandbox_engine,
+            read_folder_sources,
             devcontainer_info,
             devcontainer_up,
             devcontainer_exec,

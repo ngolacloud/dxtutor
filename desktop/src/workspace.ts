@@ -102,12 +102,12 @@ let applyingModel = false; // guard: suppress dirty updates during programmatic 
 // The Explain view is a REAL tab (sentinel path) that occupies the editor area when active,
 // sitting in the tab bar beside the file tabs. `explainTab` holds its label when present.
 const EXPLAIN_TAB = "__explain__";
-let explainTab: { name: string; path: string } | null = null;
+let explainTab: { name: string; path: string | null } | null = null;
 
-/** Open (or focus) the Explain tab for the file at `path`. When active it SPLITS the editor
- *  area: the file's code on the left, the summary on the right (both visible). */
-export function openExplainTab(name: string, path: string): void {
-  explainTab = { name, path };
+/** Open (or focus) the Explain tab. With a file `path` it SPLITS the editor (code left,
+ *  summary right); with no path (folder/module mode) the summary takes the full area. */
+export function openExplainTab(name: string, path?: string): void {
+  explainTab = { name, path: path ?? null };
   setActiveTab(EXPLAIN_TAB);
 }
 
@@ -142,6 +142,12 @@ let onBreakpointsChanged: () => void = () => {};
 /** Register a callback fired whenever breakpoints change (wired by main.ts's panel). */
 export function setBreakpointsChangeHandler(fn: () => void): void {
   onBreakpointsChanged = fn;
+}
+
+/** Register the "Explain folder" action (wired by main.ts to the Explain module). */
+let explainFolderHandler: (path: string) => void = () => {};
+export function setExplainFolderHandler(fn: (path: string) => void): void {
+  explainFolderHandler = fn;
 }
 
 /** Persist all breakpoints (across files) so they survive a restart, then notify the panel. */
@@ -647,14 +653,18 @@ function setActiveTab(path: string) {
   if (path === EXPLAIN_TAB) {
     if (!explainTab || !wsEditor) return;
     activeTabPath = EXPLAIN_TAB;
-    const fileTab = tabByPath(explainTab.path);
+    const region = $("#ws-editor-region");
+    region.classList.remove("explain-split", "explain-full");
+    const fileTab = explainTab.path ? tabByPath(explainTab.path) : null;
     if (fileTab) {
       applyingModel = true;
       wsEditor.setModel(fileTab.model); // left pane shows the explained file
       applyingModel = false;
+      region.classList.add("explain-split"); // code | summary
+    } else {
+      region.classList.add("explain-full"); // module summary takes the whole area
     }
     $("#ws-welcome").classList.add("hidden");
-    $("#ws-editor-region").classList.add("explain-split");
     $("#explain-panel").classList.remove("hidden");
     renderTabs();
     requestAnimationFrame(() => wsEditor?.layout());
@@ -663,7 +673,7 @@ function setActiveTab(path: string) {
   const tab = tabByPath(path);
   if (!tab || !wsEditor) return;
   activeTabPath = path;
-  $("#ws-editor-region").classList.remove("explain-split"); // leaving split → code full width
+  $("#ws-editor-region").classList.remove("explain-split", "explain-full"); // leaving → code full
   $("#explain-panel").classList.add("hidden");
   applyingModel = true;
   wsEditor.setModel(tab.model); // model carries its own breakpoint decorations
@@ -706,7 +716,7 @@ function closeTab(path: string) {
   if (path === EXPLAIN_TAB) {
     explainTab = null;
     $("#explain-panel").classList.add("hidden");
-    $("#ws-editor-region").classList.remove("explain-split");
+    $("#ws-editor-region").classList.remove("explain-split", "explain-full");
     if (activeTabPath === EXPLAIN_TAB) {
       activeTabPath = null;
       const next = tabs[tabs.length - 1];
@@ -914,6 +924,7 @@ function openContextMenu(x: number, y: number, path: string, isDir: boolean) {
   if (isDir) {
     items.push(["New File", () => void createEntry(false, path)]);
     items.push(["New Folder", () => void createEntry(true, path)]);
+    items.push(["Explain folder (AI)", () => explainFolderHandler(path)]);
   }
   items.push(["Rename", () => void renameEntry(path)]);
   items.push(["Delete", () => void deleteEntry(path)]);

@@ -5,13 +5,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { openExplainTab, closeExplainTab, revealLine } from "./workspace";
+import { openExplainTab, closeExplainTab, revealLine, openFileAt } from "./workspace";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 let lastReq: { path: string; code: string; lang: string; name: string } | null = null;
+let folderSources: Array<{ path: string; content: string }> = []; // for multi-file links
 let busy = false;
 let reqId: string | null = null; // the in-flight streaming request
 let accum = ""; // tokens accumulated so far
@@ -31,10 +32,12 @@ export function initExplain(): void {
   $("#explain-refresh").addEventListener("click", () => {
     if (lastReq) void explainFile(lastReq.path, lastReq.code, lastReq.lang, lastReq.name);
   });
-  // Jump links: scroll the code (left pane) to the referenced line, keeping the split.
+  // Jump links: single-file scrolls the left code pane; multi-file opens that file.
   $("#explain-body").addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest(".explain-jump") as HTMLElement | null;
-    if (a?.dataset.line) revealLine(Number(a.dataset.line));
+    if (!a?.dataset.line) return;
+    if (a.dataset.path) void openFileAt(a.dataset.path, Number(a.dataset.line), 1);
+    else revealLine(Number(a.dataset.line));
   });
 
   // Draggable splitter between the code (left) and the summary (right).
@@ -108,12 +111,67 @@ export async function explainFile(path: string, code: string, lang: string, name
     "jump there. Use the line numbers shown in the listing. Do not repeat the code verbatim.\n\n" +
     `\`\`\`${lang}\n${numbered}\n\`\`\``;
 
+  folderSources = [];
+  await runExplain(system, user);
+}
+
+/** Explain a whole FOLDER (module): a module overview + a per-file section, with links that
+ *  open each file at a line. Bounded to a handful of files so the prompt stays sane. */
+export async function explainFolder(dir: string, name: string): Promise<void> {
+  if (busy) return;
+  lastReq = null;
+  $("#explain-file").textContent = `${name}/`;
+  $("#explain-body").innerHTML = `<div class="explain-loading">Reading ${esc(name)}/ and summarizing the module…</div>`;
+  openExplainTab(`${name}/`); // no single file → full-width summary (no split)
+  let sources: Array<{ path: string; content: string }> = [];
+  try {
+    sources = await invoke<Array<{ path: string; content: string }>>("read_folder_sources", {
+      dir,
+      maxFiles: 10,
+      maxBytes: 48000,
+    });
+  } catch (e) {
+    $("#explain-body").innerHTML = `<div class="explain-err">Could not read folder: ${esc(String(e))}</div>`;
+    return;
+  }
+  if (sources.length === 0) {
+    $("#explain-body").innerHTML = `<div class="explain-err">No source files found in this folder.</div>`;
+    return;
+  }
+  folderSources = sources;
+  const listing = sources
+    .map((s, i) => {
+      const rel = s.path.slice(dir.length).replace(/^[\\/]/, "");
+      const numbered = s.content
+        .split("\n")
+        .map((l, k) => `${String(k + 1).padStart(4)}: ${l}`)
+        .join("\n");
+      return `### File ${i + 1}: ${rel}\n\`\`\`\n${numbered}\n\`\`\``;
+    })
+    .join("\n\n");
+  const system =
+    "You explain an existing code MODULE to a developer reading it for the FIRST time. You " +
+    "clarify how the files fit together and what each does — you do NOT rewrite or judge. " +
+    "Answer in clear, well-organized Markdown.";
+  const user =
+    `Explain the module \`${name}/\` (${sources.length} files below). Structure your answer as:\n\n` +
+    "1. **Module overview** — what this folder does and how the files collaborate.\n" +
+    "2. A section per file (heading = the file's relative path). Summarize its role and its " +
+    "key functions/types.\n\n" +
+    "To point at a specific place, cite it as `[open <fileNumber>:<line>]` (e.g. `[open 1:12]`) " +
+    "using the File numbers and line numbers shown below, so the reader can jump straight to " +
+    "it. Do not repeat the code verbatim.\n\n" +
+    listing;
+  await runExplain(system, user);
+}
+
+/** Shared streaming driver: send the prompt and let llm:// events render it live. */
+async function runExplain(system: string, user: string): Promise<void> {
   busy = true;
   accum = "";
   reqId = crypto.randomUUID();
   try {
-    // Stream live into the panel. mode "workspace" keeps the policy non-tutor (it must
-    // actually explain, not withhold). Tokens arrive via llm://token (handled in init).
+    // mode "workspace" keeps the policy non-tutor (it must explain, not withhold).
     await invoke("assistant_chat_stream", {
       messages: [
         { role: "system", content: system },
@@ -189,13 +247,20 @@ function renderMarkdown(md: string): string {
   return out.join("\n");
 }
 
-/** Inline formatting on an escaped string: code, bold, italic, then [L<n>] jump links. */
+/** Inline formatting on an escaped string: code, bold, italic, then jump links. */
 function inline(s: string): string {
   let t = esc(s);
-  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
   t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   t = t.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  // [L12] or [L12-20] or bare L12 → a clickable jump to the first line.
+  // Multi-file: [open 1:12] → opens File #1 at line 12 (mapped via folderSources).
+  t = t.replace(/\[open (\d+):(\d+)\]/g, (_m, fi, ln) => {
+    const src = folderSources[Number(fi) - 1];
+    if (!src) return `L${ln}`;
+    const rel = src.path.split(/[\\/]/).pop() ?? src.path;
+    return `<a class="explain-jump" data-path="${esc(src.path)}" data-line="${ln}">${esc(rel)}:${ln}</a>`;
+  });
+  // Single-file: [L12] / [L12-20] / bare L12 → a clickable jump to the first line.
   t = t.replace(/\[?L(\d+)(?:-\d+)?\]?/g, (_m, n) => `<a class="explain-jump" data-line="${n}">L${n}</a>`);
   return t;
 }

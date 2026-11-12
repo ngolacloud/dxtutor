@@ -509,6 +509,10 @@ body.term-open #terminal-panel {
   z-index: 26;
 }
 .explain-splitter:hover { background: var(--accent); opacity: 0.4; }
+/* Full mode (folder/module Explain): the summary takes the whole editor area. */
+#ws-editor-region.explain-full .explain-panel { left: 0; border-left: none; }
+#ws-editor-region.explain-full #ws-editor,
+#ws-editor-region.explain-full .explain-splitter { display: none; }
 /* Explain tab accent (lightbulb). */
 .ws-tab.explain-tab .ws-tab-name { font-style: italic; }
 
