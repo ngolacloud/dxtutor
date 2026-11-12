@@ -531,17 +531,21 @@ fn list_phases() -> Result<ProjectDto, String> {
 /// Evaluate the student's code for a phase: run the hidden tests (source of
 /// truth) and, on pass, measure complexity. Reveal the curated gabarito.
 #[tauri::command]
-fn submit(phase_id: String, code: String) -> Result<AssessmentDto, String> {
-    let project = tutor_core::load_project(PROJECT_ID)
-        .ok_or_else(|| format!("project `{PROJECT_ID}` not found"))?;
-    let phase = project
-        .phase(&phase_id)
-        .ok_or_else(|| format!("phase `{phase_id}` not found"))?;
+async fn submit(phase_id: String, code: String) -> Result<AssessmentDto, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<AssessmentDto, String> {
+        let project = tutor_core::load_project(PROJECT_ID)
+            .ok_or_else(|| format!("project `{PROJECT_ID}` not found"))?;
+        let phase = project
+            .phase(&phase_id)
+            .ok_or_else(|| format!("phase `{phase_id}` not found"))?;
 
-    let assessment =
-        tutor_eval::assess(phase, &code).map_err(|e| format!("evaluation failed: {e}"))?;
+        let assessment =
+            tutor_eval::assess(phase, &code).map_err(|e| format!("evaluation failed: {e}"))?;
 
-    Ok(assessment_dto(&assessment, phase))
+        Ok(assessment_dto(&assessment, phase))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Find a guided-course step by id across every built-in course; returns the
@@ -1492,22 +1496,28 @@ fn debug_capabilities() -> tutor_eval::dap::DebugCapability {
 /// Compile and run a COMPLETE Rust program (a drill's target the student retyped)
 /// and return its output. Never judges an exercise — it just executes.
 #[tauri::command]
-fn run_drill(code: String, language: String, dependencies: Vec<String>) -> Result<RunDto, String> {
+async fn run_drill(code: String, language: String, dependencies: Vec<String>) -> Result<RunDto, String> {
     // Compile + run a complete program in the drill's language. Go uses `go run`
     // (with `go mod tidy` to fetch any imports); everything else uses the Rust path.
     // `dependencies` are extra Cargo `[dependencies]` lines the drill needs (e.g.
     // rusqlite for the database track); empty for std-only drills. Go resolves its
     // imports via `go mod tidy`, so it ignores this list.
-    let out = match language.trim().to_ascii_lowercase().as_str() {
-        "go" | "golang" => tutor_eval::run_go_program_with_deps(&code, &dependencies),
-        _ => tutor_eval::run_rust_snippet_with_deps(&code, &dependencies),
-    }
-    .map_err(|e| format!("run failed: {e}"))?;
-    Ok(RunDto {
-        ok: out.ok,
-        stdout: out.stdout,
-        stderr: out.stderr,
+    // async + spawn_blocking: compiling/running is long blocking work — keep it off the
+    // webview's main thread so the app never freezes while a drill runs.
+    tauri::async_runtime::spawn_blocking(move || -> Result<RunDto, String> {
+        let out = match language.trim().to_ascii_lowercase().as_str() {
+            "go" | "golang" => tutor_eval::run_go_program_with_deps(&code, &dependencies),
+            _ => tutor_eval::run_rust_snippet_with_deps(&code, &dependencies),
+        }
+        .map_err(|e| format!("run failed: {e}"))?;
+        Ok(RunDto {
+            ok: out.ok,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Compile and run a COMPLETE Rust program and return its output PLUS real,
@@ -1515,27 +1525,35 @@ fn run_drill(code: String, language: String, dependencies: Vec<String>) -> Resul
 /// Honest observability: every number is measured from the student's own
 /// process via `wait4`/`rusage` — no fabricated GPU/NPU figures.
 #[tauri::command]
-fn run_measured(code: String) -> Result<MeasuredRunDto, String> {
-    let (out, telemetry) =
-        tutor_eval::run_rust_snippet_measured(&code).map_err(|e| format!("measured run failed: {e}"))?;
-    Ok(MeasuredRunDto {
-        run: RunDto {
-            ok: out.ok,
-            stdout: out.stdout,
-            stderr: out.stderr,
-        },
-        telemetry: telemetry_dto(&telemetry),
+async fn run_measured(code: String) -> Result<MeasuredRunDto, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<MeasuredRunDto, String> {
+        let (out, telemetry) = tutor_eval::run_rust_snippet_measured(&code)
+            .map_err(|e| format!("measured run failed: {e}"))?;
+        Ok(MeasuredRunDto {
+            run: RunDto {
+                ok: out.ok,
+                stdout: out.stdout,
+                stderr: out.stderr,
+            },
+            telemetry: telemetry_dto(&telemetry),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Run the real compiler pipeline over the student's code: MIR, LLVM-IR, assembly,
 /// binary size, and (if `objdump` exists) a disassembly. Shows honestly what the
 /// toolchain actually produces; missing stages are reported in `notes`.
 #[tauri::command]
-fn compile_pipeline(code: String) -> Result<PipelineDto, String> {
-    let pipeline =
-        tutor_eval::compile_pipeline(&code).map_err(|e| format!("compile pipeline failed: {e}"))?;
-    Ok(pipeline_dto(pipeline))
+async fn compile_pipeline(code: String) -> Result<PipelineDto, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<PipelineDto, String> {
+        let pipeline =
+            tutor_eval::compile_pipeline(&code).map_err(|e| format!("compile pipeline failed: {e}"))?;
+        Ok(pipeline_dto(pipeline))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Produce a step-through execution TRACE of the student's program (Python-Tutor
@@ -1545,27 +1563,35 @@ fn compile_pipeline(code: String) -> Result<PipelineDto, String> {
 /// fabricated. Only Python is supported here; other languages come back with
 /// `supported = false` and an honest reason.
 #[tauri::command]
-fn trace_execution(language: String, code: String) -> Result<ExecutionTraceDto, String> {
-    let trace = tutor_eval::trace_execution(&language, &code)
-        .map_err(|e| format!("trace failed: {e}"))?;
-    Ok(execution_trace_dto(trace))
+async fn trace_execution(language: String, code: String) -> Result<ExecutionTraceDto, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ExecutionTraceDto, String> {
+        let trace = tutor_eval::trace_execution(&language, &code)
+            .map_err(|e| format!("trace failed: {e}"))?;
+        Ok(execution_trace_dto(trace))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Grade a `challenge` step: find it across the courses' units, build a `Phase`
 /// from it and reuse the honest evaluator (`tutor_eval::assess`).
 #[tauri::command]
-fn submit_step(step_id: String, code: String) -> Result<AssessmentDto, String> {
-    for course in tutor_core::builtin_courses() {
-        if let Some(step) = course.step(&step_id) {
-            let phase = step
-                .as_phase(&course.language, Level::Basico)
-                .ok_or_else(|| format!("step `{step_id}` is not a challenge"))?;
-            let assessment =
-                tutor_eval::assess(&phase, &code).map_err(|e| format!("evaluation failed: {e}"))?;
-            return Ok(assessment_dto(&assessment, &phase));
+async fn submit_step(step_id: String, code: String) -> Result<AssessmentDto, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<AssessmentDto, String> {
+        for course in tutor_core::builtin_courses() {
+            if let Some(step) = course.step(&step_id) {
+                let phase = step
+                    .as_phase(&course.language, Level::Basico)
+                    .ok_or_else(|| format!("step `{step_id}` is not a challenge"))?;
+                let assessment =
+                    tutor_eval::assess(&phase, &code).map_err(|e| format!("evaluation failed: {e}"))?;
+                return Ok(assessment_dto(&assessment, &phase));
+            }
         }
-    }
-    Err(format!("step `{step_id}` not found"))
+        Err(format!("step `{step_id}` not found"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── Scaffolding commands (glossary + study guide) ────────────────────────────
@@ -1609,13 +1635,21 @@ fn get_study_guide(language: String, unit_id: String) -> Result<StudyGuideDto, S
 /// Reuses `RunDto { ok, stdout, stderr }`. Runner selection and the wall-clock
 /// timeout + kill live in `fsops::run_file`.
 #[tauri::command]
-fn run_path(path: String) -> Result<RunDto, String> {
-    let r = fsops::run_file(&path)?;
-    Ok(RunDto {
-        ok: r.ok,
-        stdout: r.stdout,
-        stderr: r.stderr,
+async fn run_path(path: String) -> Result<RunDto, String> {
+    // MUST be async + spawn_blocking: `fsops::run_file` compiles/runs the file (and, under
+    // the Delonix/Docker sandbox, spins up a container) — long blocking work. On a SYNC
+    // command that runs on the webview's main thread and FREEZES the whole app until it
+    // returns. Off-loading it keeps the UI responsive (the spinner shows, the app stays live).
+    tauri::async_runtime::spawn_blocking(move || -> Result<RunDto, String> {
+        let r = fsops::run_file(&path)?;
+        Ok(RunDto {
+            ok: r.ok,
+            stdout: r.stdout,
+            stderr: r.stderr,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── Sandbox engine selection ──────────────────────────────────────────────────
