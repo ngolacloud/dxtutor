@@ -87,19 +87,38 @@ pub fn run_test(root: &Path, path: &str) -> TestRun {
         },
         Ok(o) => {
             let combined = format!("{}{}", o.stdout, o.stderr);
-            TestRun { ran: true, passed: test_passed(&combined), output: combined }
+            match test_outcome(&combined, path) {
+                Outcome::Passed => TestRun { ran: true, passed: true, output: combined },
+                Outcome::Failed => TestRun { ran: true, passed: false, output: combined },
+                Outcome::DidNotRun => TestRun { ran: false, passed: false, output: combined },
+            }
         }
         Err(e) => TestRun { ran: false, passed: false, output: format!("spawn: {e}") },
     }
 }
 
-/// Decide pass/fail from cargo's output: a `test result: ok.` line with no
-/// `test result: FAILED` and no compile error. Keeps the judgement explicit and testable
-/// without compiling anything.
-pub(crate) fn test_passed(output: &str) -> bool {
-    output.contains("test result: ok.")
-        && !output.contains("test result: FAILED")
-        && !output.contains("error[")
+/// What running one test actually did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Passed,
+    Failed,
+    /// The named test did not run (not found after a rename, a compile error, or only
+    /// doctests matched). Honest: this is NOT a pass.
+    DidNotRun,
+}
+
+/// Decide the outcome from cargo's output by the EXACT per-test line
+/// (`test <path> ... ok` / `... FAILED`). This avoids the trap where `test result: ok.`
+/// from doctests (0 passed) would read as a pass when the target test never ran. Explicit
+/// and testable without compiling anything.
+pub(crate) fn test_outcome(output: &str, path: &str) -> Outcome {
+    if output.contains(&format!("test {path} ... FAILED")) {
+        return Outcome::Failed;
+    }
+    if output.contains(&format!("test {path} ... ok")) {
+        return Outcome::Passed;
+    }
+    Outcome::DidNotRun
 }
 
 /// Does this attribute mark a test? Matches `#[test]` and the common async variants
@@ -211,10 +230,22 @@ mod tests {
 
     #[test]
     fn parser_do_resultado_do_cargo() {
-        assert!(test_passed("running 1 test\ntest soma ... ok\ntest result: ok. 1 passed; 0 failed"));
-        assert!(!test_passed("test soma ... FAILED\ntest result: FAILED. 0 passed; 1 failed"));
-        assert!(!test_passed("error[E0308]: mismatched types")); // não compila
-        assert!(!test_passed("sem linha de resultado nenhuma"));
+        let p = "tests::soma";
+        assert_eq!(
+            test_outcome("running 1 test\ntest tests::soma ... ok\ntest result: ok. 1 passed", p),
+            Outcome::Passed
+        );
+        assert_eq!(
+            test_outcome("test tests::soma ... FAILED\ntest result: FAILED. 0 passed; 1 failed", p),
+            Outcome::Failed
+        );
+        // 0 tests ran (name not found) — doctests still print "test result: ok." but the
+        // target never ran. Must NOT be a pass.
+        assert_eq!(
+            test_outcome("running 0 tests\ntest result: ok. 0 passed; 0 failed; 1 filtered out", p),
+            Outcome::DidNotRun
+        );
+        assert_eq!(test_outcome("error[E0308]: mismatched types", p), Outcome::DidNotRun);
     }
 
     fn write_project(root: &Path) {
