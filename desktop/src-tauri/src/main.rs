@@ -949,6 +949,16 @@ async fn symbol_relations(
     .map_err(|e| format!("codemap failed: {e}"))
 }
 
+/// Localized editing review: a line-level diff of the original block `old` vs the proposed
+/// `new`, each line tagged context/add/del — the basis for the "show what changes" highlight
+/// and "accept selected lines". Pure; runs off the UI thread.
+#[tauri::command]
+async fn diff_lines(old: String, new: String) -> Result<Vec<tutor_eval::textdiff::DiffLine>, String> {
+    tauri::async_runtime::spawn_blocking(move || tutor_eval::textdiff::line_diff(&old, &new))
+        .await
+        .map_err(|e| format!("diff_lines task failed: {e}"))
+}
+
 /// Localized editing: the line span(s) of the Rust function/method named `name` in
 /// `code` — the exact target range for a scoped edit, and the candidates to disambiguate
 /// homonyms. Pure/syntactic; runs off the UI thread.
@@ -1354,6 +1364,7 @@ fn main() {
             symbol_relations,
             list_symbols,
             symbol_ranges,
+            diff_lines,
             resolve_definition,
             resolve_references,
             resolve_hover,

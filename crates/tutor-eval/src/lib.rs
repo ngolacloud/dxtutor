@@ -32,6 +32,7 @@ pub mod review;
 pub mod runner;
 pub mod search;
 pub mod testnav;
+pub mod textdiff;
 pub mod rust_tracer;
 pub mod tracer;
 
