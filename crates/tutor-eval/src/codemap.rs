@@ -173,6 +173,38 @@ pub fn symbol_relations(root: &Path, symbol: &str) -> Result<Relations> {
 
 /// Every top-level symbol definition across the project (Rust via `syn`: fns, methods,
 /// types, consts/statics/type-aliases; Go and Python via their syntactic line scanners),
+/// The full line span of a named function/method — the target for a SCOPED edit.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolRange {
+    pub name: String,
+    pub kind: SymbolKind,
+    /// 1-based, inclusive line range covering the whole fn/method block.
+    pub start_line: u32,
+    pub end_line: u32,
+}
+
+/// Every function/method named `name` in Rust `code`, with its full line span. Used to edit
+/// EXACTLY one method: the caller shows the range, and when the name repeats (homonyms) the
+/// several candidates let the developer pick the target. Empty when `code` doesn't parse or
+/// nothing matches.
+pub fn symbol_ranges(code: &str, name: &str) -> Vec<SymbolRange> {
+    let idx = match index_file("", code) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    idx.fns
+        .into_iter()
+        .filter(|f| f.name == name)
+        .map(|f| SymbolRange {
+            name: f.name,
+            kind: f.kind,
+            start_line: f.start_line,
+            end_line: f.end_line,
+        })
+        .collect()
+}
+
 /// for a workspace "go to symbol" palette. Capped; sorted by name then file.
 pub fn all_symbols(root: &Path, max: usize) -> Vec<SymbolRef> {
     let mut out = Vec::new();
@@ -552,6 +584,33 @@ mod tests {
         let mut sorted = syms.clone();
         sorted.sort_by(|a, b| a.name.cmp(&b.name).then(a.file.cmp(&b.file)));
         assert_eq!(syms.iter().map(|s| &s.name).collect::<Vec<_>>(), sorted.iter().map(|s| &s.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn symbol_ranges_localiza_metodo_e_homonimos() {
+        let code = "\
+fn helper() {
+    let x = 1;
+}
+
+struct S;
+impl S {
+    fn helper(&self) {
+        println!(\"m\");
+    }
+}
+
+fn other() {}
+";
+        let ranges = symbol_ranges(code, "helper");
+        assert_eq!(ranges.len(), 2, "two `helper` (free fn + method): {ranges:?}");
+        // The free fn spans lines 1..3.
+        assert!(ranges.iter().any(|r| r.start_line == 1 && r.end_line == 3 && r.kind == SymbolKind::Function));
+        // The method spans lines 7..9.
+        assert!(ranges.iter().any(|r| r.start_line == 7 && r.end_line == 9 && r.kind == SymbolKind::Method));
+        // A non-existent name yields nothing; a single match yields one range.
+        assert!(symbol_ranges(code, "nope").is_empty());
+        assert_eq!(symbol_ranges(code, "other").len(), 1);
     }
 
     #[test]
