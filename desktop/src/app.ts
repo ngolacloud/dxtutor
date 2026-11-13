@@ -9,7 +9,8 @@ import "./shell.css";
 import { registerStrings, initI18n, onLocaleChange } from "./i18n";
 import { SHELL_STRINGS } from "./shell/strings";
 import { initTheme } from "./shell/theme";
-import { bootShell, rebuildChrome } from "./shell";
+import { bootShell, rebuildChrome, setOpenFolderHandler } from "./shell";
+import { initWorkspace, openFolder } from "./shell/workspace";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -22,6 +23,8 @@ function main(): void {
   registerStrings(SHELL_STRINGS);
   initTheme();
   initI18n();
+  initWorkspace();                       // regista VIEW.file + RP.explorer reais
+  setOpenFolderHandler(() => void openFolder());
   onLocaleChange(() => rebuildChrome());
   bootShell();
   hideBoot();

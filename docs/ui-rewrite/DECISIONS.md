@@ -14,3 +14,11 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
 - 2026-11-13 — **WIP não commitado preservado** como commit `chore(ide): snapshot reskin WIP`
   antes de iniciar as fases, para separar o trabalho pré-existente dos commits de fase.
 - 2026-11-13 — Contratos de sessão em `.claude/sessions/` **não** são commitados (efémeros).
+- 2026-11-13 — **Fase 2 em sub-commits coerentes** (ex.: «workspace core», «git», …) em vez de
+  um único commit gigante. A Fase 2 (paridade) é grande demais para um só commit sem acumular
+  trabalho não guardado por muitos turnos; cada sub-commit é um corte verificável. O humano pode
+  fazer squash no merge se quiser um commit por fase.
+- 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
+  portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
+  backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)
+  são trazidas à medida que cada pane/vista é ligado. Os módulos antigos ficam como referência.

@@ -156,6 +156,10 @@ function setPane(p: string, tgl?: boolean): void {
 }
 const goPane = (p: string): void => setPane(p);
 
+// Handler de «abrir pasta» injectado pelo workspace (evita dependência circular).
+let openFolderHandler: (() => void) | null = null;
+export function setOpenFolderHandler(fn: () => void): void { openFolderHandler = fn; }
+
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
   if (t2.kind === "lt") return `<span class="ic acc">${svg("book")}</span>`;
@@ -179,11 +183,14 @@ function drawTabs(): void {
   if (a) a.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
-function openTab(tab: Tab, act?: boolean): void {
+export function openTab(tab: Tab, act?: boolean): void {
   const x = tabOf(tab.id);
   if (x) Object.assign(x, tab); else TB.push(tab);
   if (act === false) drawTabs(); else show(tab.id);
 }
+export { goPane, setPanelTab, closeTab };
+/** Id do separador activo (null se nenhum). */
+export const activeTabId = (): string | null => cur;
 
 function show(id: string | null): void {
   const host = $("#ebody"); if (!host) return;
@@ -343,7 +350,7 @@ function buildMenus(): void {
       { l: t("menu.newFolder"), act: () => nyiToast() },
       { sep: true },
       { l: t("menu.openFile"), k: "Ctrl+P", act: () => palette("") },
-      { l: t("menu.openFolder"), act: () => nyiToast() },
+      { l: t("menu.openFolder"), act: () => openFolderHandler?.() },
       { sep: true },
       { l: t("menu.save"), k: "Ctrl+S", act: () => toast(t("toast.autosave")) },
       { sep: true },

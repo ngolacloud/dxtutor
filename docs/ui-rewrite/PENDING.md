@@ -6,7 +6,7 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 
 | Superfície | Onde | Porquê pendente | Fase que liga |
 |------------|------|-----------------|---------------|
-| Explorer (árvore) | pane `explorer` | casca pronta; `fsops`/`workspace_tree` por ligar | 2 |
+| Outline (LSP) | pane explorer §Outline | `file_outline` por ligar | 2 |
 | Search | pane `search` | `search_project` por ligar | 2 |
 | Source Control | pane `scm` | `git_*` por ligar | 2 |
 | Run and Debug | pane `run` | `debug_*`/`trace_execution` por ligar | 2 |
