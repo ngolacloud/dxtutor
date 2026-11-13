@@ -15,6 +15,7 @@ import { t, registerStrings } from "../i18n";
 import { VIEW, openTab, addCommand, toast, setRunStackHandler, setStopStackHandler, setPanelTab, type Tab } from "./index";
 import { workspaceRoot } from "./workspace";
 import { runInTerminal } from "./terminal";
+import { initManager } from "./manager";
 
 // ───────────────────────────── modelo do cliente ──────────────────────────────
 // `tech` é a chave no catálogo TECH; `st` é um rótulo puramente visual (não entra
@@ -200,6 +201,9 @@ function toArchitecture(d: Design): Architecture {
   }
   return { components, connections };
 }
+
+/** Architecture do desenho actual (para o gestor de missões delegar o scaffold isolado). */
+export function currentArchitecture(): Architecture { return toArchitecture(SD); }
 
 // Corre a validação REAL e repinta o inspector quando responde.
 async function revalidate(): Promise<void> {
@@ -530,6 +534,8 @@ export function initStudio(): void {
   const svcTab = document.querySelector<HTMLElement>('[data-pt="services"]');
   if (svcTab) svcTab.addEventListener("click", () => void renderServices());
   addCommand({ id: "services:open", label: () => t("services.cmdOpen"), run: () => { setPanelTab("services"); void renderServices(); } });
+  // Gestor de missões (VIEW.manager) — delega o scaffold do desenho como patch isolado.
+  initManager(() => currentArchitecture());
 }
 
 const STUDIO_STRINGS = {

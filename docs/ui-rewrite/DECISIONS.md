@@ -86,6 +86,16 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   isolada (`agent_task_submit` → worktree patch → revisão) que o gestor de missões precisa. Testado
   (`scaffold_preview_payload_has_compose`, crate desktop 11 verdes). O resto do F4 (manager/modos/
   conselho) fica para o dono fechar nos ficheiros que está a editar.
+- 2026-11-13 — **F4 gestor de missões (`VIEW.manager`) LIGADO** (depois de o dono parar 5 min — via
+  monitor de mtime). Reintroduzido `shell/manager.ts` (que tinha recuado na colisão): regista
+  `VIEW.manager`, delega o scaffold do desenho como **patch isolado** (`arch_scaffold_preview` →
+  `agent_task_submit` → `agent_task_status`/`agent_task_cancel`), mostra o diff para revisão e nunca
+  toca na árvore de trabalho. Inicializado a partir de `studio.ts` (`initManager(() =>
+  currentArchitecture())`) — **sem** editar ficheiros quentes do dono (modos/`policy.rs`, `codev.ts`,
+  `index.ts`, `app.ts` ficam intactos e por-committar, trabalho dele). O `#ag-history` do dock e o
+  comando «Mission manager» da casca passam a abrir a vista real. Verificação: `tsc+vite` verde;
+  `cargo test` desktop 11. Modos/conselho/juiz: o dono está a construí-los (modos já em `policy.rs`/
+  `index.ts` `currentMode`), fora deste commit.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)
