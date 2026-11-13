@@ -152,6 +152,9 @@ let SCAT = "aws";                          // separador de cloud activo no catá
 let findings: Finding[] = [];              // último resultado REAL de arch_validate
 let validating = false;
 let validateError = "";
+let scaffolding = false;                   // geração em curso?
+let scaffoldResult: { written: string[] } | null = null; // caminhos escritos por arch_scaffold
+let scaffoldError = "";
 
 function saveSD(): void {
   try { localStorage.setItem(LS_KEY, JSON.stringify(SD)); } catch { /* ignora */ }
@@ -200,6 +203,7 @@ function toArchitecture(d: Design): Architecture {
 // Corre a validação REAL e repinta o inspector quando responde.
 async function revalidate(): Promise<void> {
   validating = true; validateError = "";
+  scaffoldResult = null; scaffoldError = ""; // o desenho mudou: resultado anterior fica obsoleto
   paintInspector();
   const arch = toArchitecture(SD);
   try {
@@ -237,6 +241,38 @@ function resetDesign(): void {
 function toggleConnect(): void {
   SLINK = SLINK === null ? "" : null;
   render();
+}
+
+// Gera o scaffold REAL do desenho via `arch_scaffold` (backend escreve na pasta aberta,
+// nunca sobrepõe ficheiros existentes, e devolve os caminhos novos). Estado honesto quando
+// não há pasta aberta ou o desenho tem erros.
+async function genScaffold(): Promise<void> {
+  const root = workspaceRoot();
+  if (!root) { toast(t("studio.noFolder")); return; }
+  if (findings.some((f) => f.severity === "error")) { toast(t("studio.scaffoldInvalid")); return; }
+  scaffolding = true; scaffoldError = ""; scaffoldResult = null; paintInspector();
+  try {
+    const written = await invoke<string[]>("arch_scaffold", { root, arch: toArchitecture(SD) });
+    scaffoldResult = { written };
+    toast(t("studio.scaffoldDone", { n: written.length }));
+  } catch (e) {
+    scaffoldError = String(e);
+    toast(t("studio.scaffoldFailed", { err: scaffoldError }));
+  }
+  scaffolding = false; paintInspector();
+}
+
+// Bloco de resultado da geração, mostrado na visão geral do inspector.
+function scaffoldBlock(): string {
+  if (scaffolding) return `<div class="st-kv" style="margin-top:12px"><span>…</span><code>${esc(t("studio.scaffolding"))}</code></div>`;
+  if (scaffoldError) return `<div class="st-f e" style="margin-top:12px"><span>✖</span><div>${esc(scaffoldError)}</div></div>`;
+  if (scaffoldResult) {
+    const list = scaffoldResult.written.length
+      ? scaffoldResult.written.map((p) => `<div class="st-f ok"><span>✓</span><div><code>${esc(p)}</code></div></div>`).join("")
+      : `<div class="st-f"><span>·</span><div>${esc(t("studio.scaffoldNothing"))}</div></div>`;
+    return `<h3 style="margin-top:14px">${esc(t("studio.scaffoldResult", { n: scaffoldResult.written.length }))}</h3>${list}`;
+  }
+  return "";
 }
 
 // ───────────────────────────── canvas (SVG) ──────────────────────────────
@@ -338,7 +374,8 @@ function paintInspector(): void {
     `<h3 style="margin-top:14px">${esc(t("studio.validation"))}</h3>${validationBlock()}` +
     `<div class="st-kv" style="margin-top:12px"><span>${esc(t("studio.components"))}</span><code>${SD.nodes.length}</code></div>` +
     `<div class="st-kv"><span>${esc(t("studio.planned"))}</span><code>${planned}</code></div>` +
-    `<div class="st-kv"><span>${esc(t("studio.scaffoldTarget"))}</span><code>${esc(root ?? t("studio.noFolder"))}</code></div>`;
+    `<div class="st-kv"><span>${esc(t("studio.scaffoldTarget"))}</span><code>${esc(root ?? t("studio.noFolder"))}</code></div>` +
+    scaffoldBlock();
 }
 
 // ───────────────────────────── render ──────────────────────────────
@@ -399,7 +436,7 @@ const studioView = (_tab: Tab, host: HTMLElement): void => {
       <button class="mini" id="st-link">⤳ ${esc(t("studio.connect"))}</button>
       <button class="mini" id="st-reset">${esc(t("studio.reset"))}</button>
       <span class="sp"></span>
-      <button class="mini pri" id="st-backlog" disabled title="${nyi}" style="opacity:.5;cursor:not-allowed">${esc(t("studio.genBacklog"))}</button>
+      <button class="mini pri" id="st-scaffold" title="${esc(t("studio.genScaffoldTip"))}">${esc(t("studio.genScaffold"))}</button>
       <button class="mini run" id="st-run" disabled title="${nyi}" style="opacity:.5;cursor:not-allowed">${esc(t("studio.run"))}</button>
     </div>
     <div class="st-main">
@@ -411,7 +448,8 @@ const studioView = (_tab: Tab, host: HTMLElement): void => {
 
   const link = el("st-link"); if (link) link.onclick = toggleConnect;
   const reset = el("st-reset"); if (reset) reset.onclick = resetDesign;
-  // «Generate backlog & delegate» e «▶ RUN» ficam desactivados até à Fase 8.
+  const scaffoldBtn = el("st-scaffold"); if (scaffoldBtn) scaffoldBtn.onclick = () => void genScaffold();
+  // «▶ RUN» (stack real) fica desactivado até ao próximo corte da Fase 8.
   const svgEl = el<SVGSVGElement>("st-svg");
   if (svgEl) (svgEl as unknown as HTMLElement).onmousedown = onCanvasDown;
 
@@ -434,6 +472,14 @@ const STUDIO_STRINGS = {
     "studio.reset": "Reset design",
     "studio.resetDone": "Design reset to the starting layout.",
     "studio.genBacklog": "Generate backlog & delegate →",
+    "studio.genScaffold": "Generate scaffold →",
+    "studio.genScaffoldTip": "Write the project skeleton (Dockerfile, compose, Makefile, k8s…) into the open folder, never overwriting.",
+    "studio.scaffolding": "Generating scaffold…",
+    "studio.scaffoldResult": "Scaffold — {n} file(s) written",
+    "studio.scaffoldDone": "Scaffold generated: {n} file(s) written.",
+    "studio.scaffoldNothing": "Nothing new to write (files already exist).",
+    "studio.scaffoldFailed": "Scaffold failed: {err}",
+    "studio.scaffoldInvalid": "Fix the design errors before generating the scaffold.",
     "studio.run": "▶ RUN",
     "studio.nyi": "not implemented yet (Phase 8)",
     "studio.connectTitle": "Connect",
@@ -474,6 +520,14 @@ const STUDIO_STRINGS = {
     "studio.reset": "Repor desenho",
     "studio.resetDone": "Desenho reposto ao estado inicial.",
     "studio.genBacklog": "Gerar backlog e delegar →",
+    "studio.genScaffold": "Gerar scaffold →",
+    "studio.genScaffoldTip": "Escreve o esqueleto do projecto (Dockerfile, compose, Makefile, k8s…) na pasta aberta, sem sobrepor.",
+    "studio.scaffolding": "A gerar o scaffold…",
+    "studio.scaffoldResult": "Scaffold — {n} ficheiro(s) escrito(s)",
+    "studio.scaffoldDone": "Scaffold gerado: {n} ficheiro(s) escrito(s).",
+    "studio.scaffoldNothing": "Nada de novo a escrever (os ficheiros já existem).",
+    "studio.scaffoldFailed": "Falha ao gerar o scaffold: {err}",
+    "studio.scaffoldInvalid": "Corrige os erros do desenho antes de gerar o scaffold.",
     "studio.run": "▶ EXECUTAR",
     "studio.nyi": "ainda não implementado (Fase 8)",
     "studio.connectTitle": "Ligar",

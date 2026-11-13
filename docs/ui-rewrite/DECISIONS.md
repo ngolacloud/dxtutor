@@ -40,6 +40,12 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   consumes. Teste-primeiro: `arch::tests::scaffold_emits_cloud_native_artifacts` (falha sem a
   feature; 114 testes tutor-eval verdes). A acção da UI (botão «gerar» no Studio) e o RUN/Stop
   ficam para sub-commits seguintes de F8.
+- 2026-11-13 — **F8 (2.º corte) = acção «Gerar scaffold» no Studio.** O botão primário do
+  Studio (antes desactivado) passa a chamar `arch_scaffold(root, toArchitecture(SD))`: escreve o
+  esqueleto na pasta aberta (nunca sobrepõe) e lista os caminhos devolvidos no inspector. Estado
+  honesto quando não há pasta (`open a folder first`) ou o desenho tem erros de validação. O
+  resultado é invalidado a cada alteração do desenho. ▶ RUN (stack via docker compose) fica para
+  o corte seguinte. Verificação: `tsc+vite` verde; backend `arch_scaffold` já testado em F8a.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

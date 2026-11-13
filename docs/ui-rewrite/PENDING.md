@@ -15,7 +15,7 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Services | panel `services` | RUN de stack por ligar | 8 |
 | Co-Dev avançado (conselho/juiz/auto-avaliação/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base + selector de modelo já ligam) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
-| Studio: gerar scaffold / RUN | `VIEW.studio` | acção da UI por ligar (backend `arch_scaffold` já gera Dockerfile/compose/Makefile/.env/k8s) | 8 |
+| Studio: ▶ RUN (stack) | `VIEW.studio` | `docker compose up --build` por ligar (gerar scaffold já liga: `arch_scaffold` escreve na pasta) | 8 |
 | Board: gerar backlog do Studio / executar sprint | `VIEW.board` | orquestração por ligar (kanban+auto-teste já ligam; `arch_scaffold` pronto) | 8 |
 | Team: imposição do harness no backend | `VIEW.team` | backend não bloqueia escrita/comando por chamada (config+preview já ligam; providers reais) | 5 |
 | Mission manager | `VIEW.manager` | missões/checkpoints por ligar | 4 |
