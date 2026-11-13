@@ -7,8 +7,8 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Superfície | Onde | Porquê pendente | Fase que liga |
 |------------|------|-----------------|---------------|
 | Outline (LSP) | pane explorer §Outline | `file_outline` por ligar | 2 |
-| Search | pane `search` | `search_project` por ligar | 2 |
-| Source Control | pane `scm` | `git_*` por ligar | 2 |
+| Substituir-tudo (pesquisa) | pane `search` | sem comando backend; replace client-side por fazer | 2 |
+| Descartar/diff (SCM) | pane `scm` | `git checkout --` (sem comando) / `git_diff` por ligar | 2 |
 | Run and Debug | pane `run` | `debug_*`/`trace_execution` por ligar | 2 |
 | Testing | pane `test` | `list_tests`/`run_*` por ligar | 2 |
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |

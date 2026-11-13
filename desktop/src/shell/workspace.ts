@@ -95,6 +95,8 @@ async function saveNow(path: string, contents: string, announce: boolean): Promi
 }
 
 // ─────────────────────────── VIEW.file ───────────────────────────
+let pendingReveal: { path: string; line: number } | null = null;
+
 const fileView = (tab: Tab, host: HTMLElement): void => {
   const ed = ensureEditor();
   host.appendChild(editorHost!);
@@ -105,6 +107,11 @@ const fileView = (tab: Tab, host: HTMLElement): void => {
     ed.setModel(m);
     const lang = document.getElementById("st-lang"); if (lang) lang.textContent = m.getLanguageId();
     ed.layout();
+    if (pendingReveal && pendingReveal.path === tab.path) {
+      const ln = pendingReveal.line; pendingReveal = null;
+      ed.revealLineInCenter(ln);
+      ed.setPosition({ lineNumber: ln, column: 1 });
+    }
     ed.focus();
   }).catch((e) => {
     host.innerHTML = `<div class="empty"><div>${t("ws.openError", { e: String(e) })}</div></div>`;
@@ -187,15 +194,28 @@ async function newEntry(isDir: boolean): Promise<void> {
   } catch (e) { toast(t("ws.createError", { e: String(e) })); }
 }
 
+const folderOpenedHandlers: Array<(root: string) => void> = [];
+/** Notifica (ex.: SCM, LSP) quando uma pasta é aberta. */
+export function onFolderOpened(cb: (root: string) => void): void { folderOpenedHandlers.push(cb); }
+
 export async function openFolder(): Promise<void> {
   const path = await invoke<string | null>("pick_folder");
   if (!path) return;
   rootPath = path; expanded.clear(); childCache.clear();
   await renderExplorer();
+  folderOpenedHandlers.forEach((cb) => cb(path));
 }
 
 export function openFile(path: string): void {
   openTab({ id: path, title: base(path), kind: "file", path });
+}
+
+/** Abre o ficheiro e revela a linha `line` (1-based) no editor. */
+export function openFileAt(path: string, line: number): void {
+  pendingReveal = { path, line };
+  const already = models.has(path) && activeTabId() === path;
+  openFile(path);
+  if (already && editor) { editor.revealLineInCenter(line); editor.setPosition({ lineNumber: line, column: 1 }); pendingReveal = null; }
 }
 
 /** Regista as vistas/panes reais do workspace (chamar antes de bootShell). */

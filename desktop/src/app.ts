@@ -9,9 +9,11 @@ import "./shell.css";
 import { registerStrings, initI18n, onLocaleChange } from "./i18n";
 import { SHELL_STRINGS } from "./shell/strings";
 import { initTheme } from "./shell/theme";
-import { bootShell, rebuildChrome, setOpenFolderHandler } from "./shell";
+import { bootShell, rebuildChrome, setOpenFolderHandler, setSwitchBranchHandler } from "./shell";
 import { initWorkspace, openFolder } from "./shell/workspace";
 import { initTerminal } from "./shell/terminal";
+import { initSearch } from "./shell/search";
+import { initScm, switchBranch } from "./shell/scm";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -25,7 +27,10 @@ function main(): void {
   initTheme();
   initI18n();
   initWorkspace();                       // regista VIEW.file + RP.explorer reais
+  initSearch();                          // RP.search → search_project
+  initScm();                             // RP.scm → git_*
   setOpenFolderHandler(() => void openFolder());
+  setSwitchBranchHandler(() => void switchBranch());
   onLocaleChange(() => rebuildChrome());
   bootShell();
   initTerminal();                        // terminal real (PTY) no painel inferior

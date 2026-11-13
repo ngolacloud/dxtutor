@@ -13,8 +13,8 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 4 | Breadcrumbs + minimap (outline LSP pend.) | Monaco | breadcrumbs + minimap Monaco | 🔶 |
 | 5 | Go-to-definition / hover / refs | `lsp_*`, `resolve_*` | editor (Monaco LSP) | ⬜ |
 | 6 | CodeMap (defs/refs/callers) | `symbol_relations`, `codemap.ts` | pane/vista | ⬜ |
-| 7 | Pesquisa + substituir | `search_project`, `search.ts` | pane `search` | ⬜ |
-| 8 | Source Control (stage/commit/branch) | `git_*`, `git.ts` | pane `scm` | ⬜ |
+| 7 | Pesquisa (substituir-tudo pend.) | `search_project` | pane `search` | 🔶 |
+| 8 | Source Control (discard/diff pend.) | `git_changes/stage/unstage/commit/branch/checkout` | pane `scm` | 🔶 |
 | 9 | Grafo de commits (DAG) + diff | `git_log/git_show`, `git.ts` | `VIEW.graph` | ⬜ |
 | 10 | Run & Debug (breakpoints/trace) | `debug_*`, `trace_execution`, `debug.ts` | pane `run` | ⬜ |
 | 11 | Testes (descobrir/correr) | `list_tests/run_test/run_all_tests`, `tests.ts` | pane `test` + painel Problems | ⬜ |

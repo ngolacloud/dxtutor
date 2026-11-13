@@ -156,9 +156,11 @@ function setPane(p: string, tgl?: boolean): void {
 }
 const goPane = (p: string): void => setPane(p);
 
-// Handler de «abrir pasta» injectado pelo workspace (evita dependência circular).
+// Handlers injectados pelos módulos de feature (evita dependência circular).
 let openFolderHandler: (() => void) | null = null;
 export function setOpenFolderHandler(fn: () => void): void { openFolderHandler = fn; }
+let switchBranchHandler: (() => void) | null = null;
+export function setSwitchBranchHandler(fn: () => void): void { switchBranchHandler = fn; }
 
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
@@ -578,7 +580,7 @@ function wireStatic(): void {
   on("#pill-test", () => nyiToast());
   on("#pill-lint", () => nyiToast());
   on("#st-remote", () => palette(">"));
-  on("#st-branch", () => nyiToast(t("status.switchBranch")));
+  on("#st-branch", () => (switchBranchHandler ? switchBranchHandler() : nyiToast(t("status.switchBranch"))));
   on("#st-prob", () => setPanelTab("problems"));
   on("#st-tests", () => goPane("test"));
   on("#st-pos", () => palette(":"));
