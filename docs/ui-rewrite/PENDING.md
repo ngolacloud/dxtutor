@@ -12,7 +12,7 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Gitflow finish (merge+tag) | `VIEW.graph`/paleta | sem `git_merge`/`git_tag` no backend; mostra comandos p/ terminal | 6 |
-| Services (vista estruturada) | panel `services` | parse de `docker compose ps` por ligar (RUN/Stop já correm no PTY real) | 8 |
+| Services (pane) | panel `services` | pane por ligar (backend `compose_ps` pronto+testado: parse de `docker compose ps --format json`; RUN/Stop já correm no PTY) | 8 |
 | Co-Dev avançado (conselho/juiz/auto-avaliação/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base + selector de modelo já ligam) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
 | Board: gerar backlog do Studio / executar sprint | `VIEW.board` | orquestração por ligar (kanban+auto-teste já ligam; `arch_scaffold` pronto) | 8 |

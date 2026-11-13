@@ -60,6 +60,14 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   para o `PLAN.md`/`PARITY.md`/`PENDING.md` como fonte fina — não os substitui. Motivo: o
   protótipo v7 do anexo perdeu-se no `/clear`; o dono optou por manter o ramo `feat/ui-rewrite`
   (não um `feature/v2-prototype` de `main`) e usar `docs/ui-rewrite` + v3 como fonte de verdade.
+- 2026-11-13 — **F8 (4.º corte) = backend `compose_ps` (fonte da vista Services).** Novo comando
+  Tauri `compose_ps(root)` corre `docker compose ps --format json` em `root` e devolve a lista
+  estruturada (nome/serviço/estado/estado-detalhado/imagem/portas). O parse é uma função PURA
+  `parse_compose_ps` (NDJSON uma-linha-por-objecto ou array; tolerante a campos em falta),
+  testada primeiro (`parse_compose_ps_*`, 10 testes do crate desktop verdes). Honesto: docker
+  ausente → erro do spawn; sem stack/compose → mensagem do compose propagada. **O pane
+  `#pc-services` fica por ligar** — vive em `index.ts`/`index.html`, em edição concorrente pelo
+  dono, por isso evita-se tocar-lhes agora (só o backend, isolado, entra neste corte).
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

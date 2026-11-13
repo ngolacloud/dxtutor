@@ -1667,6 +1667,99 @@ fn project_entrypoint(root: String) -> Option<String> {
     fsops::project_entrypoint(&root)
 }
 
+// ── Stack services (F8): docker compose ps → lista estruturada para a vista Services ──────
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComposeService {
+    name: String,
+    service: String,
+    state: String,
+    status: String,
+    image: String,
+    ports: Vec<String>,
+}
+
+/// Faz o parse de `docker compose ps --format json`. O Compose v2 emite NDJSON (um objecto
+/// por linha); algumas versões emitem um único array JSON. Tolerante a campos em falta (usa
+/// `serde_json::Value`), para que uma mudança de formato degrade para vazios em vez de falhar.
+/// Função PURA → testada.
+fn parse_compose_ps(stdout: &str) -> Vec<ComposeService> {
+    let s = stdout.trim();
+    if s.is_empty() {
+        return Vec::new();
+    }
+    let objs: Vec<serde_json::Value> = if s.starts_with('[') {
+        serde_json::from_str::<Vec<serde_json::Value>>(s).unwrap_or_default()
+    } else {
+        s.lines()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .collect()
+    };
+    let field = |v: &serde_json::Value, keys: &[&str]| -> String {
+        for k in keys {
+            if let Some(x) = v.get(*k).and_then(|x| x.as_str()) {
+                return x.to_string();
+            }
+        }
+        String::new()
+    };
+    objs.iter()
+        .map(|v| {
+            let ports = v
+                .get("Publishers")
+                .and_then(|p| p.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|pb| {
+                            let tgt = pb.get("TargetPort").and_then(|x| x.as_u64());
+                            let publ = pb.get("PublishedPort").and_then(|x| x.as_u64());
+                            match (publ, tgt) {
+                                (Some(p), Some(t)) if p != 0 => Some(format!("{p}->{t}")),
+                                (_, Some(t)) => Some(format!("{t}")),
+                                _ => None,
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            ComposeService {
+                name: field(v, &["Name"]),
+                service: field(v, &["Service"]),
+                state: field(v, &["State"]),
+                status: field(v, &["Status", "Health"]),
+                image: field(v, &["Image"]),
+                ports,
+            }
+        })
+        .collect()
+}
+
+/// Lista os serviços da stack em execução sob `root`, via `docker compose ps --format json`.
+/// Honesto: se docker/compose não existir, devolve o erro do spawn; se não há stack ou ficheiro
+/// compose, o compose sai com uma mensagem que é propagada. Nada é simulado.
+#[tauri::command]
+async fn compose_ps(root: String) -> Result<Vec<ComposeService>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<ComposeService>, String> {
+        let out = std::process::Command::new("docker")
+            .args(["compose", "ps", "--format", "json"])
+            .current_dir(&root)
+            .output()
+            .map_err(|e| format!("could not run docker: {e}"))?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(if err.trim().is_empty() {
+                "docker compose ps failed".to_string()
+            } else {
+                err.trim().to_string()
+            });
+        }
+        Ok(parse_compose_ps(&String::from_utf8_lossy(&out.stdout)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ── Sandbox engine selection ──────────────────────────────────────────────────
 
 /// Current sandbox engine as a short string: `"host" | "delonix" | "docker" |
@@ -2272,6 +2365,7 @@ fn main() {
             fsops::workspace_resolve,
             run_path,
             project_entrypoint,
+            compose_ps,
             get_sandbox_engine,
             set_sandbox_engine,
             read_folder_sources,
@@ -2312,6 +2406,36 @@ mod tests {
             space: "O(1)".into(),
             justification: "constant work".into(),
         }
+    }
+
+    /// F8 Services: NDJSON (um objecto por linha) do `docker compose ps` é parseado nos
+    /// campos que a vista mostra, incluindo as portas publicadas (published->target).
+    #[test]
+    fn parse_compose_ps_ndjson_extracts_fields_and_ports() {
+        let out = concat!(
+            r#"{"Name":"app-web-1","Service":"web","State":"running","Status":"Up 3s","Image":"nginx","Publishers":[{"PublishedPort":8080,"TargetPort":80}]}"#,
+            "\n",
+            r#"{"Name":"app-db-1","Service":"db","State":"running","Status":"Up 3s (healthy)","Image":"postgres:16-alpine","Publishers":[{"PublishedPort":0,"TargetPort":5432}]}"#,
+            "\n",
+        );
+        let svcs = parse_compose_ps(out);
+        assert_eq!(svcs.len(), 2);
+        assert_eq!(svcs[0].service, "web");
+        assert_eq!(svcs[0].ports, vec!["8080->80".to_string()]);
+        assert_eq!(svcs[1].service, "db");
+        assert_eq!(svcs[1].status, "Up 3s (healthy)");
+        assert_eq!(svcs[1].ports, vec!["5432".to_string()]); // não publicado → só a porta interna
+    }
+
+    #[test]
+    fn parse_compose_ps_handles_array_form_and_empty() {
+        assert!(parse_compose_ps("").is_empty());
+        assert!(parse_compose_ps("   \n ").is_empty());
+        let arr = r#"[{"Name":"x","Service":"x","State":"exited","Status":"Exited (0)","Image":"alpine"}]"#;
+        let svcs = parse_compose_ps(arr);
+        assert_eq!(svcs.len(), 1);
+        assert_eq!(svcs[0].state, "exited");
+        assert!(svcs[0].ports.is_empty());
     }
 
     /// P0-1 regression: a FAILED attempt must never carry the reference solution.
