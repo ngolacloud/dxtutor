@@ -11,14 +11,11 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Aplicar correcção (review) | `VIEW.analysis` | `verify_review_fix` + content_version por ligar | 2 |
 | Run and Debug | pane `run` | `debug_*`/`trace_execution` por ligar | 2 |
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
-| Editor (Monaco) | `VIEW.file` | editor Monaco por montar | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Commit graph | `VIEW.graph` | `git_log`/`git_show` por ligar | 6 |
-| Analysis/Review | `VIEW.analysis` | `review_code` por ligar | 2 |
 | Output · Co-Dev | panel `output` | log do Co-Dev por ligar | 4 |
 | Services | panel `services` | RUN de stack por ligar | 8 |
 | Quick-open (ficheiros) | paleta (sem prefixo) | precisa de pasta aberta (`list_files`) | 2 |
-| Ir para a linha | paleta `:` | precisa do editor Monaco | 2 |
 | Co-Dev (chat/orquestração) | dock `agent` | `assistant_chat_stream`+modos por ligar | 4 |
 | Escolher modelo / providers | dock + Settings | `list_providers`/config por ligar | 4 |
 | Learning Track | pane `tutor`, `VIEW.lt`/`learn` | `get_course`/`submit_step` por ligar | 3 |

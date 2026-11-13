@@ -9,8 +9,8 @@ import "./shell.css";
 import { registerStrings, initI18n, onLocaleChange } from "./i18n";
 import { SHELL_STRINGS } from "./shell/strings";
 import { initTheme } from "./shell/theme";
-import { bootShell, rebuildChrome, setOpenFolderHandler, setSwitchBranchHandler } from "./shell";
-import { initWorkspace, openFolder } from "./shell/workspace";
+import { bootShell, rebuildChrome, setOpenFolderHandler, setSwitchBranchHandler, setGotoLineHandler } from "./shell";
+import { initWorkspace, openFolder, revealLine } from "./shell/workspace";
 import { initTerminal } from "./shell/terminal";
 import { initSearch } from "./shell/search";
 import { initScm, switchBranch } from "./shell/scm";
@@ -39,6 +39,7 @@ function main(): void {
   initRemote();                          // RP.remote/containers → detect_projects/devcontainer_*
   setOpenFolderHandler(() => void openFolder());
   setSwitchBranchHandler(() => void switchBranch());
+  setGotoLineHandler((n) => revealLine(n));
   onLocaleChange(() => rebuildChrome());
   bootShell();
   initTerminal();                        // terminal real (PTY) no painel inferior

@@ -161,6 +161,8 @@ let openFolderHandler: (() => void) | null = null;
 export function setOpenFolderHandler(fn: () => void): void { openFolderHandler = fn; }
 let switchBranchHandler: (() => void) | null = null;
 export function setSwitchBranchHandler(fn: () => void): void { switchBranchHandler = fn; }
+let gotoLineHandler: ((n: number) => void) | null = null;
+export function setGotoLineHandler(fn: (n: number) => void): void { gotoLineHandler = fn; }
 
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
@@ -333,7 +335,7 @@ function palDraw(): void {
     PITEMS = CMD.filter((cc) => fuzzy(f, cc.label)).map((cc) => ({ l: cc.label, k: cc.key, run: cc.run }));
   } else if (q.startsWith(":")) {
     const n = parseInt(q.slice(1)) || 1;
-    PITEMS = [{ l: t("palette.gotoLine", { n }), run: () => nyiToast(t("cmd.goToLine")) }];
+    PITEMS = [{ l: t("palette.gotoLine", { n }), run: () => (gotoLineHandler ? gotoLineHandler(n) : nyiToast(t("cmd.goToLine"))) }];
   } else {
     // Quick-open de ficheiros depende de uma pasta aberta (Fase 2). Sem workspace,
     // mostra o estado honesto em vez de inventar ficheiros.

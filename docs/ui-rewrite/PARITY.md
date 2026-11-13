@@ -24,7 +24,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 15 | Dev Containers (session up/status/down) | `devcontainer_info/session_up/status/down` | pane `containers` | 🔶 |
 | 16 | Explain (resumo lado-a-lado, stream) | `explain.ts`, chat stream | `VIEW` explain (split) | ⬜ |
 | 17 | Review (achados; aplicar-fix pend.) | `review_code` (list_review_analyzers/verify_fix pend.) | `VIEW.analysis` + paleta | 🔶 |
-| 18 | Quick Open / Command Palette | `list_files`, `quickopen.ts` | `#pal` palette | ⬜ |
+| 18 | Command Palette + go-to-linha (quick-open ficheiros pend.) | — / `revealLine` | `#pal` palette | 🔶 |
 | 19 | Dev Assistant (chat, providers) | `assistant_chat_stream`, `assistant.ts` | dock `agent` | ⬜ |
 | 20 | Orquestração (plano/continue/auto/verify) | `assistant.ts`, `run_tests` | dock `agent` + run-ctl | ⬜ |
 | 21 | Edição ancorada (dxpatch) + conflito | `edit.ts`, `patch.ts`, `agent_isolated_patch` | editor (diff inline) | ⬜ |

@@ -298,6 +298,14 @@ export function initWorkspace(): void {
   onThemeChange(() => { if (editor) monaco.editor.setTheme(monacoTheme()); });
 }
 
+/** Revela a linha `n` (1-based) no editor activo. */
+export function revealLine(n: number): void {
+  if (!editor) return;
+  editor.revealLineInCenter(n);
+  editor.setPosition({ lineNumber: n, column: 1 });
+  editor.focus();
+}
+
 /** Caminho da raiz aberta, ou null. */
 export const workspaceRoot = (): string | null => rootPath;
 /** Caminho do ficheiro activo (se o separador activo for um ficheiro). */
