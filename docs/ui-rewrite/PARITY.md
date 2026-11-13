@@ -15,7 +15,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 6 | CodeMap (defs/refs/callers) | `symbol_relations` | comando → painel Output | 🔶 |
 | 7 | Pesquisa (substituir-tudo pend.) | `search_project` | pane `search` | 🔶 |
 | 8 | Source Control (discard/diff pend.) | `git_changes/stage/unstage/commit/branch/checkout` | pane `scm` | 🔶 |
-| 9 | Grafo de commits (DAG) + diff | `git_log/git_show`, `git.ts` | `VIEW.graph` | ⬜ |
+| 9 | Grafo de commits (DAG) + diff (gitflow finish pend.) | `git_log/git_show/branch/create_branch/checkout` | `VIEW.graph` | 🔶 |
 | 10 | Run & Debug (breakpoints pend.) | `debug_capabilities/run_path/run_measured/trace_execution` | pane `run` | 🔶 |
 | 11 | Testes (descobrir/correr) | `list_tests/run_test/run_all_tests` | pane `test` + painel Output + st-tests | 🔶 |
 | 12 | Problems (diagnósticos) | markers Monaco ← `lsp://diagnostics` | panel `problems` + st-prob | 🔶 |
@@ -24,7 +24,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 15 | Dev Containers (session up/status/down) | `devcontainer_info/session_up/status/down` | pane `containers` | 🔶 |
 | 16 | Explain (resumo lado-a-lado, stream) | `explain.ts`, chat stream | `VIEW` explain (split) | ⬜ |
 | 17 | Review (achados; aplicar-fix pend.) | `review_code` (list_review_analyzers/verify_fix pend.) | `VIEW.analysis` + paleta | 🔶 |
-| 18 | Command Palette + go-to-linha (quick-open ficheiros pend.) | — / `revealLine` | `#pal` palette | 🔶 |
+| 18 | Command Palette + quick-open + go-to-linha | `list_files` / `revealLine` | `#pal` palette | ✅ |
 | 19 | Dev Assistant (chat streaming) | `assistant_chat_stream` + `llm://`, `list_providers` | dock `agent` | 🔶 |
 | 20 | Orquestração (plano/continue/auto/verify) | `assistant.ts`, `run_tests` | dock `agent` + run-ctl | ⬜ |
 | 21 | Edição ancorada (dxpatch) + conflito | `edit.ts`, `patch.ts`, `agent_isolated_patch` | editor (diff inline) | ⬜ |

@@ -11,16 +11,15 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Aplicar correcção (review) | `VIEW.analysis` | `verify_review_fix` + content_version por ligar | 2 |
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
-| Commit graph | `VIEW.graph` | `git_log`/`git_show` por ligar | 6 |
+| Gitflow finish (merge+tag) | `VIEW.graph`/paleta | sem `git_merge`/`git_tag` no backend; mostra comandos p/ terminal | 6 |
 | Output · Co-Dev | panel `output` | log do Co-Dev por ligar | 4 |
 | Services | panel `services` | RUN de stack por ligar | 8 |
-| Quick-open (ficheiros) | paleta (sem prefixo) | precisa de pasta aberta (`list_files`) | 2 |
 | Co-Dev avançado (modos/conselho/juiz/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base já liga) | 4 |
 | Escolher modelo (UI de troca) / Settings providers | dock + Settings | `save_providers_config` + picker por ligar (rótulo já lê list_providers) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
 | Studio: gerar backlog / RUN | `VIEW.studio` | `arch_scaffold` + orquestração por ligar (validação já liga) | 8 |
-| Board / kanban | `VIEW.board` | modelo de issues/sprints por ligar | 7 |
-| Team / harness | `VIEW.team` | harness no backend por ligar | 5 |
+| Board: gerar backlog do Studio / executar sprint | `VIEW.board` | `arch_scaffold`+orquestração por ligar (kanban+auto-teste já ligam) | 8 |
+| Team: imposição do harness no backend | `VIEW.team` | backend não bloqueia escrita/comando por chamada (config+preview já ligam; providers reais) | 5 |
 | Mission manager | `VIEW.manager` | missões/checkpoints por ligar | 4 |
 | RUN / Stop (stack) | menu Run/Project, status | `docker compose up --build` por ligar | 8 |
 | Breakpoints (gutter) | editor Monaco | acoplamento ao gutter em workspace.ts por fazer | — |

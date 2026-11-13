@@ -9,8 +9,8 @@ import "./shell.css";
 import { registerStrings, initI18n, onLocaleChange } from "./i18n";
 import { SHELL_STRINGS } from "./shell/strings";
 import { initTheme } from "./shell/theme";
-import { bootShell, rebuildChrome, setOpenFolderHandler, setSwitchBranchHandler, setGotoLineHandler } from "./shell";
-import { initWorkspace, openFolder, revealLine } from "./shell/workspace";
+import { bootShell, rebuildChrome, setOpenFolderHandler, setSwitchBranchHandler, setGotoLineHandler, setFileListProvider } from "./shell";
+import { initWorkspace, openFolder, revealLine, listWorkspaceFiles } from "./shell/workspace";
 import { initTerminal } from "./shell/terminal";
 import { initSearch } from "./shell/search";
 import { initScm, switchBranch } from "./shell/scm";
@@ -23,6 +23,9 @@ import { initDebug } from "./shell/debug";
 import { initStudio } from "./shell/studio";
 import { initLearn } from "./shell/learn";
 import { initCodev } from "./shell/codev";
+import { initGitflow } from "./shell/gitflow";
+import { initTeam } from "./shell/team";
+import { initBoard } from "./shell/board";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -46,9 +49,13 @@ function main(): void {
   initDebug();                           // RP.run → run_path/run_measured/trace_execution/debug_capabilities
   initStudio();                          // VIEW.studio + comando → arch_validate (Fase 7)
   initLearn();                           // RP.tutor + VIEW.lt → list_courses/get_course/submit_step/request_hint (Fase 3)
+  initGitflow();                         // VIEW.graph (DAG) + comandos Gitflow → git_* (Fase 6)
+  initTeam();                            // VIEW.team → list_providers + harness/router (Fase 5)
+  initBoard();                           // VIEW.board → kanban + run_all_tests (Fase 7)
   setOpenFolderHandler(() => void openFolder());
   setSwitchBranchHandler(() => void switchBranch());
   setGotoLineHandler((n) => revealLine(n));
+  setFileListProvider(() => listWorkspaceFiles());
   onLocaleChange(() => rebuildChrome());
   bootShell();
   initCodev();                           // chat do dock Co-Dev → assistant_chat_stream (Fase 2→4)

@@ -306,6 +306,13 @@ export function revealLine(n: number): void {
   editor.focus();
 }
 
+/** Lista de ficheiros do workspace (para quick-open na paleta). Vazia sem pasta. */
+export async function listWorkspaceFiles(): Promise<string[]> {
+  if (!rootPath) return [];
+  try { return await invoke<string[]>("list_files", { root: rootPath, max: 5000 }); }
+  catch { return []; }
+}
+
 /** Caminho da raiz aberta, ou null. */
 export const workspaceRoot = (): string | null => rootPath;
 /** Caminho do ficheiro activo (se o separador activo for um ficheiro). */

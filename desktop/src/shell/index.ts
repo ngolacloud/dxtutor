@@ -163,6 +163,9 @@ let switchBranchHandler: (() => void) | null = null;
 export function setSwitchBranchHandler(fn: () => void): void { switchBranchHandler = fn; }
 let gotoLineHandler: ((n: number) => void) | null = null;
 export function setGotoLineHandler(fn: (n: number) => void): void { gotoLineHandler = fn; }
+let fileListProvider: (() => Promise<string[]>) | null = null;
+let quickFiles: string[] = [];
+export function setFileListProvider(fn: () => Promise<string[]>): void { fileListProvider = fn; }
 
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
@@ -318,6 +321,10 @@ function palette(pre: string): void {
   inp.value = pre || "";
   inp.placeholder = t("palette.placeholder");
   PIDX = 0; palDraw();
+  // Quick-open: pré-carrega a lista de ficheiros do workspace quando sem prefixo.
+  if (!pre || (!pre.startsWith(">") && !pre.startsWith(":"))) {
+    if (fileListProvider) void fileListProvider().then((f) => { quickFiles = f; if ($("#pal")?.classList.contains("show")) palDraw(); });
+  }
   setTimeout(() => inp.focus(), 0);
 }
 function closePal(): void { $("#pal")?.classList.remove("show"); }
@@ -336,9 +343,15 @@ function palDraw(): void {
   } else if (q.startsWith(":")) {
     const n = parseInt(q.slice(1)) || 1;
     PITEMS = [{ l: t("palette.gotoLine", { n }), run: () => (gotoLineHandler ? gotoLineHandler(n) : nyiToast(t("cmd.goToLine"))) }];
+  } else if (quickFiles.length) {
+    const basename = (p: string) => p.split("/").pop() || p;
+    PITEMS = quickFiles
+      .filter((p) => fuzzy(q, basename(p)))
+      .sort((a, b) => basename(a).localeCompare(basename(b)))
+      .slice(0, 200)
+      .map((p) => ({ l: basename(p), d: p, run: () => openTab({ id: p, title: basename(p), kind: "file", path: p }) }));
   } else {
-    // Quick-open de ficheiros depende de uma pasta aberta (Fase 2). Sem workspace,
-    // mostra o estado honesto em vez de inventar ficheiros.
+    // Sem pasta aberta (ou sem ficheiros): estado honesto, nunca inventa ficheiros.
     PITEMS = [{ l: t("palette.openFolderFirst"), run: () => { closePal(); nyiToast(t("cmd.goToFile")); } }];
   }
   PIDX = Math.min(PIDX, Math.max(0, PITEMS.length - 1));
