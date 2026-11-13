@@ -161,7 +161,7 @@ pub fn rename_path(from: String, to: String) -> Result<(), String> {
 ///   produced binary.
 /// - `.py`: `python3 <file>`.
 /// - anything else: a `RunResult` whose stderr carries the honest note.
-pub fn run_file(path: &str) -> Result<RunResult, String> {
+pub fn run_file(path: &str, args: &[String]) -> Result<RunResult, String> {
     let file = PathBuf::from(path);
     if !file.is_file() {
         return Err(format!("`{path}` is not a file"));
@@ -175,15 +175,15 @@ pub fn run_file(path: &str) -> Result<RunResult, String> {
     // Engine != Host ⇒ corre o ficheiro dentro do container da sua linguagem
     // (reusa `image_for` + a infra de container do avaliador). Host mantém-se exacto.
     if tutor_eval::current_engine() != tutor_eval::SandboxEngine::Host {
-        return run_file_container(&file, &ext);
+        return run_file_container(&file, &ext, args);
     }
 
     match ext.as_str() {
-        "rs" => run_rust(&file),
-        "go" => run_go(&file),
+        "rs" => run_rust(&file, args),
+        "go" => run_go(&file, args),
         "py" => {
             let mut cmd = Command::new("python3");
-            cmd.arg(&file);
+            cmd.arg(&file).args(args);
             if let Some(dir) = file.parent() {
                 cmd.current_dir(dir);
             }
@@ -195,6 +195,154 @@ pub fn run_file(path: &str) -> Result<RunResult, String> {
             stderr: "no runner for this file type".to_string(),
         }),
     }
+}
+
+/// The project's runnable entry file under `root`, if one can be identified by its build
+/// manifest, else `None` (the caller then runs whatever file is focused). Returning a FILE
+/// (not a command) lets the existing `run_file` runner do the right thing for both the host
+/// and the container path — e.g. `<root>/src/main.rs` makes it run `cargo run` from the root.
+///   - Rust (`Cargo.toml`): `src/main.rs`, else the first `src/bin/*.rs`.
+///   - Go (`go.mod`): `main.go` at the root.
+///   - Python: `main.py` / `app.py` / `__main__.py` at the root.
+pub fn project_entrypoint(root: &str) -> Option<String> {
+    let root = Path::new(root);
+    let as_str = |p: PathBuf| p.to_string_lossy().into_owned();
+
+    if root.join("Cargo.toml").is_file() {
+        // Cargo dictates the runnable entry: `src/main.rs` or a `src/bin/*.rs` (what `cargo run`
+        // can actually launch). Prefer those; fall back to ANY `.rs` carrying `fn main` (run
+        // standalone) so an unconventionally-named entry still works.
+        let main_rs = root.join("src/main.rs");
+        if main_rs.is_file() {
+            return Some(as_str(main_rs));
+        }
+        if let Ok(rd) = fs::read_dir(root.join("src/bin")) {
+            let mut bins: Vec<PathBuf> = rd
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("rs"))
+                .collect();
+            bins.sort();
+            if let Some(b) = bins.into_iter().next() {
+                return Some(as_str(b));
+            }
+        }
+        if let Some(p) = scan_for_entrypoint(root, "rs", &has_rust_main) {
+            return Some(as_str(p));
+        }
+        return None; // a lib-only crate with no `fn main`: fall back to the focused file
+    }
+
+    if root.join("go.mod").is_file() {
+        let main_go = root.join("main.go");
+        if main_go.is_file() {
+            return Some(as_str(main_go));
+        }
+        if let Some(p) = scan_for_entrypoint(root, "go", &has_go_main) {
+            return Some(as_str(p));
+        }
+    }
+
+    for cand in ["main.py", "app.py", "__main__.py"] {
+        let p = root.join(cand);
+        if p.is_file() {
+            return Some(as_str(p));
+        }
+    }
+
+    // No manifest / conventional name matched — INDEX the project by CONTENT: the entry file is
+    // the one that HAS a main, wherever it lives and whatever it is named. This is what makes Run
+    // work on a project whose entry is e.g. `cmd/app.rs`, `server.go` or `cli.py`.
+    if let Some(p) = scan_for_entrypoint(root, "rs", &has_rust_main) {
+        return Some(as_str(p));
+    }
+    if let Some(p) = scan_for_entrypoint(root, "go", &has_go_main) {
+        return Some(as_str(p));
+    }
+    if let Some(p) = scan_for_entrypoint(root, "py", &has_python_main) {
+        return Some(as_str(p));
+    }
+
+    None
+}
+
+/// True when Rust source declares a program entry: `fn main(` in any spacing.
+fn has_rust_main(src: &str) -> bool {
+    src.contains("fn main(") || src.contains("fn main (")
+}
+
+/// True when Go source is an executable's entry: `func main(` AND `package main`.
+fn has_go_main(src: &str) -> bool {
+    (src.contains("func main(") || src.contains("func main (")) && src.contains("package main")
+}
+
+/// True when Python source is a runnable script: the `__name__ == "__main__"` guard (either
+/// quote style) or a top-level `def main(`.
+fn has_python_main(src: &str) -> bool {
+    let guarded =
+        src.contains("__name__") && (src.contains("\"__main__\"") || src.contains("'__main__'"));
+    guarded || src.contains("def main(")
+}
+
+/// Walk the project (bounded depth, heavy/build dirs skipped, capped file count) for the FIRST
+/// `.{ext}` file whose content satisfies `is_entry`. Shallow, short paths win (candidates are
+/// sorted), so a top-level entry beats a nested one. Files are read with a size cap so a huge
+/// generated file never stalls the scan. Keeps Run's entrypoint indexing fast and content-aware.
+fn scan_for_entrypoint(root: &Path, ext: &str, is_entry: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    const MAX_FILES: usize = 600; // scan budget — plenty for real projects, bounded for huge trees
+    const MAX_READ: usize = 64 * 1024; // only the head of a file is needed to see a `main`
+    let skip = |name: &str| {
+        matches!(
+            name,
+            "target"
+                | "node_modules"
+                | ".git"
+                | "vendor"
+                | "dist"
+                | "build"
+                | ".venv"
+                | "venv"
+                | "__pycache__"
+                | ".cargo"
+                | ".idea"
+                | ".vscode"
+        )
+    };
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), 0u32)];
+    let mut seen = 0usize;
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 6 || seen >= MAX_FILES {
+            break;
+        }
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.is_dir() {
+                if !name.starts_with('.') && !skip(&name) {
+                    stack.push((path, depth + 1));
+                }
+            } else if path.extension().and_then(|e| e.to_str()) == Some(ext) {
+                seen += 1;
+                candidates.push(path);
+                if seen >= MAX_FILES {
+                    break;
+                }
+            }
+        }
+    }
+    // Shortest path first → prefer a top-level/entry-looking file over a deep one.
+    candidates.sort_by_key(|p| (p.components().count(), p.to_string_lossy().len()));
+    candidates.into_iter().find(|p| {
+        fs::read(p)
+            .ok()
+            .map(|bytes| {
+                let head = &bytes[..bytes.len().min(MAX_READ)];
+                is_entry(&String::from_utf8_lossy(head))
+            })
+            .unwrap_or(false)
+    })
 }
 
 /// Locate the `go` binary: the standard Linux install path first, then the PATH.
@@ -224,7 +372,7 @@ fn go_mod_root(start: &Path) -> Option<PathBuf> {
 /// Run a `.go` file on the host: inside a module (`go run .` from the file's
 /// package dir) or standalone (`go run <file>`). `GOTOOLCHAIN=local` keeps Go from
 /// trying to download a different toolchain.
-fn run_go(file: &Path) -> Result<RunResult, String> {
+fn run_go(file: &Path, args: &[String]) -> Result<RunResult, String> {
     let dir = file.parent().unwrap_or_else(|| Path::new("."));
     let mut cmd = Command::new(go_bin());
     cmd.env("GOTOOLCHAIN", "local").current_dir(dir);
@@ -233,6 +381,7 @@ fn run_go(file: &Path) -> Result<RunResult, String> {
     } else {
         cmd.arg("run").arg(file);
     }
+    cmd.args(args); // `go run <target> <args…>` forwards these to the program
     run_guarded(cmd)
 }
 
@@ -248,7 +397,7 @@ const CONTAINER_RUN_TIMEOUT: Duration = Duration::from_secs(300);
 ///
 /// Network is on for the Rust paths (so `cargo add`/registry work) with the shared
 /// `dxtutor-cargo` cache volume; off for Python. Maps `RunOutput` onto `RunResult`.
-fn run_file_container(file: &Path, ext: &str) -> Result<RunResult, String> {
+fn run_file_container(file: &Path, ext: &str, args: &[String]) -> Result<RunResult, String> {
     use tutor_eval::{cache_volumes_for, image_for, run_in_container, ContainerSpec};
 
     let map = |r: tutor_eval::RunOutput| RunResult {
@@ -265,7 +414,9 @@ fn run_file_container(file: &Path, ext: &str) -> Result<RunResult, String> {
                 .and_then(|n| n.to_str())
                 .unwrap_or("main.py");
             let image = image_for("python").ok_or("no python image configured")?;
-            let mut s = ContainerSpec::new(image, dir, vec!["python3".into(), name.into()]);
+            let mut cmd = vec!["python3".into(), name.into()];
+            cmd.extend(args.iter().cloned());
+            let mut s = ContainerSpec::new(image, dir, cmd);
             s.timeout = CONTAINER_RUN_TIMEOUT;
             s
         }
@@ -278,9 +429,20 @@ fn run_file_container(file: &Path, ext: &str) -> Result<RunResult, String> {
             // `cargo run` ambiguous.
             let (mount, cmd): (PathBuf, Vec<String>) = cargo_root(&start)
                 .and_then(|root| cargo_run_cmd(file, &root).map(|c| (root, c)))
+                .map(|(root, mut c)| {
+                    if !args.is_empty() {
+                        c.push("--".into()); // cargo: forward program args after `--`
+                        c.extend(args.iter().cloned());
+                    }
+                    (root, c)
+                })
                 .unwrap_or_else(|| {
+                    let prog_args = args
+                        .iter()
+                        .map(|a| format!(" {}", shell_single_quote(a)))
+                        .collect::<String>();
                     let script = format!(
-                        "rustc {name} -o /tmp/dxtutor-prog && /tmp/dxtutor-prog",
+                        "rustc {name} -o /tmp/dxtutor-prog && /tmp/dxtutor-prog{prog_args}",
                         name = shell_single_quote(name)
                     );
                     (start.clone(), vec!["sh".into(), "-c".into(), script])
@@ -294,7 +456,7 @@ fn run_file_container(file: &Path, ext: &str) -> Result<RunResult, String> {
         "go" => {
             let image = image_for("go").ok_or("no go image configured")?;
             let start = file.parent().unwrap_or_else(|| Path::new("."));
-            let (mount, cmd) = if let Some(root) = go_mod_root(start) {
+            let (mount, mut cmd) = if let Some(root) = go_mod_root(start) {
                 // Inside a module: mount the package dir and `go run .`.
                 (root, vec!["go".into(), "run".into(), ".".into()])
             } else {
@@ -308,6 +470,7 @@ fn run_file_container(file: &Path, ext: &str) -> Result<RunResult, String> {
                     vec!["go".into(), "run".into(), name.into()],
                 )
             };
+            cmd.extend(args.iter().cloned()); // forward program args to `go run`
             let mut s = ContainerSpec::new(image, &mount, cmd);
             s.timeout = CONTAINER_RUN_TIMEOUT;
             s.cache_volumes = cache_volumes_for("go");
@@ -335,12 +498,16 @@ fn shell_single_quote(s: &str) -> String {
 
 /// Run a `.rs` file: inside a Cargo project (`cargo run` from the root) or, when
 /// standalone, compile with `rustc` into a temp binary and execute it.
-fn run_rust(file: &Path) -> Result<RunResult, String> {
+fn run_rust(file: &Path, args: &[String]) -> Result<RunResult, String> {
     let start = file.parent().unwrap_or_else(|| Path::new("."));
     if let Some(root) = cargo_root(start) {
         if let Some(argv) = cargo_run_cmd(file, &root) {
             let mut cmd = Command::new(&argv[0]);
             cmd.args(&argv[1..]).current_dir(&root);
+            // Program arguments go AFTER `--` so cargo passes them to the binary, not to cargo.
+            if !args.is_empty() {
+                cmd.arg("--").args(args);
+            }
             return run_guarded(cmd);
         }
         // Loose file inside a workspace → fall through to standalone `rustc` below.
@@ -360,6 +527,7 @@ fn run_rust(file: &Path) -> Result<RunResult, String> {
     }
 
     let mut run = Command::new(&bin);
+    run.args(args);
     if let Some(dir) = file.parent() {
         run.current_dir(dir);
     }
@@ -656,6 +824,45 @@ mod tests {
         assert!(contained_path(root, "examples/../../etc/passwd").is_err());
         let outside = if cfg!(windows) { "C:\\other" } else { "/etc/passwd" };
         assert!(contained_path(root, outside).is_err());
+    }
+
+    #[test]
+    fn entry_markers_match_real_code() {
+        assert!(has_rust_main("fn main() {\n}"));
+        assert!(has_rust_main("pub fn run(){}\nfn main () {}"));
+        assert!(!has_rust_main("pub fn run(){}")); // a lib file has no main
+        assert!(has_go_main("package main\nfunc main() {}"));
+        assert!(!has_go_main("package calc\nfunc main() {}")); // not an executable package
+        assert!(has_python_main("def go():\n    pass\nif __name__ == \"__main__\":\n    go()"));
+        assert!(has_python_main("if __name__ == '__main__':\n    pass"));
+        assert!(has_python_main("def main():\n    pass"));
+        assert!(!has_python_main("x = 1\nprint(x)"));
+    }
+
+    #[test]
+    fn entrypoint_found_by_content_when_name_is_unconventional() {
+        // A Cargo project whose entry is NOT src/main.rs but a `fn main` living elsewhere.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[package]\nname=\"x\"\nversion=\"0.1.0\"\n").unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/lib.rs"), "pub fn run() {}\n").unwrap();
+        fs::write(root.join("src/app.rs"), "fn main() { println!(\"hi\"); }\n").unwrap();
+        let entry = project_entrypoint(&root.to_string_lossy()).expect("entry by content");
+        assert!(entry.ends_with("app.rs"), "found: {entry}");
+
+        // A Python project with no main.py but a guarded script elsewhere.
+        let py = tempfile::tempdir().unwrap();
+        fs::create_dir_all(py.path().join("pkg")).unwrap();
+        fs::write(py.path().join("pkg/cli.py"), "if __name__ == \"__main__\":\n    print(1)\n").unwrap();
+        let pentry = project_entrypoint(&py.path().to_string_lossy()).expect("py entry by content");
+        assert!(pentry.ends_with("cli.py"), "found: {pentry}");
+
+        // Heavy dirs are skipped (a `main` buried in target/ must not be picked).
+        let skip = tempfile::tempdir().unwrap();
+        fs::create_dir_all(skip.path().join("target")).unwrap();
+        fs::write(skip.path().join("target/main.rs"), "fn main() {}\n").unwrap();
+        assert!(project_entrypoint(&skip.path().to_string_lossy()).is_none());
     }
 
     #[test]

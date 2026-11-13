@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { monaco } from "./monaco";
 import { selectedProvider } from "./assistant";
+import { assessWholeFileRewrite } from "./patch";
 import { currentFileContent, replaceFileContent } from "./workspace";
 
 const EDIT_SYSTEM =
@@ -165,6 +166,15 @@ function togglePause(): void {
 async function apply(): Promise<void> {
   if (!propModel) return;
   const proposed = propModel.getValue();
+  // Truncation/shrink guard (Phase 3): a partial generation would overwrite the whole file
+  // with less than it had. The developer sees the diff, so this is an explicit override rather
+  // than a hard block — but it must be a conscious choice, never a silent destructive apply.
+  const verdict = assessWholeFileRewrite(baseContent, proposed, lang);
+  if (!verdict.ok) {
+    if (!confirm(`A proposta parece incompleta — ${verdict.reason}. Aplicar mesmo assim (substitui o ficheiro inteiro)?`)) {
+      return;
+    }
+  }
   // Base-version guard: if the file changed since we started, let the developer decide.
   const current = currentFileContent(targetPath) ?? baseContent;
   if (current !== baseContent) {

@@ -5,6 +5,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { assessWholeFileRewrite, parsePatchDirective, resolveAnchoredEdits } from "./patch";
+import { type TestItem, testsInFile } from "./affected";
+import { redactSecrets } from "./redact";
 import {
   activeFilePath,
   activeSelection,
@@ -18,11 +21,13 @@ import {
   rangeStreamConflicted,
   enterRangeReview,
   isDirty,
+  openTabs,
   openFileAt,
   pushEditorStream,
   pushRangeStream,
   rangeStreamOriginal,
   rejectRange,
+  replaceFileContent,
   revealPath,
   workspaceRoot,
 } from "./workspace";
@@ -30,6 +35,21 @@ import {
 interface ChatMsg {
   role: "system" | "user" | "assistant";
   content: string;
+  /** Epoch ms when the message first appeared (stamped lazily at first render) — shown as the
+   *  "8h17"-style time next to the role label. */
+  ts?: number;
+}
+
+/** "8h17"-style local time of an epoch-ms stamp (pt-AO: Hh MM, zero-padded minutes). */
+function clockOf(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getHours()}h${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Turn inline `code` spans into <code> pills AFTER the text is HTML-escaped (so the backticks
+ *  survive escaping and the content stays safe). Mirrors the prototype's inline code chips. */
+function inlineCodePills(escaped: string): string {
+  return escaped.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 }
 
 interface DxAction {
@@ -80,6 +100,7 @@ let currentRequestId: string | null = null;
 let streamingIdx = -1; // index of the assistant message being streamed into
 let provider = "ollama"; // selected AI provider (only Ollama streams live today)
 let lastContext: string | null = null; // the workspace context sent with the last turn
+let lastRedactions = 0; // secrets masked out of the last context (OWASP LLM06), shown on the chip
 const appliedActions = new Set<number>(); // message indices whose dxaction was applied
 const actionErrors = new Map<number, string>(); // message index -> last apply error
 // Dev delegate: the live code-generation stream that writes INTO the editor (not chat).
@@ -110,6 +131,36 @@ interface DiffLine {
 const reviews = new Map<number, DiffLine[]>();
 // Per-review set of accepted add/del line indices (default: all → "accept all").
 const reviewSel = new Map<number, Set<number>>();
+// The file each pending review touches (and, when known, its content BEFORE the change) so
+// that ACCEPTING can re-validate with the compiler (Phase 2) and, on failure, offer a precise
+// Revert (Phase 4). Set when a review is entered; consumed by validateAfterAccept.
+const reviewOrigin = new Map<number, { path: string; before?: string }>();
+// P1 multi-file dxpatch — one chat turn may edit SEVERAL files. The whole changeset is
+// resolved atomically up front (startChatPatchEdit); the FIRST file enters review immediately
+// and the REST wait here, applied one at a time through the same review UI. Accepting a file
+// advances the queue (advancePatchQueue, after its validate+tests); rejecting one HALTS the
+// rest (a partial changeset is rarely what the dev wants). Keyed by the message index.
+interface ResolvedPatchFile {
+  abs: string;
+  file: string; // the model-supplied (relative) path, for display
+  startLine: number;
+  endLine: number;
+  proposed: string;
+  before: string;
+}
+const patchQueue = new Map<number, ResolvedPatchFile[]>();
+const patchTotal = new Map<number, number>(); // total files in the changeset, for "ficheiro i/N"
+// One chat turn may legitimately carry BOTH a `dxcode` (write a NEW file) AND a `dxpatch`
+// (edit an existing one). The two can't run at once (one editor stream at a time), so the code
+// write goes first and the message index is parked here; when its stream finalizes, the queued
+// dxpatch is applied as a reviewable edit — so an emitted dxpatch is ALWAYS applied, never
+// dropped or left as raw text.
+const pendingPatchAfterCode = new Set<number>();
+// Phase 4 — a failed post-accept validation, awaiting the developer's Revert or a bounded
+// Cascade-style auto-correction (feed the compiler errors back to the model for an anchored fix).
+const validationFail = new Map<number, { path: string; errors: string; before?: string }>();
+const fixAttempts = new Map<string, number>(); // path → auto-correction rounds already spent
+const MAX_FIX_ROUNDS = 2; // cap the validate→fix→re-validate loop so it can never run away
 
 // Agent plan (observe→plan→act→verify): a titled checklist the Agent emits via `dxplan`,
 // rendered as a live progress card. Steps advance as the Agent's actions complete.
@@ -119,6 +170,16 @@ interface Plan {
   current: number; // index of the running step (steps before it are done)
   done: boolean;
   autoRun: boolean; // when on, each completed step auto-drives the next (stoppable)
+  /** Epoch-ms when each step BEGAN: `stepStarts[i]` is when step i started; a trailing entry
+   *  marks the end of the last step. A done step's duration is the gap to the next start; the
+   *  running step's is now − its start — so the plan card can show "7min"/"40s" like the template. */
+  stepStarts: number[];
+}
+
+/** Compact duration for a plan step (template-style): "40s" under a minute, else "7min". */
+function fmtStepDur(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : `${Math.round(s / 60)}min`;
 }
 const plans = new Map<number, Plan>(); // message idx → plan
 let activePlanIdx = -1;
@@ -149,6 +210,7 @@ function advancePlan(): void {
   const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
   if (!p || p.done) return;
   p.current += 1;
+  p.stepStarts.push(Date.now()); // mark this moment: end of the prior step / start of the next
   if (p.current >= p.steps.length) {
     p.done = true;
     renderMessages();
@@ -199,11 +261,25 @@ function planCard(p: Plan): string {
   const total = p.steps.length;
   const doneN = p.done ? total : p.current;
   const pct = Math.round((doneN / total) * 100);
+  const now = Date.now();
   const rows = p.steps
     .map((s, i) => {
       const state = p.done || i < p.current ? "done" : i === p.current ? "run" : "todo";
-      const glyph = state === "done" ? "✓" : state === "run" ? "▶" : "·";
-      return `<div class="as-plan-step ${state}"><span class="as-plan-glyph">${glyph}</span><span class="as-plan-label">${esc(s)}</span></div>`;
+      const glyph = state === "done" ? "✓" : state === "run" ? "●" : "·";
+      // Per-step time (template "7min"/"40s"): a done step = gap to the next start; the running
+      // step = elapsed so far. Todo steps show nothing. Needs the stepStarts timestamps.
+      const start = p.stepStarts[i];
+      let time = "";
+      if (start != null) {
+        if (state === "done") {
+          const end = p.stepStarts[i + 1] ?? now;
+          time = fmtStepDur(end - start);
+        } else if (state === "run") {
+          time = fmtStepDur(now - start);
+        }
+      }
+      const timeEl = time ? `<span class="as-plan-time">${time}</span>` : "";
+      return `<div class="as-plan-step ${state}"><span class="as-plan-glyph">${glyph}</span><span class="as-plan-label">${esc(s)}</span>${timeEl}</div>`;
     })
     .join("");
   // Orchestration controls: when the plan has steps left and nothing is streaming, offer to
@@ -261,10 +337,18 @@ export function initAssistant(): void {
     if (!reviews.size && !reviewSel.size) return;
     const kind = (e as CustomEvent<{ kind: "accept" | "reject" }>).detail?.kind;
     const note = kind === "reject" ? " — ✗ rejected (inline)." : " — ✓ accepted (inline).";
-    for (const idx of reviews.keys()) if (messages[idx]) messages[idx].content += note;
+    const touched = [...reviews.keys()];
+    for (const idx of touched) if (messages[idx]) messages[idx].content += note;
     reviews.clear();
     reviewSel.clear();
     renderMessages();
+    // Accepting is only honest once the compiler agrees — re-validate the touched files.
+    if (kind !== "reject") for (const idx of touched) void validateAfterAccept(idx);
+    else
+      for (const idx of touched) {
+        reviewOrigin.delete(idx);
+        haltPatchQueue(idx); // rejecting one file stops the rest of a multi-file changeset
+      }
   });
 
   // Running bar "Parar": cancel the in-flight stream (same as the Send→Stop button).
@@ -331,6 +415,13 @@ export function initAssistant(): void {
     if (!btn) return;
     const idx = Number(btn.dataset.idx);
     if (Number.isNaN(idx)) return;
+    // Study-contract gate: writing actions are refused outside project mode.
+    const writeBtn = btn.classList.contains("as-apply") || btn.classList.contains("as-write");
+    if (writeBtn && !writingAllowed()) {
+      actionErrors.set(idx, "edição bloqueada: fora do modo de projecto (contrato de estudo).");
+      renderMessages();
+      return;
+    }
     if (btn.classList.contains("as-apply")) void applyAction(idx);
     else if (btn.classList.contains("as-write")) void startCodeStream(idx);
     else if (btn.classList.contains("as-plan-next")) void continuePlan(); // drive the next step
@@ -343,12 +434,15 @@ export function initAssistant(): void {
       if (p) p.autoRun = false;
     }
     else if (btn.classList.contains("as-isolate")) void runInIsolation(idx); // isolated worktree → patch
+    else if (btn.classList.contains("as-autofix")) void autoCorrect(idx); // Phase 4: Cascade-style fix
+    else if (btn.classList.contains("as-revert")) void revertAccepted(idx); // Phase 4: one-click revert
     else if (btn.classList.contains("as-accept-all")) {
       acceptRange(); // keep the full proposal (already in the buffer; one undo step)
       reviews.delete(idx);
       reviewSel.delete(idx);
       messages[idx].content += " — ✓ accepted all.";
       renderMessages();
+      void validateAfterAccept(idx); // the "✓" only stands if the compiler agrees
     } else if (btn.classList.contains("as-accept-sel")) {
       const diff = reviews.get(idx);
       const sel = reviewSel.get(idx);
@@ -357,10 +451,13 @@ export function initAssistant(): void {
       reviewSel.delete(idx);
       messages[idx].content += " — ✓ accepted selected lines.";
       renderMessages();
+      void validateAfterAccept(idx);
     } else if (btn.classList.contains("as-revreject")) {
       rejectRange(); // restore the original block
       reviews.delete(idx);
       reviewSel.delete(idx);
+      reviewOrigin.delete(idx);
+      haltPatchQueue(idx); // rejecting one file stops the rest of a multi-file changeset
       messages[idx].content += " — ✗ rejected (original restored).";
       renderMessages();
     } else if (btn.classList.contains("as-reject")) {
@@ -458,6 +555,17 @@ export function initAssistant(): void {
     provider = (e.target as HTMLSelectElement).value;
     updateModelLabel();
   });
+  // The model chip is a picker: choose/persist the model used for the next request. Both the
+  // composer chip and the header chip (prototype) open it; the header chip is keyboard-activable.
+  $("#assistant-model").addEventListener("click", () => openModelPicker());
+  const modelH = document.getElementById("assistant-model-h");
+  modelH?.addEventListener("click", () => openModelPicker());
+  modelH?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openModelPicker();
+    }
+  });
   // The Agent gear opens the UNIFIED Settings at its AI section (RF-UI-03); main.ts wires
   // the handler. Falls back to the providers surface if none is registered.
   $("#assistant-settings").addEventListener("click", () => settingsHandler());
@@ -513,6 +621,7 @@ export function initAssistant(): void {
         writeState.delete(ls.idx);
         advancePlan(); // an edit/continue step completed
         if (info) {
+          reviewOrigin.set(ls.idx, { path: ls.path }); // validate with the compiler on Accept
           void invoke<DiffLine[]>("diff_lines", { old: info.original, new: info.proposed })
             .then((d) => {
               reviews.set(ls.idx, d);
@@ -553,16 +662,38 @@ export function initAssistant(): void {
       if (plan) {
         // Carry the Auto preference across re-planning within the same run.
         const autoRun = activePlanIdx >= 0 ? (plans.get(activePlanIdx)?.autoRun ?? false) : false;
-        plans.set(idx, { title: plan.title, steps: plan.steps, current: 0, done: false, autoRun });
+        plans.set(idx, { title: plan.title, steps: plan.steps, current: 0, done: false, autoRun, stepStarts: [Date.now()] });
         activePlanIdx = idx;
         renderMessages();
         if (autoRun) setTimeout(() => void continuePlan(), 400); // auto-drive step 1
       }
+      // Study-contract gate (defense-in-depth): outside project mode the frontend NEVER applies
+      // a model-emitted write action, even if one slips through. The chat text still shows.
+      if (!writingAllowed()) return;
       // Continue/complete an existing file (append) — for "continue where it stopped".
       const cont = parseContinueDirective(messages[idx]?.content ?? "");
       if (cont) {
         const absC = codeTargetAbs(cont.file);
         if (absC) void startContinue(absC, cont.instruction);
+        return;
+      }
+      // A turn may carry SEVERAL actions. A `dxcode` (new file) and a `dxpatch` (edit an
+      // existing one) are the common pair; run the code write first, then apply the patch
+      // when its stream finishes (finalizeCodeStream drains `pendingPatchAfterCode`) — so the
+      // dxpatch is always applied and reviewable, never dropped or dumped as raw text.
+      const dp = parsePatchDirective(messages[idx]?.content ?? "");
+      const dc = parseCodeDirective(messages[idx]?.content ?? "");
+      const absDc = dc ? codeTargetAbs(dc.file) : null;
+      const codeRunnable = !!dc && !(absDc && isDirty(absDc));
+      if (codeRunnable) {
+        if (dp) pendingPatchAfterCode.add(idx); // apply the patch once the new file is written
+        void startCodeStream(idx);
+        return;
+      }
+      // Anchored edit (dxpatch) is the DEFAULT for changing existing code — content-anchored,
+      // minimal, atomic — so it takes precedence over method-replacement.
+      if (dp) {
+        void startChatPatchEdit(idx);
         return;
       }
       // Localized edit (modify one method) takes precedence over a whole-file write.
@@ -571,11 +702,8 @@ export function initAssistant(): void {
         void startChatMethodEdit(idx);
         return;
       }
-      const dc = parseCodeDirective(messages[idx]?.content ?? "");
-      const abs = dc ? codeTargetAbs(dc.file) : null;
-      if (dc && !(abs && isDirty(abs))) {
-        void startCodeStream(idx);
-      }
+      // A dxcode whose target is dirty falls through to the explicit "Write in editor" button
+      // (rendered from the code card) so the developer decides — don't silently overwrite.
     }
   });
   void listen<{ requestId: string; error: string }>("llm://error", (e) => {
@@ -596,6 +724,7 @@ export function initAssistant(): void {
       endEditorStream();
       actionErrors.set(codeStream.idx, e.payload.error);
       writeState.delete(codeStream.idx);
+      pendingPatchAfterCode.delete(codeStream.idx); // provider error cancelled the turn
       codeStream = null;
       finishStream();
       return;
@@ -608,6 +737,9 @@ export function initAssistant(): void {
   });
 
   setStreaming(false); // render the circular send arrow at rest
+  // Adopt the saved provider/model at startup so features that read `selectedProvider()`
+  // (e.g. Explain) use the configured provider even before the Agent panel is first opened.
+  void refreshModel();
 }
 
 /** Where the Agent gear opens (unified Settings @ AI section). Wired by main.ts. */
@@ -681,8 +813,8 @@ function updateContextHint(): void {
   const p = projects.find((x) => x.path === focusedProject);
   if (input) {
     input.placeholder = p
-      ? `Ask about ${p.name}… — / for templates`
-      : "Ask anything — / for prompt templates…";
+      ? `Perguntar sobre ${p.name}… — / para modelos · ctrl+esc foca`
+      : "Perguntar o que quiser — / para modelos de prompt · ctrl+esc foca";
   }
   if (label) {
     const name = p?.name ?? workspaceRoot()?.split(/[\\/]/).filter(Boolean).pop() ?? "";
@@ -851,6 +983,7 @@ function clearSession(): void {
   shrinkWarn.clear();
   reviews.clear();
   reviewSel.clear();
+  pendingPatchAfterCode.clear();
   renderMessages();
 }
 function newChat(): void {
@@ -997,25 +1130,125 @@ async function saveProviders(): Promise<void> {
 }
 
 let ollamaModels: string[] = [];
-/** Update the model indicator to reflect the selected provider. */
+// The models the active config actually uses, so the chip shows the REAL model (the backend
+// reads `assistant_model` / `ollama_model` from this same config when the request's `model` is
+// unset). Loaded in refreshModel; updated when the picker saves a choice.
+let assistantModel = ""; // remote providers (claude/openai/gemini) → cfg.assistantModel
+let ollamaModelCfg = ""; // local provider → cfg.ollamaModel
+
+// The default model each remote provider falls back to when none is configured — mirrors the
+// backend defaults so the chip is honest about what a request will actually use.
+const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
+  claude: "claude-haiku-4-5",
+  openai: "gpt-4o-mini",
+  gemini: "gemini-2.0-flash",
+};
+// Quick-pick candidates per remote provider (plus a "custom" option in the menu). Kept short;
+// any other id can be typed via "Personalizar…".
+const PROVIDER_MODEL_CHOICES: Record<string, string[]> = {
+  claude: ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
+  openai: ["gpt-4o", "gpt-4o-mini"],
+  gemini: ["gemini-2.0-flash", "gemini-1.5-pro"],
+};
+
+/** The model the chip shows / the next request will use for the current provider. */
+function activeModelFor(prov: string): string {
+  if (prov === "ollama") {
+    return (
+      (ollamaModelCfg && ollamaModels.includes(ollamaModelCfg) ? ollamaModelCfg : "") ||
+      ollamaModels.find((m) => m.toLowerCase().includes("qwen")) ||
+      ollamaModels[0] ||
+      ""
+    );
+  }
+  return assistantModel || PROVIDER_DEFAULT_MODEL[prov] || prov;
+}
+
+/** Update the model indicator to reflect the selected provider + configured model. */
 function updateModelLabel(): void {
-  const el = $("#assistant-model");
-  if (provider === "ollama") {
-    if (ollamaModels.length) {
-      el.textContent = ollamaModels.find((m) => m.toLowerCase().includes("qwen")) ?? ollamaModels[0];
-      el.className = "assistant-model ok";
-    } else {
-      el.textContent = "no local model";
-      el.className = "assistant-model off";
-    }
-  } else {
-    const defaults: Record<string, string> = {
-      claude: "claude-haiku-4-5",
-      openai: "gpt-4o-mini",
-      gemini: "gemini-2.0-flash",
+  const m = activeModelFor(provider);
+  const off = provider === "ollama" && !m;
+  const text = off ? "no local model" : m || provider;
+  // The composer chip AND the header chip (prototype) both reflect the active model, kept in sync.
+  for (const id of ["#assistant-model", "#assistant-model-h"]) {
+    const el = document.querySelector<HTMLElement>(id);
+    if (!el) continue;
+    el.textContent = text;
+    el.className = id === "#assistant-model-h"
+      ? `assistant-model-h ${off ? "off" : "ok"}`
+      : `assistant-model ${off ? "off" : "ok"}`;
+    el.title = "Modelo activo — clicar para escolher";
+    el.style.cursor = "pointer";
+  }
+}
+
+/** Floating model picker anchored to the chip: pick a candidate (or type a custom id); the
+ *  choice is persisted to the provider config and takes effect on the NEXT request (the
+ *  backend reads it when the request's model is unset) and is reflected on the chip. */
+function openModelPicker(): void {
+  document.getElementById("as-model-menu")?.remove();
+  const anchor = document.getElementById("assistant-model");
+  if (!anchor) return;
+  const candidates = provider === "ollama" ? ollamaModels : PROVIDER_MODEL_CHOICES[provider] ?? [];
+  const current = activeModelFor(provider);
+  const menu = document.createElement("div");
+  menu.id = "as-model-menu";
+  // Inline styles (the stylesheet is owned elsewhere) — enough to make it a usable popover.
+  menu.style.cssText =
+    "position:fixed;z-index:1000;min-width:180px;max-height:50vh;overflow:auto;" +
+    "background:var(--panel,#1e1e1e);color:inherit;border:1px solid var(--border,#444);" +
+    "border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.4);padding:4px;display:flex;flex-direction:column;";
+  const opt = (label: string, data: string, sel: boolean) =>
+    `<button class="as-model-opt" data-model="${esc(data)}" style="text-align:left;padding:6px 10px;` +
+    `background:${sel ? "rgba(255,255,255,.08)" : "transparent"};border:0;color:inherit;border-radius:4px;cursor:pointer;">${esc(label)}</button>`;
+  menu.innerHTML =
+    (candidates.length
+      ? candidates.map((m) => opt(m, m, m === current)).join("")
+      : `<div style="padding:6px 10px;opacity:.7;">sem modelos locais</div>`) +
+    opt("Personalizar…", "__custom__", false);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.top = `${Math.round(r.bottom + 4)}px`;
+  document.body.appendChild(menu);
+  const close = () => menu.remove();
+  menu.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest(".as-model-opt") as HTMLElement | null;
+    if (!btn) return;
+    const pick = btn.dataset.model ?? "";
+    close();
+    if (pick === "__custom__") {
+      const v = (window.prompt("Modelo a usar:", current) ?? "").trim();
+      if (v) void setModel(v);
+    } else if (pick) void setModel(pick);
+  });
+  // Dismiss on the next outside click.
+  setTimeout(() => {
+    const onDoc = (ev: MouseEvent) => {
+      if (!menu.contains(ev.target as Node)) {
+        close();
+        window.removeEventListener("click", onDoc);
+      }
     };
-    el.textContent = defaults[provider] ?? provider;
-    el.className = "assistant-model ok";
+    window.addEventListener("click", onDoc);
+  }, 0);
+}
+
+/** Persist the chosen model to the provider config (merged, so keys aren't clobbered) and
+ *  refresh the chip. Effective on the next request — no code path sends a per-request model. */
+async function setModel(model: string): Promise<void> {
+  try {
+    const cfg = await invoke<ProvidersConfig>("get_providers_config");
+    if (provider === "ollama") {
+      cfg.ollamaModel = model;
+      ollamaModelCfg = model;
+    } else {
+      cfg.assistantModel = model;
+      assistantModel = model;
+    }
+    await invoke("save_providers_config", { config: cfg });
+    await refreshModel();
+  } catch {
+    /* leave the chip as-is on failure */
   }
 }
 
@@ -1030,6 +1263,16 @@ export function askAssistant(prompt: string): void {
 async function refreshModel(): Promise<void> {
   const sel = $("#assistant-provider") as HTMLSelectElement;
   const el = $("#assistant-model");
+  // Adopt the SAVED provider + models so the Agent (and the chip) use what the config says —
+  // without this the session defaulted to Ollama even when the config selected Claude.
+  try {
+    const cfg = await invoke<ProvidersConfig>("get_providers_config");
+    if (cfg.provider) provider = cfg.provider;
+    assistantModel = cfg.assistantModel ?? "";
+    ollamaModelCfg = cfg.ollamaModel ?? "";
+  } catch {
+    /* fresh config — keep current selection */
+  }
   try {
     const providers = await invoke<ProviderInfo[]>("list_providers");
     // Only providers that stream live are selectable; the rest are shown (disabled)
@@ -1079,9 +1322,41 @@ async function buildWorkspaceContext(): Promise<string | null> {
   // the model guessing. Truncated to keep the prompt bounded; a selection takes priority.
   const activeBody = active && !sel ? currentFileContent(active) : null;
   const MAX = 8000;
+  // OWASP LLM06: the file content / selection may go to a THIRD-PARTY provider — mask secrets
+  // (keys, tokens, PEM blocks, env assignments) before they ever leave the machine.
+  const selR = redactSecrets(sel ? sel.slice(0, 2000) : "");
+  const bodyR = redactSecrets(activeBody ? activeBody.slice(0, MAX) : "");
+  const selRed = selR.text;
   const bodyBlock = activeBody
-    ? `Active file content${activeBody.length > MAX ? " (truncated)" : ""}:\n${activeBody.slice(0, MAX)}`
+    ? `Active file content${activeBody.length > MAX ? " (truncated)" : ""}:\n${bodyR.text}`
     : "";
+  // Ground on ALL OPEN tabs (the developer's working set), not just the active file — so the Agent
+  // can read and edit a file that is open but not focused (e.g. patch `cli.rs` while `main.rs` has
+  // focus) instead of asking the dev to paste it. Bounded by a total budget and redacted (OWASP
+  // LLM06) before anything leaves the machine. The active file is already shown above, so skip it.
+  const PER_FILE = 6000;
+  let budget = 16000;
+  let openRedactions = 0;
+  const openBlocks: string[] = [];
+  for (const t of openTabs()) {
+    if (t.path === active || !t.path.startsWith(root)) continue;
+    if (budget <= 0) {
+      openBlocks.push("… (mais ficheiros abertos omitidos por limite de contexto)");
+      break;
+    }
+    const slice = t.content.slice(0, Math.min(PER_FILE, budget));
+    const r = redactSecrets(slice);
+    openRedactions += r.count;
+    budget -= slice.length;
+    const rel = t.path.slice(root.length).replace(/^\//, "");
+    openBlocks.push(
+      `--- ${rel}${t.content.length > slice.length ? " (truncated)" : ""} ---\n${r.text}`,
+    );
+  }
+  const openBlock = openBlocks.length
+    ? `Other open files you can read and edit (the developer's working set):\n${openBlocks.join("\n")}`
+    : "";
+  lastRedactions = selR.count + bodyR.count + openRedactions;
   return [
     `You are the dxtutor workspace assistant. You work INSIDE the user's open project — ` +
       `not a generic chatbot. You ASSIST the developer: they decide what to build; you ` +
@@ -1093,21 +1368,47 @@ async function buildWorkspaceContext(): Promise<string | null> {
     `Project root: ${root}`,
     wsRoot !== root ? `(Workspace folder: ${wsRoot})` : "",
     active ? `Active file: ${active}` : `No file is currently open.`,
-    sel ? `Selected code:\n${sel.slice(0, 2000)}` : "",
+    sel ? `Selected code:\n${selRed}` : "",
     bodyBlock,
+    openBlock,
     `Project tree (depth-limited, build/VCS dirs skipped):\n${tree}`,
     `You act through the IDE, never with OS shell instructions (no mkdir / PowerShell / ` +
-      `Python). You have three action blocks. Choose by what the task does:`,
-    `• To MODIFY an EXISTING function/method in a file (e.g. "improve the pow fn", "make ` +
-      `this method faster", "fix the bug in parse"), reply with a SHORT plan (1–3 lines) then ` +
-      `EXACTLY ONE:\n` +
+      `Python). You have the following action blocks. Choose by what the task does:`,
+    `• To CHANGE existing code (fix a bug, tweak a line, edit a method, rename a symbol — ANY ` +
+      `edit to a file that already has content), this is the DEFAULT. Reply with a SHORT plan ` +
+      `(1–3 lines) then EXACTLY ONE:\n` +
+      "```dxpatch\n" +
+      `{"file":"<path relative to root>","edits":[{"old":"<exact snippet copied VERBATIM from ` +
+      `the file>","new":"<its replacement>"}]}\n` +
+      "```\n" +
+      `Rules that make this safe (follow them exactly):\n` +
+      `  – \`old\` must be copied CHARACTER-FOR-CHARACTER from the file you were shown ` +
+      `(the Active file / Selected code / Other open files above), including indentation and ` +
+      `whitespace. You already HAVE the content of every open file above — edit it directly with ` +
+      `\`dxpatch\`; do NOT ask the developer to paste or re-open it. Do NOT retype from memory and ` +
+      `do NOT use line numbers.\n` +
+      `  – Include ENOUGH surrounding lines in \`old\` that it appears EXACTLY ONCE in the file. ` +
+      `If a snippet could match in several places, add more context. A non-unique or not-found ` +
+      `\`old\` is REFUSED (nothing is applied) — so err on the side of more context.\n` +
+      `  – Keep each \`new\` MINIMAL: change only what must change; everything else in the file ` +
+      `stays untouched. Use several {old,new} hunks for several separate changes. To delete ` +
+      `code, set \`new\` to "".\n` +
+      `  – NEVER rewrite the whole file to change part of it. If you have not been shown the ` +
+      `file's content, say so and ask to open it instead of guessing.\n` +
+      `  – To edit SEVERAL files in one change, use the multi-file shape instead — one block, ` +
+      `each file with its own anchored hunks:\n` +
+      `    {"files":[{"file":"<path>","edits":[{"old":"…","new":"…"}]},{"file":"<path2>",` +
+      `"edits":[…]}]}\n` +
+      `    The whole set is resolved ATOMICALLY (if any hunk in any file fails to anchor, ` +
+      `nothing is applied) and reviewed one file at a time. Use it only for files you have been ` +
+      `shown; the same anchoring rules apply to every hunk.`,
+    `• FALLBACK — to replace one whole function/method by NAME (only when an anchored ` +
+      `\`dxpatch\` is awkward, e.g. you are regenerating the entire body), reply with EXACTLY ONE:\n` +
       "```dxedit\n" +
       `{"file":"<path relative to root>","method":"<the fn/method name>","instruction":"<what to change>"}\n` +
       "```\n" +
-      `This edits ONLY that method — it streams a replacement into just that block, leaving ` +
-      `the rest of the file untouched. This is the DEFAULT for "fix the bug" / "resolver o bug": ` +
-      `PREFER dxedit whenever you are changing existing code — do NOT rewrite the whole file and ` +
-      `do NOT append at the end. (dxedit resolves the method by name in the file.)`,
+      `This streams a replacement into just that method's block. Prefer \`dxpatch\` over this; ` +
+      `never use it to rewrite the whole file or to append at the end.`,
     `• To create a NEW file or do a FULL rewrite, reply with a SHORT plan (1–3 lines) then ` +
       `EXACTLY ONE fenced block:\n` +
       "```dxcode\n" +
@@ -1116,8 +1417,17 @@ async function buildWorkspaceContext(): Promise<string | null> {
       `The \`file\` path MAY include folders that do not exist yet (e.g. ` +
       `"examples/dxtutor/main.rs") — they are created automatically. The code streams LIVE ` +
       `into that editor tab. NEVER paste the code in the chat and NEVER say you "will" create ` +
-      `it later — emit the block now. Use dxcode only for a NEW file or a deliberate full ` +
-      `rewrite; to change one method, use dxedit.`,
+      `it later — emit the block now. Use dxcode ONLY for a NEW file (or a deliberate, ` +
+      `explicitly-requested full rewrite). To change existing code, use dxpatch — never ` +
+      `regenerate a whole file to edit part of it.`,
+    `• CORRECTNESS BAR (applies to every code you emit via dxpatch/dxedit/dxcode/dxcontinue): ` +
+      `the result MUST COMPILE and run on the first attempt, as a senior engineer's would. Write ` +
+      `for the target language's rules — e.g. Rust: a \`///\` doc comment must be immediately ` +
+      `followed by the item it documents (never a trailing/dangling doc comment), bring paths into ` +
+      `scope with \`use\`, cover all \`match\` arms; Go: no unused imports; Python: consistent ` +
+      `indentation. Keep delimiters balanced and reference only symbols that exist or are imported. ` +
+      `After the editor applies your change it is validated with the real compiler/analyzer; a ` +
+      `change that does not compile will be reported back to you to fix, so get it right the first time.`,
     `• For a MULTI-STEP task (several files or edits), FIRST emit a plan so the user sees ` +
       `the whole execution, then carry it out step by step:\n` +
       "```dxplan\n" +
@@ -1194,13 +1504,405 @@ function parseEditDirective(text: string): DxEdit | null {
   return null;
 }
 
+/** Chat → anchored edit (`dxpatch`): resolve each {old, new} hunk to a UNIQUE location in the
+ *  LIVE buffer (never a model-supplied line number), then present the resulting minimal span
+ *  as a reviewable change — the same Accept/Reject path a localized edit uses. If any hunk
+ *  cannot anchor uniquely, the whole patch is REFUSED (atomic) and the reason is surfaced, so
+ *  a correction can never land on the wrong — or an ambiguous — line. This is the default for
+ *  modifying existing code; `dxedit`/`dxcode` remain as fallbacks. */
+async function startChatPatchEdit(idx: number): Promise<void> {
+  const dir = parsePatchDirective(messages[idx]?.content ?? "");
+  const root = workspaceRoot();
+  if (!dir || !root) return;
+  // ATOMIC resolution of the WHOLE changeset BEFORE anything is applied: resolve every file's
+  // hunks against its live/on-disk content; if ANY file's path escapes the workspace or any
+  // hunk fails to anchor uniquely, refuse the whole patch and apply nothing. This is the
+  // multi-file generalization of the single-file anti-"wrong lines" guarantee — the dev never
+  // ends up with file 1 written and file 2 silently skipped.
+  const resolved: ResolvedPatchFile[] = [];
+  for (const pf of dir.files) {
+    // Containment (security): resolve on the backend, which REFUSES any `../` escape. A
+    // model-proposed path must never read/write outside the workspace (prompt-injection defence).
+    let abs: string;
+    try {
+      abs = await invoke<string>("workspace_resolve", { root, path: pf.file });
+    } catch {
+      actionErrors.set(idx, `caminho recusado (fora do workspace): ${pf.file}`);
+      renderMessages();
+      return;
+    }
+    // Resolve against the LIVE buffer if the file is already open (dirty content is
+    // authoritative), else read it from disk. We do NOT open each file yet — opening happens
+    // only when a file's turn in the review queue comes.
+    let code = currentFileContent(abs);
+    if (code == null) {
+      try {
+        code = await invoke<string>("read_text_file", { path: abs });
+      } catch {
+        code = null;
+      }
+    }
+    if (code == null) {
+      actionErrors.set(idx, `não consegui ler ${pf.file}`);
+      renderMessages();
+      return;
+    }
+    const res = resolveAnchoredEdits(code, pf.edits);
+    if (!res.ok) {
+      // Refuse rather than apply to a guessed location (the anti-"wrong lines" guarantee).
+      const where = dir.files.length > 1 ? ` (${pf.file})` : "";
+      actionErrors.set(idx, `patch recusado${where} — ${res.reason}`);
+      renderMessages();
+      return;
+    }
+    resolved.push({
+      abs,
+      file: pf.file,
+      startLine: res.startLine,
+      endLine: res.endLine,
+      proposed: res.proposed,
+      before: code,
+    });
+  }
+  // All files resolved cleanly. Open the FIRST for review now; queue the rest.
+  const [first, ...rest] = resolved;
+  if (rest.length) patchQueue.set(idx, rest);
+  else patchQueue.delete(idx);
+  patchTotal.set(idx, resolved.length);
+  await openPatchFileForReview(idx, first, 1);
+}
+
+/** Put ONE already-resolved file into the existing review machinery (inline Accept/Reject,
+ *  conflict detection, diff gutters). Shared by the first file (`startChatPatchEdit`) and each
+ *  subsequent file (`advancePatchQueue`). `ordinal` is this file's 1-based position in the
+ *  changeset; the plan step is advanced only once, on the first file. */
+async function openPatchFileForReview(
+  idx: number,
+  pf: ResolvedPatchFile,
+  ordinal: number,
+): Promise<void> {
+  await openFileAt(pf.abs, 1, 1);
+  const ok = await beginRangeStream(pf.abs, pf.startLine, pf.endLine);
+  if (!ok) {
+    actionErrors.set(idx, "não consegui abrir o bloco no editor");
+    renderMessages();
+    return;
+  }
+  // The replacement is already known (no token stream): write the resolved span in one shot,
+  // then hand it to the existing review machinery.
+  pushRangeStream(pf.proposed);
+  const info = enterRangeReview();
+  writeState.delete(idx);
+  if (ordinal === 1) advancePlan(); // the whole changeset is one plan step
+  if (info) {
+    reviewOrigin.set(idx, { path: pf.abs, before: pf.before });
+    void invoke<DiffLine[]>("diff_lines", { old: info.original, new: info.proposed })
+      .then((d) => {
+        reviews.set(idx, d);
+        const sel = new Set<number>();
+        d.forEach((l, k) => {
+          if (l.op !== "context") sel.add(k);
+        });
+        reviewSel.set(idx, sel);
+        renderMessages();
+      })
+      .catch(() => {});
+    const total = patchTotal.get(idx) ?? 1;
+    const tag = total > 1 ? ` (ficheiro ${ordinal}/${total}: \`${pf.file}\`)` : "";
+    messages[idx].content += `${tag} — revê a alteração abaixo:`;
+  }
+}
+
+/** Accepting a file ADVANCES the multi-file changeset: open the next queued file for review.
+ *  Called at the END of `validateAfterAccept` (after this file's validate + affected tests), so
+ *  the dev sees each file's verdict before the next one opens. A single-file patch (empty queue)
+ *  is a no-op. The per-file validation of the LAST file reflects the full changeset on disk. */
+async function advancePatchQueue(idx: number): Promise<void> {
+  const q = patchQueue.get(idx);
+  if (!q || q.length === 0) {
+    patchQueue.delete(idx);
+    patchTotal.delete(idx);
+    return;
+  }
+  const next = q.shift()!;
+  if (q.length === 0) patchQueue.delete(idx);
+  else patchQueue.set(idx, q);
+  const total = patchTotal.get(idx) ?? 0;
+  const ordinal = total - q.length; // files already opened, including this one
+  await openPatchFileForReview(idx, next, ordinal);
+}
+
+/** Rejecting one file of a multi-file changeset HALTS the rest — a partial changeset is rarely
+ *  what the dev wants, and the already-accepted files stay as single undo steps. Reports how
+ *  many were dropped so nothing is lost silently. No-op for a single-file patch. */
+function haltPatchQueue(idx: number): void {
+  const q = patchQueue.get(idx);
+  if (q && q.length > 0 && messages[idx]) {
+    messages[idx].content += `\nℹ restantes ${q.length} ficheiro(s) do conjunto descartados (rejeição interrompe o conjunto).`;
+  }
+  patchQueue.delete(idx);
+  patchTotal.delete(idx);
+}
+
+/** A compiler/analyzer diagnostic from `review_code`, narrowed to what validation reads. */
+interface ReviewFinding {
+  severity: "error" | "warning" | "info";
+  message: string;
+  primary: { startLine: number };
+}
+interface ReviewReportLite {
+  findings: ReviewFinding[];
+  analyzers: { status: "ran" | "failed" | "unavailable" | "skipped" }[];
+}
+
+// Languages the offline review engine can validate standalone (rustc/clippy, go vet, ruff).
+const VALIDATABLE = new Set(["rs", "go", "py"]);
+function validatableExt(path: string): string | null {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  return VALIDATABLE.has(ext) ? ext : null;
+}
+
+/** Phase 2 (P0 — multi-language) — after the developer ACCEPTS a change, re-validate the file
+ *  with the real analyzer (rustc/clippy, go vet, ruff) and report the verdict HONESTLY: only
+ *  claim "it builds" when an analyzer actually RAN; if none could run, say so rather than imply
+ *  a clean bill. The accept is a single undo step, so a failing verdict points at Revert/Ctrl+Z.
+ *  Non-blocking. Languages without a standalone analyzer fall through quietly. */
+async function validateAfterAccept(idx: number): Promise<void> {
+  await validateAcceptedFile(idx);
+  // Multi-file changeset: once this file's verdict is in, open the next queued file for review.
+  await advancePatchQueue(idx);
+}
+
+/** The per-file half of `validateAfterAccept`: validate the one accepted file and, on a clean
+ *  compile, run its affected tests. Split out so the multi-file queue can advance only AFTER
+ *  the full validate+tests chain of each file completes (every early return still resolves the
+ *  promise, so the wrapper's `advancePatchQueue` runs next regardless of which branch we took). */
+async function validateAcceptedFile(idx: number): Promise<void> {
+  const origin = reviewOrigin.get(idx);
+  reviewOrigin.delete(idx);
+  if (!origin || !validatableExt(origin.path)) return;
+  const root = workspaceRoot();
+  if (!root || !messages[idx]) return;
+  const mark = "\n⏳ a validar com o analisador…";
+  messages[idx].content += mark;
+  renderMessages();
+  const strip = () => {
+    if (messages[idx]) messages[idx].content = messages[idx].content.replace(mark, "");
+  };
+  try {
+    const report = await invoke<ReviewReportLite>("review_code", {
+      root,
+      scope: "file",
+      path: origin.path,
+      version: null,
+    });
+    strip();
+    if (!messages[idx]) return;
+    const ran = (report.analyzers ?? []).some((a) => a.status === "ran");
+    const errors = report.findings.filter((f) => f.severity === "error");
+    if (!ran) {
+      // Honest: we could not actually validate (no analyzer ran — e.g. a loose Go file with no
+      // module). Do NOT imply it compiles.
+      messages[idx].content += "\nℹ não foi possível validar (nenhum analisador disponível para este ficheiro).";
+    } else if (errors.length === 0) {
+      messages[idx].content += "\n✓ validado: o analisador não encontrou erros.";
+      fixAttempts.delete(origin.path); // clean verdict — reset the auto-correction budget
+      renderMessages();
+      // A clean compile is necessary but not sufficient — the real verdict is the TEST. Run the
+      // tests DEFINED in this file and let them have the last word.
+      await runAffectedTests(idx, origin.path);
+      return;
+    } else {
+      const summary = errors
+        .slice(0, 5)
+        .map((e) => `• ${e.message} @ linha ${e.primary.startLine}`)
+        .join("\n");
+      messages[idx].content += `\n⚠ a alteração deixa ${errors.length} erro(s) de compilação.`;
+      // Register the failure so the card can offer Revert / Auto-correct (Phase 4).
+      validationFail.set(idx, { path: origin.path, errors: summary, before: origin.before });
+    }
+    renderMessages();
+  } catch (e) {
+    strip();
+    if (messages[idx]) {
+      messages[idx].content += `\n⚠ não consegui validar com o compilador (${String(e)}).`;
+      renderMessages();
+    }
+  }
+}
+
+/** The outcome of running one test (mirrors the backend `TestRun` returned by `run_test`). */
+interface TestRun {
+  /** False when the run could not complete (timed out, failed to spawn, or did not run). */
+  ran: boolean;
+  passed: boolean;
+  /** Combined stdout+stderr. */
+  output: string;
+}
+
+/** Cap on how many covering tests one accept runs inline, so a file covered by dozens of tests
+ *  can't turn a single accept into a minutes-long run. The overflow is reported honestly (never
+ *  silently dropped) — the full set stays available in the Tests panel. */
+const MAX_AFFECTED_TESTS = 8;
+
+/** Keep a test's captured output short enough for the card; favour the TAIL (the failure, the
+ *  assertion message) over the preamble. */
+function trimTestOutput(s: string): string {
+  const max = 1200;
+  const t = s.replace(/\s+$/, "");
+  const body = t.length > max ? `…\n${t.slice(t.length - max)}` : t;
+  return body
+    .split("\n")
+    .map((l) => `    ${l}`)
+    .join("\n");
+}
+
+/** Verify step — after a CLEAN compile verdict in `validateAfterAccept`, run the tests DEFINED in
+ *  the accepted file (`list_tests` → `TestItem.file === <accepted file>`), one at a time via
+ *  `run_test`, and show ✓/✗ + output per test on the card. If no test covers the file, say so
+ *  honestly (the verdict stays at the compiler). This makes the verdict the TEST, not just a
+ *  clean build. Project-mode only (reuses `writingAllowed`), bounded by `MAX_AFFECTED_TESTS`. */
+async function runAffectedTests(idx: number, acceptedPath: string): Promise<void> {
+  if (!writingAllowed()) return; // study mode never writes/runs on the dev's behalf
+  const root = workspaceRoot();
+  if (!root || !messages[idx]) return;
+  const mark = "\n⏳ a procurar testes que cobrem o ficheiro…";
+  messages[idx].content += mark;
+  renderMessages();
+  const strip = () => {
+    if (messages[idx]) messages[idx].content = messages[idx].content.replace(mark, "");
+  };
+  let items: TestItem[];
+  try {
+    items = await invoke<TestItem[]>("list_tests", { root });
+  } catch (e) {
+    strip();
+    if (messages[idx]) {
+      messages[idx].content += `\nℹ não consegui descobrir os testes (${String(e)}).`;
+      renderMessages();
+    }
+    return;
+  }
+  strip();
+  if (!messages[idx]) return;
+  const affected = testsInFile(items, acceptedPath, root);
+  if (affected.length === 0) {
+    // Honest: a clean compile with no covering test is NOT a passing test.
+    messages[idx].content += "\nℹ nenhum teste cobre este ficheiro — o veredicto fica pela compilação.";
+    renderMessages();
+    return;
+  }
+  const toRun = affected.slice(0, MAX_AFFECTED_TESTS);
+  const overflow = affected.length - toRun.length;
+  messages[idx].content += `\n🧪 a correr ${toRun.length} teste(s) definido(s) neste ficheiro:`;
+  renderMessages();
+  let passed = 0;
+  let failed = 0;
+  let notRun = 0;
+  for (const t of toRun) {
+    const pending = `\n  … ${t.name}`;
+    messages[idx].content += pending;
+    renderMessages();
+    let res: TestRun;
+    try {
+      res = await invoke<TestRun>("run_test", { root, path: t.path, lang: t.lang });
+    } catch (e) {
+      res = { ran: false, passed: false, output: String(e) };
+    }
+    if (!messages[idx]) return; // the card was cleared mid-run — don't paint a stale verdict
+    const sym = !res.ran ? "⚠" : res.passed ? "✓" : "✗";
+    if (!res.ran) notRun++;
+    else if (res.passed) passed++;
+    else failed++;
+    // Attach the output only when it carries signal (a failure or a non-run); a green test needs
+    // no noise. Replace the "pending" placeholder in place so the line updates to its verdict.
+    const detail = res.ran && res.passed ? "" : `\n${trimTestOutput(res.output)}`;
+    messages[idx].content = messages[idx].content.replace(pending, `\n  ${sym} ${t.name}${detail}`);
+    renderMessages();
+  }
+  let summary = `\n→ ${passed} ✓`;
+  if (failed) summary += ` · ${failed} ✗`;
+  if (notRun) summary += ` · ${notRun} ⚠ não correram`;
+  if (overflow > 0) {
+    summary += ` · mais ${overflow} teste(s) não corridos (limite de ${MAX_AFFECTED_TESTS}; corre-os no painel de Testes)`;
+  }
+  messages[idx].content += summary;
+  renderMessages();
+}
+
+/** Defense-in-depth for the study contract (the pedagogy honesty rule: the student writes the
+ *  final solution). The backend already routes study-mode chat as a tutor, but if a model ever
+ *  emits an action block anyway (hallucination, or instructions injected via file content), the
+ *  FRONTEND must still refuse to apply it. Writing is only ever allowed in project mode. */
+function writingAllowed(): boolean {
+  return (localStorage.getItem("dxtutor.mode") ?? "learning") === "workspace";
+}
+
+/** Phase 4 — can this file still be auto-corrected? Only in project mode (a study-mode turn is
+ *  routed as a tutor and won't emit a patch) and within the bounded retry budget. */
+function canAutoCorrect(path: string): boolean {
+  const mode = localStorage.getItem("dxtutor.mode") ?? "learning";
+  return mode === "workspace" && (fixAttempts.get(path) ?? 0) < MAX_FIX_ROUNDS;
+}
+
+/** Phase 4 (Cascade-style) — feed the compiler errors back to the model as a NEW turn asking
+ *  for an anchored `dxpatch` fix. The normal routing applies it and its Accept re-validates,
+ *  closing the loop; `fixAttempts` caps the rounds so it can never spin forever. */
+async function autoCorrect(idx: number): Promise<void> {
+  const vf = validationFail.get(idx);
+  if (!vf || busy) return;
+  if (!canAutoCorrect(vf.path)) {
+    actionErrors.set(idx, `já tentei corrigir ${fixAttempts.get(vf.path) ?? 0}× — resolve manualmente ou dá nova instrução.`);
+    renderMessages();
+    return;
+  }
+  fixAttempts.set(vf.path, (fixAttempts.get(vf.path) ?? 0) + 1);
+  validationFail.delete(idx);
+  renderMessages();
+  const code = currentFileContent(vf.path) ?? "";
+  const rel = workspaceRelative(vf.path);
+  await sendText(
+    `O ficheiro \`${rel}\` não compila. Erros do compilador:\n${vf.errors}\n\n` +
+      `Corrige-os com UM bloco \`\`\`dxpatch — edições ANCORADAS e mínimas (copia cada \`old\` ` +
+      `exactamente do ficheiro e torna-o único). NÃO reescrevas o ficheiro todo.\n\n` +
+      `Conteúdo actual de \`${rel}\`:\n${code.slice(0, 8000)}`,
+  );
+}
+
+/** Phase 4 — one-click Revert of an accepted change back to the file's pre-change content
+ *  (available when we captured it, e.g. the dxpatch path). Otherwise Ctrl+Z is the fallback. */
+async function revertAccepted(idx: number): Promise<void> {
+  const vf = validationFail.get(idx);
+  if (!vf || vf.before == null) return;
+  await replaceFileContent(vf.path, vf.before);
+  validationFail.delete(idx);
+  fixAttempts.delete(vf.path);
+  if (messages[idx]) messages[idx].content += "\n↩ revertido ao estado anterior à alteração.";
+  renderMessages();
+}
+
+/** Workspace-relative path for display (falls back to the basename). */
+function workspaceRelative(abs: string): string {
+  const root = workspaceRoot();
+  if (root && abs.startsWith(root)) return abs.slice(root.replace(/\/$/, "").length + 1);
+  return abs.split("/").pop() ?? abs;
+}
+
 /** Chat → localized edit: open the target file, resolve the method's range via
  *  symbol_ranges, and stream a replacement into ONLY that method (no whole-file rewrite). */
 async function startChatMethodEdit(idx: number): Promise<void> {
   const dir = parseEditDirective(messages[idx]?.content ?? "");
   const root = workspaceRoot();
   if (!dir || !root) return;
-  const abs = codeTargetAbs(dir.file)!;
+  // Containment (security): a `../` escape in the model-proposed path is refused on the backend.
+  let abs: string;
+  try {
+    abs = await invoke<string>("workspace_resolve", { root, path: dir.file });
+  } catch {
+    actionErrors.set(idx, `caminho recusado (fora do workspace): ${dir.file}`);
+    renderMessages();
+    return;
+  }
   // Open the file so we have its live content, then resolve the method range.
   await openFileAt(abs, 1, 1);
   const code = currentFileContent(abs);
@@ -1320,6 +2022,65 @@ function paceCodeStream(): void {
     }
   }, 24);
 }
+/** Compile-gate for a `dxcode` generation (mirrors the dxpatch post-accept validation, but for a
+ *  freshly WRITTEN file): persist the generated text, run `review_code`, and report HONESTLY whether
+ *  it compiles. On errors, register `validationFail` so the card offers Revert / auto-correct — the
+ *  same self-healing loop the dxpatch path uses — so generated code that does NOT build is never
+ *  presented as a clean "✓ Wrote". No-op for languages without a standalone analyzer. */
+async function validateWrittenFile(
+  idx: number,
+  path: string,
+  produced: string,
+  before: string,
+): Promise<void> {
+  if (!validatableExt(path)) return;
+  const root = workspaceRoot();
+  if (!root || !messages[idx]) return;
+  try {
+    await invoke("write_text_file", { path, contents: produced }); // review_code reads disk
+  } catch {
+    return; // if we cannot persist, skip validation rather than claim a verdict we don't have
+  }
+  const mark = "\n⏳ a validar o ficheiro gerado com o compilador…";
+  messages[idx].content += mark;
+  renderMessages();
+  const strip = () => {
+    if (messages[idx]) messages[idx].content = messages[idx].content.replace(mark, "");
+  };
+  try {
+    const report = await invoke<ReviewReportLite>("review_code", {
+      root,
+      scope: "file",
+      path,
+      version: null,
+    });
+    strip();
+    if (!messages[idx]) return;
+    const ran = (report.analyzers ?? []).some((a) => a.status === "ran");
+    const errors = report.findings.filter((f) => f.severity === "error");
+    if (!ran) {
+      messages[idx].content += "\nℹ ficheiro escrito (nenhum analisador disponível para o validar).";
+    } else if (errors.length === 0) {
+      messages[idx].content += "\n✓ gerado e compila: o analisador não encontrou erros.";
+      fixAttempts.delete(path);
+    } else {
+      const summary = errors
+        .slice(0, 5)
+        .map((e) => `• ${e.message} @ linha ${e.primary.startLine}`)
+        .join("\n");
+      messages[idx].content += `\n⚠ o ficheiro gerado tem ${errors.length} erro(s) de compilação — corrige antes de usar.`;
+      validationFail.set(idx, { path, errors: summary, before });
+    }
+    renderMessages();
+  } catch (e) {
+    strip();
+    if (messages[idx]) {
+      messages[idx].content += `\n⚠ não consegui validar o ficheiro gerado (${String(e)}).`;
+      renderMessages();
+    }
+  }
+}
+
 function finalizeCodeStream(cs: NonNullable<typeof codeStream>): void {
   const produced = stripFences(cs.accum).trim();
   if (!produced) {
@@ -1328,17 +2089,41 @@ function finalizeCodeStream(cs: NonNullable<typeof codeStream>): void {
     actionErrors.set(cs.idx, "the model produced no code — the file was left unchanged");
     writeState.delete(cs.idx);
   } else {
-    pushEditorStream(cs.target); // ensure the full text is shown
-    endEditorStream();
-    writeState.set(cs.idx, "done");
-    advancePlan(); // a code-write step completed
-    // Shrink guard: a substantial file replaced with far less content may be a partial.
-    if (cs.original.trim().length > 200 && produced.length < cs.original.length * 0.4) {
-      shrinkWarn.add(cs.idx);
+    // HARD guard (Phase 3): never let a truncated or drastically-shrunken whole-file
+    // generation LAND on an existing file — that silently destroys working code. Restore the
+    // original and refuse; the developer retries or edits with the anchored dxpatch instead.
+    const verdict = assessWholeFileRewrite(cs.original, produced, langOfPath(cs.path));
+    if (!verdict.ok) {
+      pushEditorStream(cs.original);
+      endEditorStream();
+      actionErrors.set(
+        cs.idx,
+        `escrita bloqueada — ${verdict.reason}. O ficheiro foi mantido intacto; tenta de novo ou usa dxpatch para alterar só o necessário.`,
+      );
+      writeState.delete(cs.idx);
+    } else {
+      pushEditorStream(cs.target); // ensure the full text is shown
+      endEditorStream();
+      writeState.set(cs.idx, "done");
+      advancePlan(); // a code-write step completed
+      // Soft shrink advisory for the milder 33–40% band (the hard guard caught the rest).
+      if (cs.original.trim().length > 200 && produced.length < cs.original.length * 0.4) {
+        shrinkWarn.add(cs.idx);
+      }
+      // First-instance correctness: a generated file is NEVER presented as done unguarded. Save it
+      // and validate with the real compiler/analyzer — a generation that does not build is reported
+      // (and becomes auto-correctable) instead of masquerading as a clean "✓ Wrote". Skipped when a
+      // dxpatch follows this turn (its own accept→validate covers the combined state via the idx).
+      if (!pendingPatchAfterCode.has(cs.idx)) {
+        void validateWrittenFile(cs.idx, cs.path, cs.target, cs.original);
+      }
     }
   }
   if (codeStream === cs) codeStream = null;
   finishStream();
+  // If this turn also carried a dxpatch, apply it now that the new file is written (runs on
+  // every outcome — a blocked/empty write still lets an independent patch through).
+  if (pendingPatchAfterCode.delete(cs.idx)) void startChatPatchEdit(cs.idx);
   renderMessages();
 }
 
@@ -1350,6 +2135,55 @@ function stripFences(s: string): string {
   const body = nl >= 0 ? after.slice(nl + 1) : "";
   const close = body.indexOf("```");
   return close >= 0 ? body.slice(0, close) : body;
+}
+
+/** Monaco/analyzer language id from a file path's extension (for the rewrite guard). */
+function langOfPath(path: string): string {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  const map: Record<string, string> = {
+    rs: "rust", go: "go", ts: "typescript", tsx: "typescript", js: "javascript",
+    jsx: "javascript", py: "python", c: "c", h: "c", cpp: "cpp", cc: "cpp",
+    hpp: "cpp", java: "java", json: "json",
+  };
+  return map[ext] ?? "plaintext";
+}
+
+/** Hard, language-specific correctness constraints injected into EVERY code-generation prompt so
+ *  the model emits code that COMPILES on the first pass (not merely plausible-looking text). These
+ *  target the common first-try failures per language — the kind a senior engineer never ships, and
+ *  exactly what a generic "write the file" prompt lets slip (e.g. a dangling Rust doc comment →
+ *  `error: expected item after doc comment`). `lang` is the normalized name from `langOfPath`. */
+function languageSpec(lang: string): string {
+  const common =
+    "The output MUST compile/parse exactly as written. Emit the COMPLETE, final file: every " +
+    "opened `{ ( [` is closed, every statement terminated, no `…`/`TODO`/elided placeholders, " +
+    "nothing cut off mid-token. Reference ONLY symbols you define in this file or import. Before " +
+    "you finish, re-read your output and fix any construct that would not compile.";
+  const byLang: Record<string, string> = {
+    rust:
+      "RUST specifics: a `///` or `//!` doc comment MUST be immediately followed by the item it " +
+      "documents — NEVER leave a trailing/dangling doc comment at the end of a block or file " +
+      "(that is `error: expected item after doc comment`). Put runnable doc-test examples inside a " +
+      "fenced ```rust block INSIDE the doc comment, never as bare `assert!`/`use` lines. Bring every " +
+      "path into scope with `use` (e.g. `use std::process;`). `match` must cover all cases or end " +
+      "with `_ =>`. Add `#[derive(...)]` for traits you rely on. Every non-diverging path returns the " +
+      "declared type; a function that always exits returns `!`.",
+    go:
+      "GO specifics: begin with the correct `package` clause; `func main()` lives in `package main`. " +
+      "Import every package you use and NONE you don't — an unused import is a COMPILE error. Handle " +
+      "or explicitly discard (`_ =`) returned errors.",
+    python:
+      "PYTHON specifics: consistent 4-space indentation; every name defined or imported before use; " +
+      "all brackets/quotes closed; guard a script entrypoint with `if __name__ == \"__main__\":`.",
+    typescript:
+      "TYPESCRIPT specifics: satisfy the types under strict mode (no stray implicit `any` that fails " +
+      "the build); import every symbol you reference; no unterminated strings/blocks; give exported " +
+      "functions explicit return types.",
+    javascript:
+      "JAVASCRIPT specifics: no unterminated strings/blocks; reference only defined or imported names.",
+  };
+  const specific = byLang[lang];
+  return specific ? `${common}\n${specific}` : common;
 }
 
 /** Absolute path of a dxcode target, resolved under the workspace root. */
@@ -1380,7 +2214,12 @@ async function runInIsolation(idx: number): Promise<void> {
     // 1) Generate the full file content (blocking — we need it as a payload, not a stream).
     const reply = await invoke<{ content: string }>("assistant_chat", {
       messages: [
-        { role: "system", content: `You generate ONE complete ${dir.language} file. Output ONLY the file's code — no fences, no prose.` },
+        {
+          role: "system",
+          content:
+            `You generate ONE complete ${dir.language} file. Output ONLY the file's code — no fences, no prose.\n` +
+            languageSpec(langOfPath(dir.file)),
+        },
         { role: "user", content: dir.instruction },
       ],
       model: null,
@@ -1579,6 +2418,33 @@ async function startCodeStream(idx: number): Promise<void> {
     renderMessages();
     return;
   }
+  // Anti-overwrite guard: `dxcode` regenerates the WHOLE file. On a file that already has real
+  // content that is a destructive rewrite — the exact "it rewrote my file" danger. dxcode is for
+  // NEW files; to change an existing one the model should use `dxpatch` (surgical). Don't do it
+  // silently: confirm, and on decline steer to dxpatch. New/empty/stub files pass straight through.
+  let existing = "";
+  try {
+    existing = await invoke<string>("read_text_file", { path: abs });
+  } catch {
+    existing = ""; // file does not exist yet → a genuine new-file write
+  }
+  if (existing.trim().length > 40) {
+    const proceed = window.confirm(
+      `"${dir.file}" já tem conteúdo.\n\n` +
+        `Esta acção (write no editor) reescreve o ficheiro INTEIRO por cima do actual.\n\n` +
+        `OK = reescrever tudo · Cancelar = manter (usa dxpatch para alterar só o necessário).`,
+    );
+    if (!proceed) {
+      pendingPatchAfterCode.delete(idx); // a paired patch, if any, no longer follows this write
+      writeState.delete(idx);
+      actionErrors.set(
+        idx,
+        "reescrita por cima cancelada — o ficheiro foi mantido; usa dxpatch para editar só o necessário.",
+      );
+      renderMessages();
+      return;
+    }
+  }
   const ok = await beginEditorStream(abs);
   if (!ok) {
     actionErrors.set(idx, "could not open the target file in the editor");
@@ -1602,7 +2468,8 @@ async function startCodeStream(idx: number): Promise<void> {
         `You are a precise code generator writing the file "${dir.file}"` +
         (dir.language ? ` (${dir.language})` : "") +
         `. Output ONLY the complete, final contents of this file. No markdown, no code ` +
-        `fences, no explanation — just the file's text.`,
+        `fences, no explanation — just the file's text.\n` +
+        languageSpec(langOfPath(abs)),
     },
     {
       role: "user",
@@ -1728,13 +2595,45 @@ function finishStream(): void {
 
 const SEND_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
 const STOP_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
+let runStart = 0;
+let runTimer: number | undefined;
+
+/** Paint the running bar's elapsed time (prototype: "54s" / "1m 20s"), recomputed each tick. */
+function paintRunTime(): void {
+  const el = document.querySelector<HTMLElement>(".ar-time");
+  if (!el) return;
+  const secs = Math.max(0, Math.round((Date.now() - runStart) / 1000));
+  el.textContent = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
 function setStreaming(s: boolean): void {
   const b = $("#assistant-send") as HTMLButtonElement;
   b.innerHTML = s ? STOP_ICON : SEND_ICON;
   b.title = s ? "Stop" : "Send (Ctrl+Enter)";
   b.classList.toggle("stop", s);
-  // Prototype-style running bar: a real "A executar… / Parar" surfaces while the agent streams.
+  // Prototype-style running bar: a real "a executar · passo X/Y" + elapsed time surfaces while the
+  // agent streams, then hides when idle.
   document.getElementById("assistant-running")?.classList.toggle("hidden", !s);
+  const label = document.querySelector<HTMLElement>(".ar-label");
+  if (s) {
+    // Reflect the active plan step when one is driving the turn (prototype "passo 5/7").
+    const p = activePlanIdx >= 0 ? plans.get(activePlanIdx) : undefined;
+    if (label) {
+      label.textContent =
+        p && !p.done ? `a executar · passo ${p.current + 1}/${p.steps.length}` : "A executar…";
+    }
+    runStart = Date.now();
+    paintRunTime();
+    if (runTimer === undefined) runTimer = window.setInterval(paintRunTime, 1000);
+  } else {
+    if (runTimer !== undefined) {
+      window.clearInterval(runTimer);
+      runTimer = undefined;
+    }
+    const t = document.querySelector<HTMLElement>(".ar-time");
+    if (t) t.textContent = "";
+    if (label) label.textContent = "A executar…";
+  }
 }
 
 function renderMessages(): void {
@@ -1744,8 +2643,11 @@ function renderMessages(): void {
     return;
   }
   // A small, inspectable chip showing the workspace context attached to the last turn.
+  const redNote = lastRedactions > 0
+    ? ` · 🔒 ${lastRedactions} segredo(s) mascarado(s)`
+    : "";
   const chip = lastContext
-    ? `<details class="as-context"><summary>🗂 workspace context attached — click to inspect</summary><pre>${esc(lastContext)}</pre></details>`
+    ? `<details class="as-context"><summary>🗂 workspace context attached — click to inspect${redNote}</summary><pre>${esc(lastContext)}</pre></details>`
     : "";
   host.innerHTML =
     chip +
@@ -1760,10 +2662,13 @@ function renderMessages(): void {
         let shown = m.content;
         if (action) shown = shown.replace(/```dxaction\s*\n[\s\S]*?```/, "").trim();
         if (code) shown = shown.replace(/```dxcode\s*\n[\s\S]*?```/, "").trim();
+        // A dxpatch is applied as a reviewable edit (never dumped as raw text) — strip its
+        // fenced JSON from the bubble like the other directives.
+        shown = shown.replace(/```dxpatch\s*\n[\s\S]*?```/, "").trim();
         shown = shown.replace(/```dxedit\s*\n[\s\S]*?```/, "").trim();
         shown = shown.replace(/```dxcontinue\s*\n[\s\S]*?```/, "").trim();
         shown = shown.replace(/```dxplan\s*\n[\s\S]*?```/, "").trim();
-        const body = esc(shown) + (streaming ? '<span class="as-cursor">▍</span>' : "");
+        const body = inlineCodePills(esc(shown)) + (streaming ? '<span class="as-cursor">▍</span>' : "");
         const err = actionErrors.get(i);
         let card = "";
         // Agent plan progress (execution checklist) — rendered above any action card.
@@ -1823,7 +2728,29 @@ function renderMessages(): void {
             `<button class="as-accept-sel" data-idx="${i}">Accept selected</button>` +
             `<button class="as-revreject" data-idx="${i}">Reject</button></div></div>`;
         }
-        return `<div class="as-msg ${m.role}"><div class="as-role">${m.role === "user" ? "You" : "Assistant"}</div><div class="as-body">${body || (streaming ? '<span class="as-cursor">▍</span>' : "")}</div>${card}</div>`;
+        // Post-accept validation failure (Phase 4): the compiler disagrees — offer Revert and,
+        // within budget, a Cascade-style auto-correction that feeds the errors back to the model.
+        const vf = validationFail.get(i);
+        if (vf) {
+          card +=
+            `<div class="as-action err"><div class="as-action-h">⚠ validação falhou — o ficheiro não compila</div>` +
+            `<div class="as-action-sub"><pre class="as-vf-errs">${esc(vf.errors)}</pre></div>` +
+            `<div class="as-action-btns">` +
+            (canAutoCorrect(vf.path)
+              ? `<button class="as-autofix" data-idx="${i}" title="Pede ao modelo um dxpatch ancorado que corrige estes erros">🔧 Corrigir automaticamente</button>`
+              : "") +
+            (vf.before != null
+              ? `<button class="as-revert" data-idx="${i}" title="Repõe o ficheiro como estava antes desta alteração">↩ Reverter</button>`
+              : `<span class="as-action-sub">Ctrl+Z desfaz.</span>`) +
+            `</div></div>`;
+        }
+        if (m.ts == null) m.ts = Date.now(); // stamp at first render (≈ creation time)
+        const roleName = m.role === "user" ? "VOCÊ" : "ASSISTANT";
+        return (
+          `<div class="as-msg ${m.role}"><div class="as-role"><span class="as-role-name">${roleName}</span>` +
+          `<span class="as-time">${clockOf(m.ts)}</span></div>` +
+          `<div class="as-body">${body || (streaming ? '<span class="as-cursor">▍</span>' : "")}</div>${card}</div>`
+        );
       })
       .join("");
   host.scrollTop = host.scrollHeight;

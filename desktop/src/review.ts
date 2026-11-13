@@ -13,7 +13,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { monaco } from "./monaco";
-import { askAssistant, startLocalizedEdit } from "./assistant";
+import { askAssistant, startContinue, startLocalizedEdit } from "./assistant";
 import { startEdit } from "./edit";
 import {
   activeFilePath,
@@ -498,6 +498,23 @@ async function fixWithAI(f: Finding): Promise<void> {
   const abs = resolvePath(f.primary.file, lastRoot);
   const name = abs.split("/").pop() ?? abs;
   const lang = langForFile(name);
+
+  // Structural end-of-file breakage (an unclosed delimiter) cannot be fixed by a localized
+  // edit around the cited line: the compiler points its caret at (or past) EOF, but the fix —
+  // the missing closers, and anything the still-open code needs to compile (a final match arm,
+  // a referenced-but-undefined item) — belongs at the END of the file. Rewriting the two lines
+  // around the primary span closes nothing. Route these to file COMPLETION (append at EOF),
+  // the same path a method edit takes when the file is too incomplete to resolve the target.
+  if (isStructuralIncomplete(f)) {
+    const why =
+      `The file is incomplete — the compiler reports "${f.message}" (around line ${f.primary.startLine}). ` +
+      `Complete it from where it stops so it compiles: close every still-open block/delimiter at the ` +
+      `very end, and add anything the existing code already refers to but is missing (for example a ` +
+      `final \`_ =>\` match arm, or a function it calls). Do not rewrite or repeat existing code.`;
+    void startContinue(abs, why);
+    return;
+  }
+
   const instruction = `Fix the ${f.analyzer}${f.rule ? " " + f.rule : ""} issue at line ${f.primary.startLine}: ${f.message}. Change only what is necessary.`;
 
   // Open the file in the editor (the localized edit streams INTO it); then target the
@@ -559,6 +576,15 @@ async function applyFix(f: Finding): Promise<{ ok: boolean; reason?: string }> {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
+
+/** A parse error whose fix lives at END-OF-FILE, not at the cited line. An unclosed delimiter
+ *  carets at (or past) EOF, but the closer — and whatever the unterminated code still needs to
+ *  compile — belongs after the last line, so a localized edit around the primary span can never
+ *  resolve it. Detected from the message or from a related span the compiler labels. */
+function isStructuralIncomplete(f: Finding): boolean {
+  const hit = (s: string | null) => (s ?? "").toLowerCase().includes("unclosed delimiter");
+  return hit(f.message) || f.related.some((s) => hit(s.label));
+}
 
 function classLabel(c: FindingClass): string {
   return c === "bug" ? "Bug" : c === "risk" ? "Risk" : "Improve";

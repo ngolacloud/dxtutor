@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openExplainTab, closeExplainTab, revealLine, openFileAt, workspaceRoot } from "./workspace";
+import { selectedProvider } from "./assistant";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const esc = (s: string) =>
@@ -198,13 +199,16 @@ async function runExplain(system: string, user: string): Promise<void> {
   accum = "";
   reqId = crypto.randomUUID();
   try {
-    // mode "workspace" keeps the policy non-tutor (it must explain, not withhold).
+    // mode "workspace" keeps the policy non-tutor (it must explain, not withhold). Use the
+    // provider the developer selected in the Agent (Claude/OpenAI/Gemini/Ollama) — `null`
+    // forced Ollama, so Explain broke whenever another provider was active and no local
+    // model was running.
     await invoke("assistant_chat_stream", {
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      provider: null,
+      provider: selectedProvider(),
       model: null,
       requestId: reqId,
       mode: "workspace",

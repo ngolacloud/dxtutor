@@ -70,10 +70,11 @@
   --bg-tab-active: #161618;
   --bg-tab-inactive: #19191b;
   --bg-hover: #242428;
-  --bg-selected: rgba(224, 108, 59, 0.16);   /* linha seleccionada — tinta laranja (identidade) */
+  --bg-selected: rgba(var(--accent-rgb, 224, 108, 59), 0.16);   /* linha seleccionada — tinta laranja (identidade) */
   --bg-selected-inactive: #26262a;
   --bg-input: #202023;
   --bg-menu: #1d1d20;
+  --bg-card: #26272b;              /* cartões elevados (plano / execução no Assistant) */
   /* Lines */
   --border: #2a2a2e;
   --border-strong: #37373c;
@@ -84,12 +85,17 @@
   --fg-dim: #8a8a90;
   --fg-muted: #6e6e75;
   --fg-bright: #ffffff;
-  /* Accents — laranja da marca + gradiente-assinatura */
+  /* Accents — laranja da marca + gradiente-assinatura.
+     Alinhado ao protótipo navegável: realce #e06c3b / hover #f08a4b. A cor vive
+     num token RGB (--accent-rgb) para que todos os véus translúcidos derivem dela
+     — muda-se a marca num só sítio e toda a folha re-skina em harmonia. */
+  --accent-rgb: 224, 108, 59;
   --accent: #e06c3b;
   --accent-hover: #f08a4b;
-  --accent-grad: linear-gradient(135deg, #e06c3b, #f08a4b);  /* realces vivos (tab/activity/send) */
-  --accent-soft: rgba(224, 108, 59, 0.12);
-  --focus: #f08a4b;
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-hover));  /* realces vivos (tab/activity/send) */
+  --accent-soft: rgba(var(--accent-rgb), 0.12);
+  --accent-line: rgba(var(--accent-rgb), 0.45);   /* fios/sublinhados de realce */
+  --focus: var(--accent-hover);
   --blue: #4a9eff;
   --green: #5cc9a7;
   --green-bright: #89d185;
@@ -103,8 +109,13 @@
   --git-u: #73c991;
   --git-d: #f1707a;
   /* Sombras do protótipo */
-  --sh-acc: 0 4px 14px rgba(224, 108, 59, 0.3);
+  --sh-card: 0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 28px rgba(0, 0, 0, 0.35);
+  --sh-acc: 0 4px 14px rgba(var(--accent-rgb), 0.3);
   --sh-pop: 0 10px 34px rgba(0, 0, 0, 0.55);
+  /* Raios de canto — cartões / chips+botões / pílulas (tokens do protótipo). */
+  --r-card: 10px;
+  --r-chip: 6px;
+  --r-pill: 999px;
   /* Tipografia: UI em Inter (como o protótipo), mono em Cascadia — ambas com fallback. */
   --font-ui: "Inter", "Segoe UI", -apple-system, system-ui, Ubuntu, "Droid Sans", sans-serif;
 }
@@ -113,7 +124,7 @@
 #statusbar { color: var(--fg); }
 #statusbar::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(224, 108, 59, 0.45), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-line), transparent);
 }
 .status-left > *:hover, .status-right > *:hover { background: var(--bg-hover); }
 .pill { background: var(--bg-input); }
@@ -174,20 +185,27 @@ body {
      menus and window buttons. */
 }
 .title-left { display: flex; align-items: center; gap: 16px; }
-.codicon-logo { color: #e06c3b; width: 16px; height: 16px; display: block; }
+.codicon-logo { color: var(--accent); width: 16px; height: 16px; display: block; }
 .menu { display: flex; gap: 14px; color: var(--fg-dim); -webkit-app-region: no-drag; }
 .menu span { cursor: default; }
 .menu span:hover { color: var(--fg-bright); }
 .title-center { flex: 1; text-align: center; color: var(--fg-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Title-bar right extras (prototype parity): update pill + layout/assistant/account icons. */
 .tb-extras { display: flex; align-items: center; gap: 3px; -webkit-app-region: no-drag; flex: none; }
+/* Chip de avatar do utilizador (iniciais) — identidade de conta, estilo protótipo. */
+.tb-avatar {
+  flex: none; display: inline-grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  margin-right: 4px; background: var(--accent-grad); color: #fff;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em; user-select: none;
+}
 .tb-update {
   display: flex; align-items: center; gap: 6px;
   background: var(--accent-soft); color: var(--accent-hover);
-  border: 1px solid rgba(224, 108, 59, 0.35); border-radius: 7px;
+  border: 1px solid rgba(var(--accent-rgb), 0.35); border-radius: 7px;
   padding: 3px 10px; font-family: var(--font-ui); font-size: 11.5px; font-weight: 500; cursor: pointer;
 }
-.tb-update:hover { background: rgba(224, 108, 59, 0.2); }
+.tb-update:hover { background: rgba(var(--accent-rgb), 0.2); }
 .tb-ic {
   width: 30px; height: 24px; display: grid; place-items: center;
   background: none; border: none; color: var(--fg-muted); border-radius: 6px; cursor: pointer;
@@ -1366,7 +1384,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
   letter-spacing: 0.04em;
   margin-bottom: 24px;
 }
-.onb-brand .onb-logo { color: #e06c3b; width: 20px; height: 20px; display: block; }
+.onb-brand .onb-logo { color: var(--accent); width: 20px; height: 20px; display: block; }
 .onb-screen h1 { font-size: 24px; font-weight: 600; color: var(--fg-bright); margin-bottom: 6px; }
 .onb-sub { color: var(--fg-muted); font-size: 13px; margin-bottom: 22px; }
 
@@ -2600,6 +2618,21 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .qo-box { width: min(620px, 90vw); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); overflow: hidden; }
 .qo-input { width: 100%; box-sizing: border-box; padding: 11px 14px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg-base); color: var(--fg); font: inherit; font-size: 14px; }
 .qo-input:focus { outline: none; }
+
+/* Styled in-app prompt (replaces native window.prompt) — same visual language as qo-overlay. */
+.uip-overlay { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding-top: 20vh; background: rgba(0,0,0,0.45); }
+.uip-overlay.hidden { display: none; }
+.uip-box { width: min(460px, 90vw); background: var(--bg-card, var(--bg-elevated)); border: 1px solid var(--border); border-radius: var(--r-card, 10px); box-shadow: 0 16px 48px rgba(0,0,0,0.55); padding: 16px 16px 14px; }
+.uip-title { font-size: 13px; line-height: 1.5; color: var(--fg); margin-bottom: 10px; }
+.uip-input { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-chip, 6px); background: var(--bg-base); color: var(--fg); font: inherit; font-size: 13px; }
+.uip-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 224, 108, 59), 0.25); }
+.uip-hint { font-size: 11px; color: var(--fg-muted); margin-top: 7px; min-height: 0; }
+.uip-hint:empty { display: none; }
+.uip-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.uip-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: var(--r-chip, 6px); background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
+.uip-btn:hover { border-color: var(--fg-muted); }
+.uip-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.uip-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .qo-list { max-height: 50vh; overflow: auto; }
 .qo-note { padding: 14px; color: var(--fg-dim); }
 .qo-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 14px; cursor: pointer; }
@@ -2805,7 +2838,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
   max-width: 92vw;
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
+  background: var(--bg-elevated);
   border-left: 1px solid var(--border-strong);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
   z-index: 42;
@@ -2888,6 +2921,16 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .assistant-model { flex: none; font-family: var(--font-mono); font-size: 10px; }
 .assistant-model.ok { color: var(--green); }
 .assistant-model.off { color: var(--fg-muted); }
+
+/* Afinamentos do protótipo: hora nas mensagens, chip de modelo no cabeçalho, tempo na barra. */
+.as-time { flex: none; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg-muted); opacity: 0.85; font-variant-numeric: tabular-nums; }
+.as-role-name { flex: none; }
+.assistant-model-h { flex: none; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--r-pill); color: var(--fg-muted); cursor: pointer; user-select: none; }
+.assistant-model-h::after { content: "▾"; font-size: 8px; opacity: 0.7; }
+.assistant-model-h.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
+.assistant-model-h.off { color: var(--fg-muted); }
+.assistant-model-h:hover { border-color: var(--accent); color: var(--accent); }
+.ar-time { flex: none; color: var(--fg-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 /* A "live" green dot when a provider is connected (prototype's ag-model pill). */
 .assistant-model.ok::before {
   content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
@@ -2908,7 +2951,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .ws-welcome.hidden { display: none; }
 .ws-welcome-inner { width: min(420px, 82%); display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 24px 0; }
 .ws-welcome-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 18px; }
-.ws-welcome-mark { color: #e06c3b; }
+.ws-welcome-mark { color: var(--accent); }
 .ws-welcome-title { font-size: 22px; font-weight: 300; letter-spacing: 0.4px; color: var(--fg); }
 .ws-welcome-actions { display: flex; flex-direction: column; gap: 8px; }
 .welcome-btn {
@@ -2943,10 +2986,20 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .ws-recents-empty.hidden { display: none; }
 
 .as-welcome { color: var(--fg-dim); line-height: 1.6; padding: 8px; }
-.as-msg { display: flex; flex-direction: column; gap: 3px; }
-.as-role { font-size: 10px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.4px; }
-.as-msg.user .as-body { background: var(--bg-selected-inactive); }
-.as-body { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; color: var(--fg); }
+.as-msg { display: flex; flex-direction: column; gap: 4px; }
+/* Rótulo de papel em caixa-alta (VOCÊ / ASSISTANT); flex p/ encostar uma hora à direita
+   (o <span> da hora é emitido pelo assistant.ts — ver relatório). */
+.as-role { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+/* Rótulo ASSISTANT em laranja-realce (protótipo: .m.ai .br2{color:var(--accent-hover)}). */
+.as-msg.assistant .as-role-name { color: var(--accent-hover); }
+/* Assistant = texto simples (sem caixa); utilizador = bolha com tinta laranja subtil
+   (protótipo: .m.user .bub{background:var(--accent-soft);border:1px solid rgba(224,108,59,.28)}). */
+.as-msg.assistant .as-body { background: transparent; border: none; border-radius: 0; padding: 2px 2px 0; }
+.as-msg.user .as-body { background: var(--accent-soft); border-color: rgba(var(--accent-rgb), 0.28); }
+.as-body { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-card); padding: 8px 11px; white-space: pre-wrap; word-break: break-word; line-height: 1.55; color: var(--fg); }
+/* Pills de código inline (monospace arredondado) — quando o assistant.ts renderizar
+   markdown inline (hoje escapa o texto: ver relatório), estas pílulas aplicam-se. */
+.as-body code { font-family: var(--font-mono); font-size: 0.9em; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-chip); padding: 0.5px 6px; color: var(--accent-hover); white-space: nowrap; }
 /* Workspace context chip (what grounding was sent) — inspectable, collapsed by default. */
 .as-context { margin: 2px 2px 8px; font-size: 11px; color: var(--fg-muted); }
 .as-context > summary { cursor: pointer; user-select: none; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); }
@@ -2954,23 +3007,24 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-context pre { margin: 6px 0 0; max-height: 220px; overflow: auto; background: var(--bg-base); border: 1px solid var(--border); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; color: var(--fg-dim); }
 /* Proposed workspace action — an approval card under the assistant bubble. */
 /* Agent plan progress card (execution checklist, CLI-dashboard style). */
-.as-plan { margin: 6px 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg-elevated); font-family: var(--font-mono); }
+.as-plan { margin: 6px 0; border: 1px solid var(--border); border-radius: var(--r-card); padding: 10px 12px; background: var(--bg-editor); font-family: var(--font-mono); }
 .as-plan-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
-.as-plan-title { font-size: 12px; font-weight: 600; color: var(--fg-bright); font-family: inherit; }
-.as-plan-count { font-size: 11px; color: var(--orange, #e0a05a); }
+.as-plan-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-bright); font-family: inherit; }
+.as-plan-count { font-size: 11px; font-weight: 600; color: var(--accent-hover); }
 .as-plan-bar { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin-bottom: 8px; }
-.as-plan-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--green, #4ec9b0), var(--orange, #e0a05a)); transition: width 0.3s ease; }
+.as-plan-bar > span { display: block; height: 100%; background: var(--accent-grad); transition: width 0.3s ease; }
 .as-plan-step { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 11.5px; }
 .as-plan-glyph { flex: none; width: 12px; text-align: center; }
-.as-plan-step.done .as-plan-glyph { color: var(--green, #4ec9b0); }
+.as-plan-step.done .as-plan-glyph { color: var(--green); }
 .as-plan-step.done .as-plan-label { color: var(--fg-dim); }
-.as-plan-step.run .as-plan-glyph { color: var(--orange, #e0a05a); }
+.as-plan-step.run .as-plan-glyph { color: var(--accent-hover); }
 .as-plan-step.run .as-plan-label { color: var(--fg-bright); font-weight: 600; }
 .as-plan-step.todo { color: var(--fg-muted); }
+.as-plan-time { margin-left: auto; flex: none; font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
 .as-plan-ctl { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-.as-plan-next { font-family: inherit; font-size: 11px; font-weight: 600; color: var(--bg); background: var(--orange, #e0a05a); border: none; border-radius: 5px; padding: 4px 10px; cursor: pointer; }
+.as-plan-next { font-family: inherit; font-size: 11px; font-weight: 600; color: #fff; background: var(--accent-grad); box-shadow: var(--sh-acc); border: none; border-radius: var(--r-chip); padding: 4px 12px; cursor: pointer; }
 .as-plan-next:hover { filter: brightness(1.08); }
-.as-plan-run { font-size: 11px; color: var(--orange, #e0a05a); }
+.as-plan-run { font-size: 11px; color: var(--accent-hover); }
 /* Ctrl+hover "go to definition" link affordance on a Rust symbol. */
 .lsp-link { text-decoration: underline; text-underline-offset: 2px; color: var(--accent-hover) !important; cursor: pointer; }
 /* rust-analyzer indexing indicator (bottom-right, above the status bar). */
@@ -2991,8 +3045,8 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 /* Gentle flash on the line a go-to-definition lands on — fades out over ~1.2s. */
 .lsp-reveal-flash { animation: lsp-flash 1.2s ease-out forwards; }
 @keyframes lsp-flash {
-  from { background: rgba(224, 108, 59, 0.28); }
-  to { background: rgba(224, 108, 59, 0); }
+  from { background: rgba(var(--accent-rgb), 0.28); }
+  to { background: rgba(var(--accent-rgb), 0); }
 }
 /* Comandos do agente em execução (pausar/parar) — estilo TUI com teclas. */
 .as-plan-pause, .as-plan-stop {
@@ -3060,6 +3114,7 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .as-action-btns .as-reject { background: transparent; color: var(--fg-dim); }
 .as-action-err { color: var(--err, #f85149); font-size: 12px; }
 .as-action-sub { font-size: 11px; color: var(--fg-muted); }
+.as-vf-errs { margin: 4px 0 0; font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow-x: auto; color: var(--err, #f85149); }
 .as-action-btns .as-write { background: var(--accent); color: #fff; border-color: var(--accent); }
 .as-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: as-spin 0.7s linear infinite; vertical-align: middle; }
 @keyframes as-spin { to { transform: rotate(360deg); } }
@@ -3107,6 +3162,50 @@ pre.raw.stderr { color: #f48771; border-color: rgba(241,76,76,0.35); }
 .composer-send svg { display: block; }
 .assistant-disclaimer { font-size: 10.5px; color: var(--fg-muted); text-align: center; padding: 2px 0 0; }
 .assistant-model { font-family: var(--font-mono); font-size: 10px; }
+
+/* ── Assistant — alinhamento fino ao protótipo navegável ──────────────────────
+   Ladrilho de marca (sparkle em gradiente), faixa de uso, keycaps da barra de
+   execução e chip "worktree" do compositor. */
+.assistant-brand {
+  flex: none; display: inline-grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 7px;
+  background: var(--accent-grad); color: #fff; box-shadow: var(--sh-acc);
+}
+.assistant-brand svg { display: block; }
+/* Faixa de uso (quota semanal) — tinta laranja subtil; oculta até haver dados. */
+.assistant-usage {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 13px 8px; padding: 7px 11px;
+  font-size: 11.5px; color: var(--fg-dim);
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: var(--r-card);
+}
+.assistant-usage.hidden { display: none; }
+.au-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.au-text { flex: 1; min-width: 0; }
+.au-link { flex: none; background: none; border: none; color: var(--accent-hover); font: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.au-link:hover { filter: brightness(1.1); }
+.au-x { flex: none; background: none; border: none; color: var(--fg-muted); font-size: 14px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.au-x:hover { color: var(--fg); }
+/* Barra de execução: cartão recuado (bg-editor, igual ao .run-ctl do protótipo) + keycaps reais (p pausar / x parar). */
+.ar-keys { flex: none; display: inline-flex; align-items: center; gap: 5px; color: var(--fg-muted); font-size: 11px; }
+.ar-sep { color: var(--border-strong); }
+.ar-keys kbd {
+  font-family: var(--font-mono); font-size: 10px; color: var(--accent-hover);
+  background: var(--bg-base); border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 5px;
+}
+/* Chip "worktree" do compositor (pílula de estado, a par do chip de modelo). */
+.composer-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  background: var(--bg-elevated); color: var(--fg-dim);
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  padding: 2px 10px; font-size: 11px;
+}
+.composer-chip svg { opacity: 0.85; flex: none; }
+/* Chip de modelo do compositor em pílula coerente. */
+.composer-model { border-radius: var(--r-pill); }
 
 /* AI providers settings modal */
 .providers-box {

@@ -483,8 +483,8 @@ async function cmdDeletePath(path: string): Promise<void> {
 async function cmdRenamePath(from: string, to: string): Promise<void> {
   await invoke("rename_path", { from, to });
 }
-async function cmdRunPath(path: string): Promise<RunResult> {
-  return await invoke<RunResult>("run_path", { path });
+async function cmdRunPath(path: string, args?: string): Promise<RunResult> {
+  return await invoke<RunResult>("run_path", { path, args: args ?? null });
 }
 
 // ── Output panel ─────────────────────────────────────────────────────────────
@@ -1114,19 +1114,123 @@ async function saveAll() {
   await renderTree();
 }
 
+/** A styled, in-app replacement for `window.prompt` — matches the IDE's design (no raw browser
+ *  dialog). Resolves to the entered string, or `null` if cancelled (Esc / Cancelar / backdrop).
+ *  Falls back to the native prompt if the modal markup is somehow absent. Enter confirms. */
+export function uiPrompt(opts: {
+  title: string;
+  initial?: string;
+  okLabel?: string;
+  placeholder?: string;
+  hint?: string;
+}): Promise<string | null> {
+  const overlay = document.getElementById("uiprompt-overlay");
+  const input = document.getElementById("uip-input") as HTMLInputElement | null;
+  const titleEl = document.getElementById("uip-title");
+  const hintEl = document.getElementById("uip-hint");
+  const ok = document.getElementById("uip-ok") as HTMLButtonElement | null;
+  const cancel = document.getElementById("uip-cancel");
+  if (!overlay || !input || !titleEl || !ok || !cancel) {
+    return Promise.resolve(window.prompt(opts.title, opts.initial ?? ""));
+  }
+  titleEl.textContent = opts.title;
+  if (hintEl) hintEl.textContent = opts.hint ?? "";
+  input.value = opts.initial ?? "";
+  input.placeholder = opts.placeholder ?? "";
+  ok.textContent = opts.okLabel ?? "OK";
+  overlay.classList.remove("hidden");
+  input.focus();
+  input.select();
+  return new Promise((resolve) => {
+    const done = (val: string | null) => {
+      overlay.classList.add("hidden");
+      ok.removeEventListener("click", onOk);
+      cancel.removeEventListener("click", onCancel);
+      input.removeEventListener("keydown", onKey);
+      overlay.removeEventListener("mousedown", onBackdrop);
+      resolve(val);
+    };
+    const onOk = () => done(input.value);
+    const onCancel = () => done(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        done(input.value);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        done(null);
+      }
+    };
+    const onBackdrop = (e: MouseEvent) => {
+      if (e.target === overlay) done(null);
+    };
+    ok.addEventListener("click", onOk);
+    cancel.addEventListener("click", onCancel);
+    input.addEventListener("keydown", onKey);
+    overlay.addEventListener("mousedown", onBackdrop);
+  });
+}
+
 async function runActive() {
-  const tab = activeTabPath ? tabByPath(activeTabPath) : undefined;
-  if (!tab) {
-    writeOutput("Nothing to run", "Open a file first.", "info");
+  // The Run button executes the PROJECT entry point (e.g. `cargo run`) when the open folder
+  // is a recognised project, so Run runs the program regardless of which file happens to be
+  // focused (Cargo.toml, lib.rs, a test…). It falls back to the active file for loose
+  // snippets with no project manifest. The backend `run_file` already maps `<root>/src/main.rs`
+  // onto `cargo run`, so pointing it at the resolved entry point reuses the tested runner.
+  let entry: string | null = null;
+  if (rootPath && hasTauri) {
+    try {
+      entry = await invoke<string | null>("project_entrypoint", { root: rootPath });
+    } catch {
+      entry = null;
+    }
+  }
+  const active = activeTabPath && activeTabPath !== EXPLAIN_TAB ? tabByPath(activeTabPath) : undefined;
+  const target = entry ?? active?.path ?? null;
+  if (!target) {
+    writeOutput("Nothing to run", "Open a file or a project first.", "info");
     return;
   }
-  if (tab.model.getValue() !== tab.saved) await saveActive();
+  // Program arguments: when running a PROJECT entrypoint (a real program, e.g. a CLI), let the
+  // dev pass argv so the program does actual work instead of hitting its own "usage" exit — a
+  // calculator CLI needs `add 2 3`. Remembered per project; pre-filled so re-runs are one Enter.
+  // Loose snippets (no entrypoint) run with no args. Cancelling the prompt aborts the run.
+  let runArgs = "";
+  if (entry) {
+    const argsKey = `dxtutor.runargs:${rootPath ?? ""}`;
+    const prompted = await uiPrompt({
+      title: `Correr ${baseName(entry)}`,
+      placeholder: "ex.: add 2 3",
+      initial: localStorage.getItem(argsKey) ?? "",
+      okLabel: "Correr",
+      hint: "Argumentos passados ao programa — vazio corre sem argumentos.",
+    });
+    if (prompted === null) return; // cancelled
+    runArgs = prompted.trim();
+    localStorage.setItem(argsKey, runArgs);
+  }
+  // Persist EVERY dirty buffer before running — a project run can execute files other than the
+  // active one (e.g. the entry point while you edit a module), so the active-tab-only save was
+  // not enough; the run must see the latest source of every open file.
+  for (const t of tabs) {
+    if (t.model.getValue() !== t.saved) {
+      try {
+        await cmdWriteFile(t.path, t.model.getValue());
+        t.saved = t.model.getValue();
+        t.savedVersionId = t.model.getAlternativeVersionId();
+      } catch {
+        /* best-effort; a manual Save surfaces real errors */
+      }
+    }
+  }
+  renderTabs();
+  const label = baseName(target);
   // Clear and show the running header (with spinner) for this execution.
-  $("#ws-output").innerHTML = runOutputHtml(tab.name, null, true);
+  $("#ws-output").innerHTML = runOutputHtml(label, null, true);
   showOutput(true);
   try {
-    // Agent routing: when a persistent container session is running, execute the file
-    // with the CONTAINER's toolchain (devcontainer_session_run); else run on the host.
+    // Agent routing: when a persistent container session is running, execute with the
+    // CONTAINER's toolchain (devcontainer_session_run); else run on the host.
     let inContainer = false;
     if (rootPath) {
       try {
@@ -1140,12 +1244,12 @@ async function runActive() {
     if (inContainer && rootPath) {
       const r = await invoke<RunResult>("devcontainer_session_run", {
         root: rootPath,
-        file: tab.path,
+        file: target,
       });
-      $("#ws-output").innerHTML = runOutputHtml(`${tab.name}  ·  in container`, r, false);
+      $("#ws-output").innerHTML = runOutputHtml(`${label}  ·  in container`, r, false);
     } else {
-      const r = await cmdRunPath(tab.path);
-      $("#ws-output").innerHTML = runOutputHtml(tab.name, r, false);
+      const r = await cmdRunPath(target, runArgs);
+      $("#ws-output").innerHTML = runOutputHtml(label, r, false);
     }
     showOutput(true);
   } catch (err) {
@@ -1667,6 +1771,15 @@ export async function beginEditorStream(path: string): Promise<boolean> {
     () => {},
   );
   await openFile(path);
+  // The freshly-created file must appear in the Explorer tree immediately (not only after a
+  // manual Refresh): expand its parent directory and re-list it so the new node shows up as
+  // the code streams in. refreshDir invalidates the parent's cache and re-renders the tree.
+  const parent = parentOf(path);
+  if (parent !== rootPath && !expanded.has(parent)) {
+    expanded.add(parent);
+    saveExpanded();
+  }
+  await refreshDir(parent);
   const tab = tabByPath(path);
   if (!wsEditor || !tab) return false;
   editorStream = { path, model: tab.model };
@@ -2015,6 +2128,16 @@ export function setEntrypointHandler(fn: (path: string, code: string, lang: stri
 export function currentFileContent(path: string): string | null {
   const tab = tabByPath(path);
   return tab ? tab.model.getValue() : null;
+}
+
+/** Every open code tab with its LIVE content (the developer's working set), newest-open last and
+ *  the Explain sentinel excluded. Used to GROUND the Agent in the files actually open — not just
+ *  the active one — so it can read/edit `cli.rs` while `main.rs` has focus instead of asking the
+ *  dev to paste it. Order matches the tab strip. */
+export function openTabs(): { path: string; content: string }[] {
+  return tabs
+    .filter((t) => t.path !== EXPLAIN_TAB)
+    .map((t) => ({ path: t.path, content: t.model.getValue() }));
 }
 
 /** True when `path` is open with unsaved edits (buffer differs from last-saved). */

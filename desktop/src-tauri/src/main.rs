@@ -1635,13 +1635,20 @@ fn get_study_guide(language: String, unit_id: String) -> Result<StudyGuideDto, S
 /// Reuses `RunDto { ok, stdout, stderr }`. Runner selection and the wall-clock
 /// timeout + kill live in `fsops::run_file`.
 #[tauri::command]
-async fn run_path(path: String) -> Result<RunDto, String> {
+async fn run_path(path: String, args: Option<String>) -> Result<RunDto, String> {
+    // Optional program arguments (e.g. "add 2 3") are split on whitespace and forwarded to the
+    // program — so a CLI can actually be exercised, not just run with no args.
+    let argv: Vec<String> = args
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
     // MUST be async + spawn_blocking: `fsops::run_file` compiles/runs the file (and, under
     // the Delonix/Docker sandbox, spins up a container) — long blocking work. On a SYNC
     // command that runs on the webview's main thread and FREEZES the whole app until it
     // returns. Off-loading it keeps the UI responsive (the spinner shows, the app stays live).
     tauri::async_runtime::spawn_blocking(move || -> Result<RunDto, String> {
-        let r = fsops::run_file(&path)?;
+        let r = fsops::run_file(&path, &argv)?;
         Ok(RunDto {
             ok: r.ok,
             stdout: r.stdout,
@@ -1650,6 +1657,14 @@ async fn run_path(path: String) -> Result<RunDto, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The project's runnable entry file under `root`, if one can be identified by its build
+/// manifest (Cargo/Go/Python), else `null`. The Explorer's Run button uses this so it runs
+/// the PROJECT entry point (e.g. `cargo run`) rather than whichever file is focused.
+#[tauri::command]
+fn project_entrypoint(root: String) -> Option<String> {
+    fsops::project_entrypoint(&root)
 }
 
 // ── Sandbox engine selection ──────────────────────────────────────────────────
@@ -2256,6 +2271,7 @@ fn main() {
             fsops::workspace_action,
             fsops::workspace_resolve,
             run_path,
+            project_entrypoint,
             get_sandbox_engine,
             set_sandbox_engine,
             read_folder_sources,
