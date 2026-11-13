@@ -106,6 +106,17 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   novo — consome o comando `codev_policy` já testado (`codev_manual_asks_for_every_edit_and_command`,
   `codev_destructive_and_push_always_ask`). Isolado em `studio.ts` (meu); nenhum ficheiro quente do
   dono tocado. Verificação: `npm run build` verde; matriz 4/4 + desktop 11/11.
+- 2026-11-13 — **Integração autorizada do WIP F4 do dono.** Com o dono quieto ~17 min sem committar
+  e o critério F4 só fechável mexendo nos ficheiros dele, o utilizador autorizou explicitamente
+  landar o trabalho em curso. Árvore verificada verde (`scripts/verify.sh`: tsc+vite + `cargo test
+  --workspace`). Landado em commits coerentes, autor angolardevops, sem trailers: `59f40b1`
+  (policy.rs — matriz de aprovação Co-Dev + testes; restaura a compilação, pois `main.rs` já expunha
+  `codev_policy` desde 909d676 sem as definições) e `7febdfc` (frontend: modebar+currentMode em
+  index.ts, edit.ts consome `codev_policy`, codev.ts planos/modos com conselho/juiz honestamente
+  desactivados, policyMatrix.ts só-leitura + paridade F2 Explain/sandbox — juntos porque index.ts/
+  app.ts carregam as duas vertentes e o staging não-interactivo não as separa com builds verdes).
+  PENDING/PARITY actualizados: gestor de missões sai de «not implemented» (fica só o checkpoint
+  restaurável, sem backend); #22 ⬜→🔶.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

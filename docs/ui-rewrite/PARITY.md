@@ -22,18 +22,18 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 13 | Terminal (PTY) | `pty_spawn/write/resize`, `pty://data` | panel `terminal` (xterm) | 🔶 |
 | 14 | Remote Explorer (SSH pend.) | `detect_projects` | pane `remote` | 🔶 |
 | 15 | Dev Containers (session up/status/down) | `devcontainer_info/session_up/status/down` | pane `containers` | 🔶 |
-| 16 | Explain (resumo lado-a-lado, stream) | `explain.ts`, chat stream | `VIEW` explain (split) | ⬜ |
+| 16 | Explain (resumo lado-a-lado, stream) | `shell/explain.ts`, `assistant_chat_stream` + `file_outline` | `VIEW.explain` (split código·resumo) | 🔶 |
 | 17 | Review (achados; aplicar-fix pend.) | `review_code` (list_review_analyzers/verify_fix pend.) | `VIEW.analysis` + paleta | 🔶 |
 | 18 | Command Palette + quick-open + go-to-linha | `list_files` / `revealLine` | `#pal` palette | ✅ |
 | 19 | Dev Assistant (chat streaming) | `assistant_chat_stream` + `llm://`, `list_providers` | dock `agent` | 🔶 |
-| 20 | Orquestração (plano/continue/auto/verify) | `assistant.ts`, `run_tests` | dock `agent` + run-ctl | ⬜ |
+| 20 | Orquestração (plano/continue/auto/verify) | `shell/codev.ts` (dxplan), `run_all_tests` | dock `agent` (cartão de plano) | 🔶 |
 | 21 | Edição ancorada (dxpatch) + conflito | `shell/edit.ts`, `patch.ts` (puro) | separador `diff` (Monaco, só regiões alteradas) | 🔶 |
-| 22 | Tarefa isolada (worktree→patch) | `agent_task_submit/status/cancel` | agent (run in isolation) | ⬜ |
+| 22 | Tarefa isolada (worktree→patch) | `agent_task_submit/status/cancel` + `arch_scaffold_preview` | `VIEW.manager` (gestor de missões: delega scaffold como patch isolado, mostra diff) | 🔶 |
 | 23 | Architecture Studio (scaffold F8) | `arch_validate` (arch_scaffold → F8) | `VIEW.studio` | 🔶 |
 | 24 | Learning Track (cursos/avaliação) | `list_courses/get_course/submit_step/request_hint/run_drill` | pane `tutor` + `VIEW.lt` | 🔶 |
-| 25 | Política de estudo (modos) | `study_policy`, `policy.rs` | Co-Dev matriz | ⬜ |
-| 26 | Settings (providers, temas, atalhos) | `get/save_providers_config` | `VIEW.settings` | ⬜ |
-| 27 | Sandbox engine (host/docker/podman) | `get/set_sandbox_engine` | status / settings | ⬜ |
+| 25 | Política dos modos (matriz) | `codev_policy` (só-leitura) | `shell/policyMatrix.ts` → paleta "Co-Dev: matriz de política" | 🔶 |
+| 26 | Settings (providers, temas, atalhos) | `get/save_providers_config`, `setLocale/setTheme` | `VIEW.settings` (idioma/temas/provedores/atalhos todos ligados) | 🔶 |
+| 27 | Sandbox engine (host/delonix/docker/podman) | `get/set_sandbox_engine` | `shell/sandbox.ts` → secção em `VIEW.settings` | 🔶 |
 
 As fases 4–8 (Co-Dev avançado, Equipa, Gitflow guiado, Board/kanban, RUN de stack) são
 funcionalidade **nova** descrita pelo protótipo, rastreada no `PLAN.md` por fase — não entram

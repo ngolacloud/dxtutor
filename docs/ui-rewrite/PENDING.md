@@ -12,14 +12,13 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Gitflow finish (merge+tag) | `VIEW.graph`/paleta | sem `git_merge`/`git_tag` no backend; mostra comandos p/ terminal | 6 |
-| Services (pane) | panel `services` | pane por ligar (backend `compose_ps` pronto+testado: parse de `docker compose ps --format json`; RUN/Stop já correm no PTY) | 8 |
-| Co-Dev avançado (conselho/juiz/auto-avaliação/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base + selector de modelo já ligam) | 4 |
+| Co-Dev: conselho de modelos + juiz + auto-avaliação | dock `agent` | só reais com MÚLTIPLOS provedores configurados; sem eles ficam visíveis+desactivados, nunca simulados (os modos Manual/Assistido/Auto governam DE FACTO edições — `edit.ts` — e comandos de stack — `studio.ts` — via matriz `codev_policy`; orquestração de planos também) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
 | Board: gerar backlog do Studio / executar sprint | `VIEW.board` | orquestração por ligar (kanban+auto-teste já ligam; `arch_scaffold` pronto) | 8 |
 | Team: imposição do harness no backend | `VIEW.team` | backend não bloqueia escrita/comando por chamada (config+preview já ligam; providers reais) | 5 |
-| Mission manager | `VIEW.manager` | missões/checkpoints por ligar | 4 |
+| Checkpoints restauráveis (gestor de missões) | `VIEW.manager` | o gestor já LIGA (`VIEW.manager` @52eaa37: delega o scaffold do desenho como patch isolado via `arch_scaffold_preview`→`agent_task_submit/status/cancel`, mostra o diff, não toca na árvore); falta só o checkpoint restaurável — precisa de snapshot/restore no backend, inexistente | 4 |
 | Breakpoints (gutter) | editor Monaco | acoplamento ao gutter em workspace.ts por fazer | — |
-| Explain (resumo stream lado-a-lado) | `VIEW` explain | stream IA por ligar | 2 |
+| Explain de PASTA (multi-ficheiro) | `VIEW.explain` | `read_folder_sources` + links `[open f:l]` por ligar (ficheiro único já liga) | — |
 
 Na Fase 1 todas estas superfícies aparecem **visíveis mas desactivadas**, com o aviso
 «not implemented yet (fase N)». Nenhuma devolve dados inventados.
