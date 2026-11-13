@@ -1105,8 +1105,9 @@ async function buildWorkspaceContext(): Promise<string | null> {
       `{"file":"<path relative to root>","method":"<the fn/method name>","instruction":"<what to change>"}\n` +
       "```\n" +
       `This edits ONLY that method — it streams a replacement into just that block, leaving ` +
-      `the rest of the file untouched. PREFER dxedit whenever you are changing existing code: ` +
-      `do NOT rewrite the whole file. (dxedit resolves the method by name in the file.)`,
+      `the rest of the file untouched. This is the DEFAULT for "fix the bug" / "resolver o bug": ` +
+      `PREFER dxedit whenever you are changing existing code — do NOT rewrite the whole file and ` +
+      `do NOT append at the end. (dxedit resolves the method by name in the file.)`,
     `• To create a NEW file or do a FULL rewrite, reply with a SHORT plan (1–3 lines) then ` +
       `EXACTLY ONE fenced block:\n` +
       "```dxcode\n" +
@@ -1124,15 +1125,17 @@ async function buildWorkspaceContext(): Promise<string | null> {
       "```\n" +
       `The UI renders it as a live checklist and ticks each step as your following actions ` +
       `(dxcode/dxedit/dxcontinue) complete. Use a plan only when there IS more than one step.`,
-    `• To CONTINUE or COMPLETE an existing, unfinished file (the user says "continue", ` +
-      `"finish", "complete", "it's incomplete") WITHOUT rewriting it, reply with a SHORT note ` +
-      `then EXACTLY ONE:\n` +
+    `• To CONTINUE a file whose TAIL is genuinely cut off — the LAST lines end mid-statement ` +
+      `and everything ABOVE is correct — reply with a SHORT note then EXACTLY ONE:\n` +
       "```dxcontinue\n" +
       `{"file":"<path relative to root>","instruction":"<what to finish>"}\n` +
       "```\n" +
-      `This APPENDS the generated continuation at the end of the file — it never repeats or ` +
-      `rewrites the existing code. PREFER dxcontinue over dxcode when the file already has ` +
-      `content and only needs to be finished.`,
+      `This APPENDS at the END, so use it ONLY when the missing code belongs at the end. ` +
+      `NEVER use dxcontinue to FIX A BUG or to complete code that is broken in the MIDDLE ` +
+      `(an unclosed delimiter, an incomplete enum/struct/match earlier in the file) — ` +
+      `appending at the end CANNOT fix that and will corrupt the file. For a bug ANYWHERE in ` +
+      `existing code use dxedit (one method) or, if the breakage is structural, dxcode (full ` +
+      `rewrite) — NOT dxcontinue.`,
     `• ONLY for a pure EMPTY folder or empty file (no code at all), use exactly one block:\n` +
       "```dxaction\n" +
       `{"op":"createDir"|"createFile"|"writeFile","path":"<relative to root>","content":"<optional>"}\n` +
