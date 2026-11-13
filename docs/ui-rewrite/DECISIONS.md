@@ -30,6 +30,16 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   sub-commits seguintes — até lá, honestamente desactivados (PENDING.md). Verificação deste
   corte: `tsc --noEmit`+`vite build` verdes e `cargo test` (tutor-eval/tutor-llm + desktop) sem
   regressão (Rust intocado); a superfície é UI sobre comandos já testados.
+- 2026-11-13 — **F8 (1.º corte) = backend `arch_scaffold` estendido** (crate `tutor-eval::arch`).
+  Além das pastas de código + `ARCHITECTURE.md`, o scaffold passa a emitir, DERIVADO do desenho
+  real: `Dockerfile` (multi-stage, não-root) por componente vivo; `docker-compose.yml` com um
+  serviço por componente vivo + infra local; `Makefile` (run/stop/logs/test); `.env.example`; e
+  `deploy/k8s/<comp>.yaml` + `00-infra.yaml`. Stores→`postgres:16-alpine`, brokers→
+  `rabbitmq:3.13-management-alpine` (stand-ins locais honestos; o modelo não carrega escolha de
+  tecnologia). A ligação `DATABASE_URL`/`AMQP_URL` é inferida das arestas writes/reads/publishes/
+  consumes. Teste-primeiro: `arch::tests::scaffold_emits_cloud_native_artifacts` (falha sem a
+  feature; 114 testes tutor-eval verdes). A acção da UI (botão «gerar» no Studio) e o RUN/Stop
+  ficam para sub-commits seguintes de F8.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

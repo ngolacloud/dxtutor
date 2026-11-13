@@ -234,6 +234,140 @@ impl Architecture {
             md.push_str(&format!("- `{}` → `{}` ({:?}{})\n", cn.from, cn.to, cn.relation, ev));
         }
         out.push(("ARCHITECTURE.md".into(), md));
+
+        // ── Artefactos cloud-native (F8): Dockerfile por componente vivo + compose +
+        // Makefile + .env.example + manifestos Kubernetes. Tudo DERIVADO do desenho real:
+        // cada live-component vira um serviço que constrói da sua pasta; cada store/broker
+        // vira infra local (postgres / rabbitmq — stand-ins honestos, documentados), com a
+        // ligação (DATABASE_URL / AMQP_URL) inferida das arestas writes/reads/publishes/consumes.
+        let is_live = |k: Kind| matches!(k, Kind::Service | Kind::Gateway | Kind::Consumer | Kind::Relay);
+        let dir_of = |k: Kind| match k {
+            Kind::Service | Kind::Gateway => "services",
+            Kind::Consumer => "consumers",
+            Kind::Relay => "relays",
+            _ => "",
+        };
+        // Slugs das infra-dependências (store/broker) de um componente, pelas arestas.
+        let deps_of = |cid: &str, want: Kind, rels: &[Relation]| -> Vec<String> {
+            self.connections
+                .iter()
+                .filter(|cn| cn.from == cid && rels.contains(&cn.relation))
+                .filter_map(|cn| self.get(&cn.to))
+                .filter(|tc| tc.kind == want)
+                .map(|tc| slug(&tc.id))
+                .collect()
+        };
+        let live: Vec<&Component> = self.components.iter().filter(|c| is_live(c.kind)).collect();
+
+        // Dockerfile (multi-stage, não-root) por componente vivo — ponto de partida do scaffold.
+        for c in &live {
+            let name = slug(&c.id);
+            let dir = dir_of(c.kind);
+            let df = format!(
+                "# {name} — generated from the Architecture Studio design (scaffold starting point).\n\
+                 FROM rust:1.82-slim AS build\n\
+                 WORKDIR /app\n\
+                 COPY . .\n\
+                 # The scaffold ships a stub; replace with your crate, then: cargo build --release\n\n\
+                 FROM debian:bookworm-slim\n\
+                 RUN useradd --system --uid 10001 app\n\
+                 USER app\n\
+                 ENV RUST_LOG=info\n\
+                 CMD [\"sh\", \"-c\", \"echo '{name} (scaffold) — implement me'; sleep infinity\"]\n"
+            );
+            out.push((format!("{dir}/{name}/Dockerfile"), df));
+        }
+
+        // docker-compose.yml — serviços vivos + infra local, com depends_on por saúde.
+        let mut compose = String::from(
+            "# Generated from the Architecture Studio design. Managed infra uses local stand-ins.\n\
+             name: dxtutor-app\n\nservices:\n",
+        );
+        for c in &live {
+            let name = slug(&c.id);
+            let dir = dir_of(c.kind);
+            let stores = deps_of(&c.id, Kind::Store, &[Relation::Writes, Relation::Reads]);
+            let brokers = deps_of(&c.id, Kind::Broker, &[Relation::Publishes, Relation::Consumes]);
+            compose.push_str(&format!("  {name}:\n    build: ./{dir}/{name}\n"));
+            if !stores.is_empty() || !brokers.is_empty() {
+                compose.push_str("    environment:\n");
+                if let Some(s) = stores.first() {
+                    compose.push_str(&format!("      - DATABASE_URL=postgres://app:app@{s}:5432/app\n"));
+                }
+                if let Some(b) = brokers.first() {
+                    compose.push_str(&format!("      - AMQP_URL=amqp://guest:guest@{b}:5672\n"));
+                }
+            }
+            let mut deps = stores.clone();
+            deps.extend(brokers.clone());
+            if !deps.is_empty() {
+                compose.push_str("    depends_on:\n");
+                for d in &deps {
+                    compose.push_str(&format!("      {d}:\n        condition: service_healthy\n"));
+                }
+            }
+            compose.push_str("    restart: unless-stopped\n");
+        }
+        for c in &self.components {
+            let name = slug(&c.id);
+            match c.kind {
+                Kind::Store => compose.push_str(&format!(
+                    "  {name}:\n    image: postgres:16-alpine\n    environment:\n      - POSTGRES_USER=app\n      - POSTGRES_PASSWORD=app\n      - POSTGRES_DB=app\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U app\"]\n      interval: 5s\n      timeout: 3s\n      retries: 12\n    restart: unless-stopped\n"
+                )),
+                Kind::Broker => compose.push_str(&format!(
+                    "  {name}:\n    image: rabbitmq:3.13-management-alpine\n    healthcheck:\n      test: [\"CMD-SHELL\", \"rabbitmq-diagnostics -q ping\"]\n      interval: 10s\n      timeout: 5s\n      retries: 12\n    restart: unless-stopped\n"
+                )),
+                _ => {}
+            }
+        }
+        out.push(("docker-compose.yml".into(), compose));
+
+        // Makefile — RUN/Stop/logs/test sobre o compose.
+        out.push((
+            "Makefile".into(),
+            ".PHONY: run stop logs test\n\nrun:\n\tdocker compose up --build -d\n\tdocker compose ps\n\nstop:\n\tdocker compose down\n\nlogs:\n\tdocker compose logs -f\n\ntest:\n\tcargo test\n".into(),
+        ));
+        out.push((
+            ".env.example".into(),
+            "# Copy to .env — local development values only.\nPOSTGRES_PASSWORD=app\n".into(),
+        ));
+
+        // Kubernetes: um Deployment+Service por componente vivo + um 00-infra.yaml para stores/brokers.
+        for c in &live {
+            let name = slug(&c.id);
+            let has_store = !deps_of(&c.id, Kind::Store, &[Relation::Writes, Relation::Reads]).is_empty();
+            let has_broker = !deps_of(&c.id, Kind::Broker, &[Relation::Publishes, Relation::Consumes]).is_empty();
+            let mut env = String::new();
+            if has_store {
+                let s = &deps_of(&c.id, Kind::Store, &[Relation::Writes, Relation::Reads])[0];
+                env.push_str(&format!("            - {{ name: DATABASE_URL, value: \"postgres://app:app@{s}:5432/app\" }}\n"));
+            }
+            if has_broker {
+                let b = &deps_of(&c.id, Kind::Broker, &[Relation::Publishes, Relation::Consumes])[0];
+                env.push_str(&format!("            - {{ name: AMQP_URL, value: \"amqp://guest:guest@{b}:5672\" }}\n"));
+            }
+            let env_block = if env.is_empty() { String::new() } else { format!("          env:\n{env}") };
+            out.push((
+                format!("deploy/k8s/{name}.yaml"),
+                format!(
+                    "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {name}\nspec:\n  replicas: 1\n  selector:\n    matchLabels: {{ app: {name} }}\n  template:\n    metadata:\n      labels: {{ app: {name} }}\n    spec:\n      containers:\n        - name: {name}\n          image: registry.example.com/{name}:0.1.0\n{env_block}          resources:\n            requests: {{ cpu: 50m, memory: 64Mi }}\n            limits: {{ cpu: 500m, memory: 256Mi }}\n          securityContext: {{ runAsNonRoot: true, allowPrivilegeEscalation: false }}\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: {name}\nspec:\n  selector: {{ app: {name} }}\n  ports: [{{ port: 80, targetPort: 8080 }}]\n"
+                ),
+            ));
+        }
+        let mut infra = String::from("# Local infra stand-ins (store/broker) for the design.\n");
+        for c in &self.components {
+            let name = slug(&c.id);
+            let (image, port) = match c.kind {
+                Kind::Store => ("postgres:16-alpine", 5432),
+                Kind::Broker => ("rabbitmq:3.13-management-alpine", 5672),
+                _ => continue,
+            };
+            infra.push_str(&format!(
+                "---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {name}\nspec:\n  replicas: 1\n  selector:\n    matchLabels: {{ app: {name} }}\n  template:\n    metadata:\n      labels: {{ app: {name} }}\n    spec:\n      containers:\n        - name: {name}\n          image: {image}\n          ports: [{{ containerPort: {port} }}]\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: {name}\nspec:\n  selector: {{ app: {name} }}\n  ports: [{{ port: {port}, targetPort: {port} }}]\n"
+            ));
+        }
+        out.push(("deploy/k8s/00-infra.yaml".into(), infra));
+
         out
     }
 }
@@ -310,6 +444,35 @@ mod tests {
         // The relay's stub names the event it publishes.
         let relay = files.iter().find(|(p, _)| p == "relays/relay/main.rs").unwrap();
         assert!(relay.1.contains("order.placed"), "{}", relay.1);
+    }
+
+    #[test]
+    fn scaffold_emits_cloud_native_artifacts() {
+        let files = ok_arch().scaffold();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+        // A Dockerfile per live component (service/relay/consumer/gateway).
+        assert!(paths.contains(&"services/svc/Dockerfile"), "{paths:?}");
+        assert!(paths.contains(&"relays/relay/Dockerfile"), "{paths:?}");
+        assert!(paths.contains(&"consumers/worker/Dockerfile"), "{paths:?}");
+        // Root artefacts.
+        assert!(paths.contains(&"docker-compose.yml"), "{paths:?}");
+        assert!(paths.contains(&"Makefile"), "{paths:?}");
+        assert!(paths.contains(&".env.example"), "{paths:?}");
+        // Kubernetes: one manifest per live component plus the infra bundle.
+        assert!(paths.contains(&"deploy/k8s/svc.yaml"), "{paths:?}");
+        assert!(paths.contains(&"deploy/k8s/00-infra.yaml"), "{paths:?}");
+        // Compose declares the store+broker as local infra and wires the live services.
+        let compose = &files.iter().find(|(p, _)| p == "docker-compose.yml").unwrap().1;
+        assert!(compose.contains("postgres") && compose.contains("db:"), "{compose}");
+        assert!(compose.contains("rabbitmq") && compose.contains("mq:"), "{compose}");
+        assert!(compose.contains("build: ./services/svc"), "{compose}");
+        // worker consumes the broker and relay publishes to it → AMQP_URL wired.
+        assert!(compose.contains("AMQP_URL"), "{compose}");
+        // Dockerfiles are multi-stage and run as non-root (review heuristics).
+        let df = &files.iter().find(|(p, _)| p == "services/svc/Dockerfile").unwrap().1;
+        assert!(df.contains(" AS build") && df.contains("USER "), "{df}");
+        // Infra (store/broker) still gets no code folder.
+        assert!(!paths.iter().any(|p| p.contains("/db/") || p.contains("/mq/")), "{paths:?}");
     }
 
     #[test]
