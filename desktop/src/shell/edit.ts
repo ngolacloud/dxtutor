@@ -12,7 +12,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { monaco } from "../monaco";
 import { t, registerStrings } from "../i18n";
-import { VIEW, openTab, closeTab, toast, type Tab } from "./index";
+import { VIEW, openTab, closeTab, toast, currentMode, type Tab } from "./index";
 import { workspaceRoot, currentFileContent, replaceFileContent, langForFile } from "./workspace";
 import { currentTheme } from "./theme";
 import { parsePatchDirective, resolveAnchoredEdits } from "../patch";
@@ -34,7 +34,8 @@ interface ResolvedFile {
 export type PatchOutcome =
   | { kind: "none" }
   | { kind: "refused"; reason: string }
-  | { kind: "review"; total: number };
+  | { kind: "review"; total: number }
+  | { kind: "applied"; total: number };
 
 // Fila do conjunto por rever (o primeiro já está aberto; os restantes seguem ao Aceitar).
 let queue: ResolvedFile[] = [];
@@ -98,12 +99,79 @@ export async function offerAnchoredPatch(replyText: string): Promise<PatchOutcom
     });
   }
 
-  // Tudo ancorou. Abre o primeiro para revisão; enfileira os restantes.
+  // Tudo ancorou. O modo Co-Dev activo (modebar) decide a aprovação: Manual → revisão
+  // inline (Aceitar/Rejeitar); Assistido/Auto → aplica automaticamente (desfazível, com a
+  // mesma detecção de conflito) e mostra o diff como registo. Edições de ficheiros já
+  // abertos nunca são destrutivas — essas (discard/push) pedem sempre, não passam por aqui.
   queue = resolved;
   total = resolved.length;
   ordinal = 0;
+  if (await editsAutoApply()) return await autoApplyAll();
   openNextForReview();
   return { kind: "review", total };
+}
+
+/** Consulta o backend: no modo Co-Dev activo, as edições ancoradas aplicam-se sem aprovação
+ *  explícita? Sem backend/erro → false (fail-closed: cai para revisão manual). */
+async function editsAutoApply(): Promise<boolean> {
+  try {
+    const p = await invoke<{ editsNeedApproval: boolean }>("codev_policy", { mode: currentMode() });
+    return p.editsNeedApproval === false;
+  } catch { return false; }
+}
+
+/** Modos Assistido/Auto: aplica todo o conjunto já resolvido — cada ficheiro como UMA edição
+ *  desfazível, com a mesma detecção de conflito do Aceitar. Se um ficheiro mudou desde a
+ *  proposta, NÃO se aplica em silêncio: cai para revisão manual a partir desse ficheiro. Abre
+ *  o primeiro ficheiro aplicado num diff só-de-leitura (registo) e devolve o desfecho. */
+async function autoApplyAll(): Promise<PatchOutcome> {
+  const files = queue;
+  queue = [];
+  const applied: ResolvedFile[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const pf = files[i];
+    let live = currentFileContent(pf.abs);
+    if (live == null) {
+      try { live = await invoke<string>("read_text_file", { path: pf.abs }); } catch { live = pf.before; }
+    }
+    if (live !== pf.before) {
+      // Conflito → interrompe o auto e revê manualmente a partir deste ficheiro.
+      queue = files.slice(i + 1);
+      total = files.length;
+      ordinal = applied.length + 1;
+      pendingApplied = false;
+      pending = pf;
+      log(t("edit.autoConflict", { file: pf.rel }));
+      openTab({ id: DIFF_TAB, title: `⇄ ${base(pf.abs)}`, kind: "diff", path: pf.abs });
+      return { kind: "review", total: files.length };
+    }
+    const ok = await replaceFileContent(pf.abs, pf.proposedFull);
+    if (!ok) { log(t("edit.applyFailed", { file: pf.rel })); continue; }
+    applied.push(pf);
+    log(t("edit.autoApplied", { file: pf.rel, mode: t("mode." + currentMode()) }));
+  }
+  total = 0; ordinal = 0;
+  if (!applied.length) return { kind: "refused", reason: t("edit.applyFailed", { file: files[0]?.rel ?? "" }) };
+  openAsRecord(applied[0], applied.length);
+  return { kind: "applied", total: applied.length };
+}
+
+/** Abre um diff só-de-leitura como REGISTO de uma edição já aplicada (Assistido/Auto): sem
+ *  Aceitar/Rejeitar, só «Fechar». */
+function openAsRecord(pf: ResolvedFile, appliedCount: number): void {
+  pending = pf;
+  pendingApplied = true;
+  recordCount = appliedCount;
+  openTab({ id: DIFF_TAB, title: `✓ ${base(pf.abs)}`, kind: "diff", path: pf.abs });
+}
+
+/** Fecha o diff de registo (nada a aplicar — já foi). */
+function closeRecord(): void {
+  pending = null;
+  pendingApplied = false;
+  recordCount = 0;
+  disposeDiff();
+  closeTab(DIFF_TAB);
 }
 
 /** Abre o próximo ficheiro da fila num separador `diff` para revisão (ou termina). */
@@ -117,6 +185,9 @@ function openNextForReview(): void {
 
 // O ficheiro cuja proposta está a ser revista agora (lido pela VIEW.diff).
 let pending: ResolvedFile | null = null;
+// Registo (Assistido/Auto): o diff aberto é de uma edição JÁ aplicada — sem Aceitar/Rejeitar.
+let pendingApplied = false;
+let recordCount = 0;
 
 /** Liberta o editor de diff e os seus modelos. */
 function disposeDiff(): void {
@@ -136,14 +207,18 @@ const diffView = (_tab: Tab, host: HTMLElement): void => {
     return;
   }
   const tag = total > 1 ? ` · ${t("edit.ordinal", { n: ordinal, total })}` : "";
-  host.innerHTML =
-    `<div style="display:flex;flex-direction:column;height:100%">
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);flex:none">
-        <span style="font-family:var(--font-mono);font-size:12px">${pf.rel}${tag}</span>
+  const bar = pendingApplied
+    ? `<span style="font-family:var(--font-mono);font-size:12px">${pf.rel}</span>
+        <span style="font-size:11px;color:var(--green)">✓ ${t("edit.recordLabel")}${recordCount > 1 ? " · " + t("edit.recordN", { n: recordCount }) : ""}</span>
+        <span style="flex:1"></span>
+        <button class="btn" id="edit-close">${t("edit.close")}</button>`
+    : `<span style="font-family:var(--font-mono);font-size:12px">${pf.rel}${tag}</span>
         <span style="flex:1"></span>
         <button class="btn" id="edit-reject">${t("edit.reject")}</button>
-        <button class="btn primary" id="edit-accept">${t("edit.accept")}</button>
-      </div>
+        <button class="btn primary" id="edit-accept">${t("edit.accept")}</button>`;
+  host.innerHTML =
+    `<div style="display:flex;flex-direction:column;height:100%">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);flex:none">${bar}</div>
       <div id="edit-diff-host" style="flex:1;min-height:0"></div>
     </div>`;
   const dhost = host.querySelector<HTMLElement>("#edit-diff-host")!;
@@ -162,8 +237,12 @@ const diffView = (_tab: Tab, host: HTMLElement): void => {
   origModel = monaco.editor.createModel(pf.before, pf.lang);
   propModel = monaco.editor.createModel(pf.proposedFull, pf.lang);
   diffEd.setModel({ original: origModel, modified: propModel });
-  host.querySelector<HTMLButtonElement>("#edit-accept")!.onclick = () => void acceptPending();
-  host.querySelector<HTMLButtonElement>("#edit-reject")!.onclick = () => rejectPending();
+  if (pendingApplied) {
+    host.querySelector<HTMLButtonElement>("#edit-close")!.onclick = () => closeRecord();
+  } else {
+    host.querySelector<HTMLButtonElement>("#edit-accept")!.onclick = () => void acceptPending();
+    host.querySelector<HTMLButtonElement>("#edit-reject")!.onclick = () => rejectPending();
+  }
 };
 
 /** Aceita a proposta do ficheiro em revisão: verifica conflito (o ficheiro mudou desde a
@@ -233,6 +312,11 @@ const EDIT_STRINGS = {
     "edit.conflict": "{file} changed since the proposal. Apply anyway (overwriting those changes)?",
     "edit.applyFailed": "could not apply the change to {file}.",
     "edit.applied": "applied anchored edit to {file}.",
+    "edit.autoApplied": "auto-applied the anchored edit to {file} ({mode}).",
+    "edit.autoConflict": "{file} changed since the proposal — opening it for manual review instead of auto-applying.",
+    "edit.recordLabel": "applied automatically",
+    "edit.recordN": "{n} files",
+    "edit.close": "Close",
     "edit.rejected": "rejected the proposed edit to {file}.",
     "edit.halted": "rejection halted the changeset — {n} remaining file(s) discarded.",
     "edit.gone": "This proposal is no longer available.",
@@ -248,6 +332,11 @@ const EDIT_STRINGS = {
     "edit.conflict": "{file} mudou desde a proposta. Aplicar mesmo assim (sobrepõe essas alterações)?",
     "edit.applyFailed": "não consegui aplicar a alteração a {file}.",
     "edit.applied": "edição ancorada aplicada a {file}.",
+    "edit.autoApplied": "edição ancorada aplicada automaticamente a {file} ({mode}).",
+    "edit.autoConflict": "{file} mudou desde a proposta — abro para revisão manual em vez de aplicar automaticamente.",
+    "edit.recordLabel": "aplicado automaticamente",
+    "edit.recordN": "{n} ficheiros",
+    "edit.close": "Fechar",
     "edit.rejected": "proposta de edição a {file} rejeitada.",
     "edit.halted": "a rejeição interrompeu o conjunto — {n} ficheiro(s) restante(s) descartado(s).",
     "edit.gone": "Esta proposta já não está disponível.",

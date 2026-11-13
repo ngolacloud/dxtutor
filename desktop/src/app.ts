@@ -24,6 +24,9 @@ import { initStudio } from "./shell/studio";
 import { initLearn } from "./shell/learn";
 import { initCodev } from "./shell/codev";
 import { initEdit } from "./shell/edit";
+import { initExplain } from "./shell/explain";
+import { initSandbox } from "./shell/sandbox";
+import { initPolicyMatrix } from "./shell/policyMatrix";
 import { initGitflow } from "./shell/gitflow";
 import { initTeam } from "./shell/team";
 import { initBoard } from "./shell/board";
@@ -59,6 +62,9 @@ function main(): void {
   setFileListProvider(() => listWorkspaceFiles());
   onLocaleChange(() => rebuildChrome());
   initEdit();                            // VIEW.diff → edição ancorada (dxpatch) revista no diff (Fase 2)
+  initExplain();                         // VIEW.explain → resumo lado-a-lado em stream (Fase 2)
+  initSandbox();                         // Settings → selector de motor de sandbox (get/set_sandbox_engine) (Fase 2)
+  initPolicyMatrix();                    // paleta → matriz de política dos modos Co-Dev (lê codev_policy) (Fase 4)
   bootShell();
   initCodev();                           // chat do dock Co-Dev → assistant_chat_stream (Fase 2→4)
   initTerminal();                        // terminal real (PTY) no painel inferior

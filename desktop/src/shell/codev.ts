@@ -14,12 +14,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { t, registerStrings } from "../i18n";
 import { activeFile, workspaceRoot } from "./workspace";
-import { toast, setPanelTab, setProvidersPanel } from "./index";
+import { toast, setPanelTab, setProvidersPanel, currentMode } from "./index";
 import { offerAnchoredPatch, setPatchLog } from "./edit";
 
 /** Bloco ```dxpatch — removido da bolha para nunca despejar um patch como texto cru (é
  *  aplicado como edição revista no diff). */
 const DXPATCH_RE = /```dxpatch\s*\n[\s\S]*?```/;
+/** Bloco ```dxplan — a lista de passos de uma tarefa multi-passo; vive no cartão de plano, não
+ *  como texto cru na bolha. */
+const DXPLAN_RE = /```dxplan\s*\n[\s\S]*?```/;
 
 /** Espelha `tutor_llm::chat::ProvidersConfig` (crates/tutor-llm/src/chat.rs). */
 interface ProvidersConfig {
@@ -59,6 +62,7 @@ const hhmm = (): string => {
 };
 
 const $ = <T extends HTMLElement>(sel: string): T | null => document.querySelector<T>(sel);
+const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
 // ── Render das bolhas ───────────────────────────────────────────────────────────
 /** Remove a intro (se existir) antes de acrescentar a primeira bolha. */
@@ -190,7 +194,15 @@ function dxpatchSystem(root: string): string {
     "  – Keep each `new` MINIMAL: change only what must change. Use several {old,new} hunks for " +
     'several changes. To delete code, set `new` to "". NEVER rewrite the whole file to change part of it.\n' +
     "  – For several files in one change, use {\"files\":[{\"file\":\"…\",\"edits\":[…]}, …]} — resolved " +
-    "atomically. Only edit files whose content you were shown; if you have not seen a file, ask to open it."
+    "atomically. Only edit files whose content you were shown; if you have not seen a file, ask to open it.\n\n" +
+    "For a MULTI-STEP task (several edits or files), FIRST emit a plan so the developer sees the " +
+    "whole execution, then carry it out step by step when asked to continue:\n" +
+    "```dxplan\n" +
+    '{"title":"<short goal>","steps":["<step 1>","<step 2>","…"]}\n' +
+    "```\n" +
+    "Emit the plan as EXACTLY ONE such block. Each step should be one concrete, independently " +
+    "applicable change. When asked to continue a step, perform ONLY that step (with a dxpatch when " +
+    "it changes code). A single-step change needs no plan — just emit the dxpatch directly."
   );
 }
 
@@ -214,25 +226,34 @@ async function buildSystemPrompt(): Promise<ChatMsg | null> {
 }
 
 // ── Envio + streaming ───────────────────────────────────────────────────────────
+/** Envio a partir da caixa de composição (texto do utilizador). */
 async function send(): Promise<void> {
   const input = $<HTMLTextAreaElement>("#ag-input"); if (!input) return;
   const raw = input.value.trim();
   if (!raw) return;
   if (busy) { toast(t("codev.busy")); return; }
-  // Honestidade: sem provedor ligado não se inventa resposta.
   if (!activeProvider) { toast(t("codev.noProvider")); return; }
-
   input.value = "";
-  pushUserBubble(raw);
-  logOutput("sent", oneLine(raw));
+  await runTurn(raw, await withContext(raw), false);
+}
 
-  // A mensagem enviada ao modelo pode levar o ficheiro activo como contexto; o
-  // histórico visível guarda o texto puro do utilizador.
-  const content = await withContext(raw);
-  history.push({ role: "user", content });
+/** Envio PROGRAMÁTICO (conduz um passo do plano). Mostra a instrução como bolha de utilizador
+ *  (transparência: vê-se o que o orquestrador pediu) e marca o turno como "a conduzir passo". */
+async function sendText(text: string): Promise<void> {
+  if (busy || !activeProvider) return;
+  await runTurn(text, text, true);
+}
 
-  // Modo projecto: fundamenta o assistente no projecto e ensina-lhe a gramática dxpatch. O
-  // system é reconstruído a cada turno (como no assistant.ts) e NÃO entra no histórico.
+/** Núcleo partilhado de um turno: pinta a bolha do utilizador, acumula o stream, e no fim
+ *  despacha dxpatch (edição) e dxplan (orquestração). `driving` = este turno executa um passo
+ *  do plano (ao terminar, avança o plano). */
+async function runTurn(displayText: string, modelContent: string, driving: boolean): Promise<void> {
+  pushUserBubble(displayText);
+  logOutput("sent", oneLine(displayText));
+  history.push({ role: "user", content: modelContent });
+
+  // Modo projecto: fundamenta o assistente no projecto e ensina-lhe dxpatch/dxplan. O system é
+  // reconstruído a cada turno (como no assistant.ts) e NÃO entra no histórico.
   const sys = await buildSystemPrompt();
   const outgoing = sys ? [sys, ...history] : history;
 
@@ -242,7 +263,6 @@ async function send(): Promise<void> {
   let first = true;
   busy = true;
 
-  // Subscreve os três eventos ANTES de invocar (evita perder tokens iniciais).
   const unlisteners: Array<() => void> = [];
   const cleanup = (): void => { for (const u of unlisteners) u(); busy = false; };
 
@@ -262,9 +282,7 @@ async function send(): Promise<void> {
     logOutput("recv", acc ? oneLine(acc) : t("codev.out.empty"));
     cleanup();
     scrollMsgs();
-    // Se a resposta traz um ```dxpatch, resolve-o ancorado e abre um diff para revisão —
-    // nunca é aplicado em silêncio nem despejado como texto cru.
-    void handlePatchBlock(acc, bd);
+    void onTurnDone(acc, bd, driving);
   });
   unlisteners.push(unDone);
 
@@ -272,7 +290,6 @@ async function send(): Promise<void> {
     if (e.payload.requestId !== requestId) return;
     if (bd) bd.textContent = t("codev.error", { error: e.payload.error });
     logOutput("error", e.payload.error);
-    // Não se guarda no histórico uma resposta que falhou; a mensagem do utilizador fica.
     cleanup();
     scrollMsgs();
   });
@@ -292,6 +309,22 @@ async function send(): Promise<void> {
   }
 }
 
+/** Ao terminar um turno: aplica dxpatch (edição ancorada), trata o dxplan (novo plano) e, se
+ *  o turno conduzia um passo, avança o plano (encadeando em modo auto / verificando no fim). */
+async function onTurnDone(acc: string, bd: HTMLElement | null, driving: boolean): Promise<void> {
+  await handlePatchBlock(acc, bd);
+  // Um turno que CONDUZIA um passo: o passo terminou → avança (em auto encadeia; no fim verifica).
+  if (driving && plan && !plan.done) { advancePlan(); return; }
+  // Caso contrário, a resposta pode TRAZER um novo plano multi-passo.
+  const dir = parsePlanDirective(acc);
+  if (dir && (!plan || plan.done)) {
+    startPlan(dir.title, dir.steps);
+    // Retira o bloco cru da bolha (o plano vive no cartão, não como texto).
+    if (bd) bd.textContent = acc.replace(DXPLAN_RE, "").trim();
+    if (autoMode()) setTimeout(() => void continuePlan(), 400); // auto conduz já o passo 1
+  }
+}
+
 /** Detecta um `dxpatch` na resposta e, havendo, retira o bloco cru da bolha e delega a
  *  resolução ancorada + revisão em diff ao módulo de edição. O histórico guarda o texto cru
  *  (contexto para o modelo); a bolha mostra a versão sem o bloco + o estado honesto. */
@@ -301,9 +334,124 @@ async function handlePatchBlock(acc: string, bd: HTMLElement | null): Promise<vo
   const shown = acc.replace(DXPATCH_RE, "").trim();
   let note: string;
   if (out.kind === "refused") { note = `⚠ ${out.reason}`; logOutput("error", out.reason); }
+  else if (out.kind === "applied") { note = out.total > 1 ? t("codev.patch.appliedN", { n: out.total }) : t("codev.patch.applied"); logOutput("recv", note); }
   else { note = out.total > 1 ? t("codev.patch.reviewN", { n: out.total }) : t("codev.patch.review"); logOutput("recv", note); }
   if (bd) bd.textContent = shown ? `${shown}\n${note}` : note;
   scrollMsgs();
+}
+
+// ── Orquestração: plano → continuar → auto → verificar (PARITY #20) ────────────────
+//
+// O modelo emite ```dxplan {title, steps[]} para uma tarefa multi-passo. Desenhamos um cartão
+// de plano no dock; "Continuar" conduz o passo actual (envia a sua instrução); em modo auto os
+// passos encadeiam-se sozinhos (limitado pelo nº de passos, parável). Ao concluir o último
+// passo corre os testes do projecto (run_all_tests) — o "verify" de observar→planear→agir→
+// verificar — e mostra o veredicto HONESTO (ran/passed + saída). Sem simulação.
+interface Plan { title: string; steps: string[]; current: number; done: boolean }
+let plan: Plan | null = null;
+
+/** Modo auto = o modebar da casca em "auto" (encadeia os passos sem clique). */
+function autoMode(): boolean { return currentMode() === "auto"; }
+
+/** Extrai um ```dxplan ({title, steps[]}) da resposta, se válido (≥1 passo). */
+function parsePlanDirective(text: string): { title: string; steps: string[] } | null {
+  const m = text.match(/```dxplan\s*\n([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    const obj = JSON.parse(m[1].trim()) as { title?: unknown; steps?: unknown };
+    if (Array.isArray(obj.steps) && obj.steps.length) {
+      return { title: typeof obj.title === "string" ? obj.title : t("codev.plan.untitled"), steps: obj.steps.map(String) };
+    }
+  } catch { /* malformado → ignorado */ }
+  return null;
+}
+
+/** Arranca um plano novo e desenha o cartão. */
+function startPlan(title: string, steps: string[]): void {
+  plan = { title, steps, current: 0, done: false };
+  renderPlanCard();
+  logOutput("recv", t("codev.plan.started", { title, n: steps.length }));
+}
+
+/** Desenha/actualiza o cartão de plano no fim das mensagens (um só, reutilizado). */
+function renderPlanCard(): void {
+  const msgs = $("#ag-msgs"); if (!msgs || !plan) return;
+  dropIntro();
+  let card = $("#ag-plan");
+  if (!card) { card = document.createElement("div"); card.id = "ag-plan"; card.className = "m ai"; msgs.appendChild(card); }
+  card.innerHTML =
+    `<div class="bub"><div class="bh"><span class="br2">${esc(t("codev.plan.title"))}</span></div>` +
+    `<div class="bd"><div style="font-weight:600;margin-bottom:4px">${esc(plan.title)}</div>` +
+    `<div id="ag-plan-steps"></div>` +
+    (plan.done ? `<div class="sub" id="ag-plan-verify" style="margin-top:6px"></div>`
+      : `<div style="margin-top:8px"><button class="btn" id="ag-plan-next" ${busy ? "disabled" : ""}>${esc(t("codev.plan.continue"))}</button>` +
+        `<span class="sub" style="margin-left:8px">${esc(autoMode() ? t("codev.plan.autoOn") : t("codev.plan.manualHint"))}</span></div>`) +
+    `</div></div>`;
+  // Passos com texto como nó (sem injecção).
+  const stepsHost = card.querySelector<HTMLElement>("#ag-plan-steps");
+  if (stepsHost) {
+    plan.steps.forEach((s, i) => {
+      const done = plan!.done || i < plan!.current;
+      const running = i === plan!.current && !plan!.done;
+      const row = document.createElement("div");
+      row.className = "oline";
+      row.innerHTML = `<span class="${done ? "ok" : running ? "" : "dim"}">${done ? "✓" : running ? "▶" : "•"}</span> `;
+      const span = document.createElement("span");
+      if (!done && !running) span.className = "dim";
+      span.textContent = s;
+      row.appendChild(span);
+      stepsHost.appendChild(row);
+    });
+  }
+  const next = card.querySelector<HTMLElement>("#ag-plan-next");
+  if (next) next.onclick = () => void continuePlan();
+  scrollMsgs();
+}
+
+/** Conduz o passo actual: envia a sua instrução ao modelo (programaticamente). */
+async function continuePlan(): Promise<void> {
+  if (!plan || plan.done || busy) return;
+  const step = plan.steps[plan.current];
+  const remaining = plan.steps.slice(plan.current).map((s, i) => `${plan!.current + i + 1}. ${s}`).join("\n");
+  await sendText(
+    `Continue the plan "${plan.title}". Do ONLY this next step now:\n\n➡ ${step}\n\n` +
+    `Remaining steps (for context, do not do them yet):\n${remaining}\n\n` +
+    "Act through the IDE with a dxpatch when you change code — do not just describe it.",
+  );
+}
+
+/** O passo actual terminou: marca-o feito e avança. No fim corre a verificação; em auto encadeia. */
+function advancePlan(): void {
+  if (!plan || plan.done) return;
+  plan.current += 1;
+  if (plan.current >= plan.steps.length) {
+    plan.done = true;
+    renderPlanCard();
+    void runVerify();
+    return;
+  }
+  renderPlanCard();
+  if (autoMode()) setTimeout(() => void continuePlan(), 400);
+}
+
+/** Passo de verificação: corre os testes do projecto e mostra o veredicto honesto no cartão. */
+async function runVerify(): Promise<void> {
+  const root = workspaceRoot();
+  const box = $("#ag-plan-verify");
+  if (!root) { if (box) box.textContent = t("codev.plan.verifyNoFolder"); return; }
+  if (box) box.textContent = t("codev.plan.verifyRunning");
+  logOutput("sent", t("codev.plan.verifyRunning"));
+  try {
+    const run = await invoke<{ ran: boolean; passed: boolean; output: string }>("run_all_tests", { root });
+    const verdict = !run.ran ? t("codev.plan.verifyNotRun")
+      : run.passed ? t("codev.plan.verifyPass") : t("codev.plan.verifyFail");
+    if (box) box.textContent = verdict;
+    logOutput(run.ran && run.passed ? "recv" : "error", verdict);
+    if (run.output) logOutput(run.passed ? "recv" : "error", oneLine(run.output));
+  } catch (e) {
+    if (box) box.textContent = t("codev.plan.verifyErr", { e: String(e) });
+    logOutput("error", String(e));
+  }
 }
 
 /** Nova conversa: limpa o histórico e repõe a intro curta. */
@@ -460,6 +608,12 @@ export function initCodev(): void {
 /** Mostra o painel Output·Co-Dev (usado pelos comandos/atalhos da casca). */
 export function showCodevOutput(): void { setPanelTab("output"); }
 
+/** Provedor/modelo activo do Co-Dev (ou null se nenhum disponível), para outras superfícies
+ *  (ex.: Explain) usarem a mesma escolha do utilizador em vez de duplicar a lógica. */
+export function codevProvider(): { provider: string; model: string | null } | null {
+  return activeProvider ? { provider: activeProvider, model: activeModel } : null;
+}
+
 // Chaves NOVAS (codev.*). As já registadas pela casca (placeholder, intro, send,
 // newChat, pickModel, ctx…) NÃO são redefinidas aqui.
 const CODEV_STRINGS = {
@@ -480,6 +634,20 @@ const CODEV_STRINGS = {
     "codev.out.empty": "(empty reply)",
     "codev.patch.review": "— anchored edit resolved; review it in the diff.",
     "codev.patch.reviewN": "— {n}-file anchored changeset resolved; review each diff.",
+    "codev.patch.applied": "— anchored edit applied (undoable); diff shown as a record.",
+    "codev.patch.appliedN": "— {n}-file anchored changeset applied (undoable); diff shown as a record.",
+    "codev.plan.title": "Plan",
+    "codev.plan.untitled": "Plan",
+    "codev.plan.started": "plan started: {title} ({n} steps)",
+    "codev.plan.continue": "Continue",
+    "codev.plan.autoOn": "auto mode drives the steps",
+    "codev.plan.manualHint": "click to drive the next step",
+    "codev.plan.verifyRunning": "verifying: running the project tests…",
+    "codev.plan.verifyPass": "✓ verified: the project tests passed.",
+    "codev.plan.verifyFail": "✗ the project tests failed — see the output.",
+    "codev.plan.verifyNotRun": "ℹ tests did not run (no runnable suite found).",
+    "codev.plan.verifyNoFolder": "ℹ open a folder to run the verification tests.",
+    "codev.plan.verifyErr": "⚠ could not run the tests: {e}",
     "codev.providers.loading": "Loading providers…",
     "codev.providers.loadErr": "Could not read the provider settings.",
     "codev.providers.anthropicKey": "Anthropic API key",
@@ -508,6 +676,20 @@ const CODEV_STRINGS = {
     "codev.out.empty": "(resposta vazia)",
     "codev.patch.review": "— edição ancorada resolvida; revê-a no diff.",
     "codev.patch.reviewN": "— conjunto ancorado de {n} ficheiros resolvido; revê cada diff.",
+    "codev.patch.applied": "— edição ancorada aplicada (desfazível); diff mostrado como registo.",
+    "codev.patch.appliedN": "— conjunto ancorado de {n} ficheiros aplicado (desfazível); diff como registo.",
+    "codev.plan.title": "Plano",
+    "codev.plan.untitled": "Plano",
+    "codev.plan.started": "plano iniciado: {title} ({n} passos)",
+    "codev.plan.continue": "Continuar",
+    "codev.plan.autoOn": "o modo auto conduz os passos",
+    "codev.plan.manualHint": "clica para conduzir o passo seguinte",
+    "codev.plan.verifyRunning": "a verificar: a correr os testes do projecto…",
+    "codev.plan.verifyPass": "✓ verificado: os testes do projecto passaram.",
+    "codev.plan.verifyFail": "✗ os testes do projecto falharam — vê a saída.",
+    "codev.plan.verifyNotRun": "ℹ os testes não correram (nenhuma suite executável encontrada).",
+    "codev.plan.verifyNoFolder": "ℹ abre uma pasta para correr os testes de verificação.",
+    "codev.plan.verifyErr": "⚠ não consegui correr os testes: {e}",
     "codev.providers.loading": "A carregar provedores…",
     "codev.providers.loadErr": "Não foi possível ler as definições dos provedores.",
     "codev.providers.anthropicKey": "Chave de API Anthropic",

@@ -21,7 +21,7 @@ const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", 
 // ───────────────────────────── estado ──────────────────────────────
 export type ViewKind =
   | "file" | "diff" | "agent" | "welcome" | "settings" | "manager"
-  | "analysis" | "graph" | "team" | "studio" | "board" | "learn" | "lt";
+  | "analysis" | "graph" | "team" | "studio" | "board" | "learn" | "lt" | "explain";
 export interface Tab { id: string; title: string; kind: ViewKind; path?: string }
 export type ViewFn = (tab: Tab, host: HTMLElement) => void;
 
@@ -170,6 +170,10 @@ export function setFileListProvider(fn: () => Promise<string[]>): void { fileLis
 // dependência circular, tal como os outros handlers injectados).
 let providersPanelMount: ((host: HTMLElement) => void) | null = null;
 export function setProvidersPanel(render: (host: HTMLElement) => void): void { providersPanelMount = render; }
+// Fase 2: o selector de motor de sandbox (shell/sandbox.ts) regista aqui o seu render na vista
+// Settings, pelo mesmo padrão de injecção dos provedores.
+let sandboxPanelMount: ((host: HTMLElement) => void) | null = null;
+export function setSandboxPanel(render: (host: HTMLElement) => void): void { sandboxPanelMount = render; }
 // Fase 8: RUN/Stop da stack. O módulo que sabe correr (studio, via PTY) regista-se aqui;
 // o menu Run e o botão do Studio usam o mesmo caminho real.
 let runStackHandler: (() => void) | null = null;
@@ -180,7 +184,7 @@ export function setStopStackHandler(fn: () => void): void { stopStackHandler = f
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
   if (t2.kind === "lt") return `<span class="ic acc">${svg("book")}</span>`;
-  const m: Record<string, string> = { agent: "sparkle", welcome: "sparkle", diff: "scm", settings: "settings", manager: "graph", analysis: "book", graph: "scm", team: "account", studio: "cube", board: "split", file: "file" };
+  const m: Record<string, string> = { agent: "sparkle", welcome: "sparkle", diff: "scm", settings: "settings", manager: "graph", analysis: "book", graph: "scm", team: "account", studio: "cube", board: "split", file: "file", explain: "book" };
   return `<span class="ic acc">${svg(m[t2.kind] || "file")}</span>`;
 }
 
@@ -224,7 +228,7 @@ function show(id: string | null): void {
   if (bc) bc.innerHTML = (tab.path ? tab.path.split("/") : ["dxtutor", tab.title]).map((s, i, a) => `<span class="crumb"${i === a.length - 1 ? ' style="color:var(--fg)"' : ""}>${esc(s)}</span>`).join('<span class="sep">›</span>');
   miniOff();
   const fn = VIEW[tab.kind];
-  const VIEW_PHASE: Record<string, number> = { file: 2, diff: 2, agent: 4, manager: 4, analysis: 2, graph: 6, team: 5, studio: 7, board: 7, learn: 3, lt: 3 };
+  const VIEW_PHASE: Record<string, number> = { file: 2, diff: 2, agent: 4, manager: 4, analysis: 2, graph: 6, team: 5, studio: 7, board: 7, learn: 3, lt: 3, explain: 2 };
   if (fn) fn(tab, host); else nyiPage(host, "view." + tab.kind, VIEW_PHASE[tab.kind] || 2);
   hydrate(host);
   stLang();
@@ -515,6 +519,10 @@ function refreshModes(): void {
 function stMode(): void { const el = $("#st-mode"); if (el) el.textContent = MODES[MODE].l; }
 function cycleMode(): void { const ks: ModeKey[] = ["manual", "assist", "auto"]; MODE = ks[(ks.indexOf(MODE) + 1) % 3]; stMode(); drawModebar(); try { localStorage.setItem("dxtutor.mode", MODE); } catch { /* */ } }
 function setMode(k: ModeKey): void { MODE = k; stMode(); drawModebar(); try { localStorage.setItem("dxtutor.mode", MODE); } catch { /* */ } }
+/** O modo Co-Dev activo do modebar (Manual/Assistido/Auto). Outras superfícies (edição
+ *  ancorada, gestor de missões) consultam-no para que o modebar governe de facto a
+ *  aprovação, em vez de ser decorativo. Arranca sempre em «manual» (fail-closed). */
+export function currentMode(): ModeKey { return MODE; }
 function stLang(): void { const el = $("#st-lang"); if (el) el.textContent = ""; }
 
 function drawStatus(): void {
@@ -564,6 +572,7 @@ VIEW.settings = (_tab, host) => {
     <h2>${esc(t("settings.language"))}</h2><div class="pgrid">${[["en", "English"], ["ptAO", "Português (Angola)"]].map(([code, label]) => `<button class="pcard${getLocale() === code ? " sel" : ""}" data-loc="${code}"><div class="ph">${esc(label)}${getLocale() === code ? '<span class="tag acc">✓</span>' : ""}</div></button>`).join("")}</div>
     <h2>${esc(t("settings.appearance"))}</h2><div class="pgrid">${Object.keys(THEMES).map((n) => `<button class="pcard${n === currentTheme() ? " sel" : ""}" data-theme="${esc(n)}"><div class="ph">${esc(n)}${n === currentTheme() ? '<span class="tag acc">activo</span>' : ""}</div></button>`).join("")}</div>
     <h2>${esc(t("settings.providers"))}</h2><div id="settings-providers"></div>
+    <h2>${esc(t("settings.sandbox"))}</h2><div id="settings-sandbox"></div>
     <h2>${esc(t("settings.shortcuts"))}</h2><div class="tbl-wrap">${CMD.filter((c) => c.key).map((c) => `<div class="rowline"><span>${esc(c.label)}</span><span class="sp"></span><kbd>${esc(c.key!)}</kbd></div>`).join("")}</div></div>`;
   host.querySelectorAll<HTMLElement>("[data-theme]").forEach((b) => (b.onclick = () => { setTheme(b.dataset.theme!); show("settings"); }));
   host.querySelectorAll<HTMLElement>("[data-loc]").forEach((b) => (b.onclick = () => setLocale(b.dataset.loc as Locale)));
@@ -572,6 +581,8 @@ VIEW.settings = (_tab, host) => {
     if (providersPanelMount) providersPanelMount(prov);
     else prov.innerHTML = `<div class="pcard" style="max-width:520px"><div class="ph">${svg("shield")} ${esc(t("nyi.badge"))}</div><div class="pd">${esc(t("nyi.page", { phase: 4 }))}</div></div>`;
   }
+  const sb = host.querySelector<HTMLElement>("#settings-sandbox");
+  if (sb && sandboxPanelMount) sandboxPanelMount(sb);
   hydrate(host);
 };
 
