@@ -138,6 +138,113 @@ pub fn tutor_directive() -> &'static str {
      for the answer, decline and offer the next smallest hint instead."
 }
 
+// ── Co-Dev approval matrix ──────────────────────────────────────────────────────────
+//
+// A second, independent axis from the study/project policy above. Once we are
+// pair-programming in a real project, the *Co-Dev mode* chosen on the modebar
+// (Manual/Assistido/Auto) decides whether each action needs the human's explicit
+// approval or may proceed automatically. This is the backend authority the frontend
+// consults, so the modebar governs edits/commands DE FACTO instead of being decorative.
+//
+// The safety floor the matrix must never break, regardless of mode: destructive
+// filesystem/VCS actions and push ALWAYS ask. Auto chains steps, it does not remove the
+// floor.
+
+/// The Co-Dev approval mode, chosen on the modebar. Anything unknown falls back to the
+/// strictest mode (`Manual`) — fail closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoDevMode {
+    /// Every edit and command is approved by the human before it runs.
+    Manual,
+    /// Edits apply automatically (shown as a diff); destructive actions still ask.
+    Assist,
+    /// Co-Dev chains steps automatically; push and destructive actions always ask.
+    Auto,
+}
+
+impl CoDevMode {
+    pub fn parse(s: &str) -> CoDevMode {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "assist" | "assisted" | "assistido" => CoDevMode::Assist,
+            "auto" => CoDevMode::Auto,
+            _ => CoDevMode::Manual,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CoDevMode::Manual => "manual",
+            CoDevMode::Assist => "assist",
+            CoDevMode::Auto => "auto",
+        }
+    }
+}
+
+/// A class of action a Co-Dev surface may want to take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Apply an anchored edit to a file the user already has open.
+    Edit,
+    /// Run a non-destructive command (build, test, format…).
+    RunCommand,
+    /// A destructive filesystem/VCS action (discard, reset, delete, overwrite).
+    Destructive,
+    /// Publish to a remote (push) or any other outward, hard-to-undo action.
+    Push,
+}
+
+/// Whether an action may proceed automatically or must be approved by the human first.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Approval {
+    Ask,
+    Auto,
+}
+
+/// The single chokepoint: whether `action` may proceed automatically under `mode`.
+/// Destructive and Push ALWAYS ask — the safety floor is independent of the mode.
+pub fn approval_for(mode: CoDevMode, action: Action) -> Approval {
+    match action {
+        Action::Destructive | Action::Push => Approval::Ask,
+        Action::Edit | Action::RunCommand => match mode {
+            CoDevMode::Manual => Approval::Ask,
+            CoDevMode::Assist | CoDevMode::Auto => Approval::Auto,
+        },
+    }
+}
+
+/// Whether the mode chains steps without pausing (only `Auto`). `Assist` applies one step
+/// automatically but still stops between steps.
+pub fn chains(mode: CoDevMode) -> bool {
+    matches!(mode, CoDevMode::Auto)
+}
+
+/// The approval policy snapshot the frontend consults so the modebar governs behaviour.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CoDevPolicy {
+    pub mode: &'static str,
+    /// Do anchored edits need explicit approval (the inline diff Accept/Reject)?
+    pub edits_need_approval: bool,
+    /// Do non-destructive commands need explicit approval?
+    pub commands_need_approval: bool,
+    /// Does Co-Dev chain steps automatically?
+    pub chains: bool,
+    /// Always true — surfaced so the UI can state the guarantee: destructive actions and
+    /// push ask in every mode.
+    pub destructive_always_asks: bool,
+}
+
+/// Derive the Co-Dev policy from the modebar mode.
+pub fn codev_policy(mode: CoDevMode) -> CoDevPolicy {
+    CoDevPolicy {
+        mode: mode.as_str(),
+        edits_need_approval: approval_for(mode, Action::Edit) == Approval::Ask,
+        commands_need_approval: approval_for(mode, Action::RunCommand) == Approval::Ask,
+        chains: chains(mode),
+        destructive_always_asks: true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +286,52 @@ mod tests {
         ] {
             assert!(!refusal(cap).is_empty());
         }
+    }
+
+    // ── Co-Dev approval matrix ──────────────────────────────────────────────
+
+    #[test]
+    fn codev_manual_asks_for_every_edit_and_command() {
+        assert_eq!(approval_for(CoDevMode::Manual, Action::Edit), Approval::Ask);
+        assert_eq!(approval_for(CoDevMode::Manual, Action::RunCommand), Approval::Ask);
+        let p = codev_policy(CoDevMode::Manual);
+        assert!(p.edits_need_approval);
+        assert!(p.commands_need_approval);
+        assert!(!p.chains);
+    }
+
+    #[test]
+    fn codev_assist_and_auto_auto_apply_edits_and_commands() {
+        for m in [CoDevMode::Assist, CoDevMode::Auto] {
+            assert_eq!(approval_for(m, Action::Edit), Approval::Auto, "edits auto in {m:?}");
+            assert_eq!(approval_for(m, Action::RunCommand), Approval::Auto, "commands auto in {m:?}");
+            let p = codev_policy(m);
+            assert!(!p.edits_need_approval);
+            assert!(!p.commands_need_approval);
+        }
+        // Assist applies one step then stops; only Auto chains.
+        assert!(!chains(CoDevMode::Assist));
+        assert!(chains(CoDevMode::Auto));
+    }
+
+    /// The safety floor that must never break regardless of mode: destructive actions and
+    /// push always require approval. This is the test that fails if the matrix stops
+    /// governing (e.g. someone lets Auto bypass the floor).
+    #[test]
+    fn codev_destructive_and_push_always_ask_in_every_mode() {
+        for m in [CoDevMode::Manual, CoDevMode::Assist, CoDevMode::Auto] {
+            assert_eq!(approval_for(m, Action::Destructive), Approval::Ask, "destructive must ask in {m:?}");
+            assert_eq!(approval_for(m, Action::Push), Approval::Ask, "push must ask in {m:?}");
+            assert!(codev_policy(m).destructive_always_asks);
+        }
+    }
+
+    #[test]
+    fn codev_mode_parse_fails_closed_to_manual() {
+        assert_eq!(CoDevMode::parse("assist"), CoDevMode::Assist);
+        assert_eq!(CoDevMode::parse("Assistido"), CoDevMode::Assist);
+        assert_eq!(CoDevMode::parse("auto"), CoDevMode::Auto);
+        assert_eq!(CoDevMode::parse("weird"), CoDevMode::Manual);
+        assert_eq!(CoDevMode::parse(""), CoDevMode::Manual);
     }
 }
