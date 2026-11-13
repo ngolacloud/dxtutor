@@ -412,7 +412,9 @@ pub fn claude_chat_stream(
         .collect();
     let mut body = serde_json::json!({
         "model": model,
-        "max_tokens": 2048,
+        // 2048 was far too small — a whole-file rewrite hit the cap and came back TRUNCATED
+        // ("the new file is much smaller than before"). 8192 covers a large source file.
+        "max_tokens": 8192,
         "stream": true,
         "messages": msgs,
     });
