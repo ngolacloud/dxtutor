@@ -17,6 +17,7 @@ import { initScm, switchBranch } from "./shell/scm";
 import { initProblems } from "./shell/problems";
 import { initTests } from "./shell/tests";
 import { initReview } from "./shell/review";
+import { initRemote } from "./shell/remote";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -35,6 +36,7 @@ function main(): void {
   initProblems();                        // panel Problems ← markers (LSP)
   initTests();                           // RP.test → list_tests/run_*
   initReview();                          // VIEW.analysis + comandos → review_code
+  initRemote();                          // RP.remote/containers → detect_projects/devcontainer_*
   setOpenFolderHandler(() => void openFolder());
   setSwitchBranchHandler(() => void switchBranch());
   onLocaleChange(() => rebuildChrome());

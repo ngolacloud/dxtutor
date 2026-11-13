@@ -20,8 +20,8 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 11 | Testes (descobrir/correr) | `list_tests/run_test/run_all_tests` | pane `test` + painel Output + st-tests | 🔶 |
 | 12 | Problems (diagnósticos) | markers Monaco ← `lsp://diagnostics` | panel `problems` + st-prob | 🔶 |
 | 13 | Terminal (PTY) | `pty_spawn/write/resize`, `pty://data` | panel `terminal` (xterm) | 🔶 |
-| 14 | Remote Explorer | `detect_projects`, `remote.ts` | pane `remote` | ⬜ |
-| 15 | Dev Containers (sessão/exec/run) | `devcontainer_*`, `remote.ts` | pane `containers` | ⬜ |
+| 14 | Remote Explorer (SSH pend.) | `detect_projects` | pane `remote` | 🔶 |
+| 15 | Dev Containers (session up/status/down) | `devcontainer_info/session_up/status/down` | pane `containers` | 🔶 |
 | 16 | Explain (resumo lado-a-lado, stream) | `explain.ts`, chat stream | `VIEW` explain (split) | ⬜ |
 | 17 | Review (achados; aplicar-fix pend.) | `review_code` (list_review_analyzers/verify_fix pend.) | `VIEW.analysis` + paleta | 🔶 |
 | 18 | Quick Open / Command Palette | `list_files`, `quickopen.ts` | `#pal` palette | ⬜ |

@@ -11,8 +11,6 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Aplicar correcção (review) | `VIEW.analysis` | `verify_review_fix` + content_version por ligar | 2 |
 | Run and Debug | pane `run` | `debug_*`/`trace_execution` por ligar | 2 |
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
-| Remote Explorer | pane `remote` | `detect_projects` por ligar | 2 |
-| Containers | pane `containers` | `devcontainer_*` por ligar | 2 |
 | Editor (Monaco) | `VIEW.file` | editor Monaco por montar | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Commit graph | `VIEW.graph` | `git_log`/`git_show` por ligar | 6 |
