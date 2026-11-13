@@ -96,6 +96,16 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   comando «Mission manager» da casca passam a abrir a vista real. Verificação: `tsc+vite` verde;
   `cargo test` desktop 11. Modos/conselho/juiz: o dono está a construí-los (modos já em `policy.rs`/
   `index.ts` `currentMode`), fora deste commit.
+- 2026-11-13 — **F4 modos governam também os COMANDOS de stack (não só as edições).** O dono ligou
+  a matriz de aprovação (`policy.rs` `codev_policy`/`approval_for`) às edições ancoradas em
+  `edit.ts` (`editsAutoApply` → `editsNeedApproval`). Faltava o outro lado: os comandos. O meu
+  surface de stack (`studio.ts` `runStack`/`stopStack`) corria `docker compose up/down` em silêncio,
+  ignorando o modebar. Passa a consultar `codev_policy` (`commandsNeedApproval`) com o mesmo
+  fail-closed de `edit.ts` (sem backend/erro → pede): em **Manual** confirma antes de correr; em
+  **Assistido/Auto** corre directo. Assim a modebar governa edições E comandos DE FACTO. Sem backend
+  novo — consome o comando `codev_policy` já testado (`codev_manual_asks_for_every_edit_and_command`,
+  `codev_destructive_and_push_always_ask`). Isolado em `studio.ts` (meu); nenhum ficheiro quente do
+  dono tocado. Verificação: `npm run build` verde; matriz 4/4 + desktop 11/11.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

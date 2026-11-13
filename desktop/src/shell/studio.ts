@@ -12,7 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { t, registerStrings } from "../i18n";
-import { VIEW, openTab, addCommand, toast, setRunStackHandler, setStopStackHandler, setPanelTab, type Tab } from "./index";
+import { VIEW, openTab, addCommand, toast, setRunStackHandler, setStopStackHandler, setPanelTab, currentMode, type Tab } from "./index";
 import { workspaceRoot } from "./workspace";
 import { runInTerminal } from "./terminal";
 import { initManager } from "./manager";
@@ -270,15 +270,37 @@ async function genScaffold(): Promise<void> {
 // ▶ RUN / Stop da stack: corre `docker compose` na pasta aberta, no PTY REAL. Honesto —
 // se docker/compose não existir no host, o erro aparece no terminal (nada simulado).
 const shQuote = (s: string): string => "'" + s.replace(/'/g, "'\\''") + "'";
+/** Consulta o backend: no modo Co-Dev activo, correr um comando (não-destrutivo) precisa de
+ *  aprovação explícita? Espelha `editsAutoApply` de edit.ts — mesma autoridade (`codev_policy`),
+ *  mesmo fail-closed: sem backend/erro → true (pede sempre). Assim a modebar governa também os
+ *  comandos DE FACTO através deste surface, não só as edições ancoradas. */
+async function commandNeedsApproval(): Promise<boolean> {
+  try {
+    const p = await invoke<{ commandsNeedApproval: boolean }>("codev_policy", { mode: currentMode() });
+    return p.commandsNeedApproval !== false;
+  } catch { return true; }
+}
+
+/** Corre `cmd` no terminal real, mas respeitando a matriz de aprovação: em modo Manual pede
+ *  confirmação antes (o modebar diz «cada comando é aprovado pelo humano»); em Assistido/Auto
+ *  corre directo. Nada corre em silêncio contra a política. */
+async function runGuardedCommand(cmd: string, human: string): Promise<void> {
+  if (await commandNeedsApproval()) {
+    const ok = window.confirm(t("studio.cmdConfirm", { mode: t("mode." + currentMode()), cmd: human }));
+    if (!ok) { toast(t("studio.cmdCancelled")); return; }
+  }
+  runInTerminal(cmd);
+}
+
 function runStack(): void {
   const root = workspaceRoot();
   if (!root) { toast(t("studio.noFolder")); return; }
-  runInTerminal(`cd ${shQuote(root)} && docker compose up --build -d && docker compose ps`);
+  void runGuardedCommand(`cd ${shQuote(root)} && docker compose up --build -d && docker compose ps`, "docker compose up --build -d");
 }
 function stopStack(): void {
   const root = workspaceRoot();
   if (!root) { toast(t("studio.noFolder")); return; }
-  runInTerminal(`cd ${shQuote(root)} && docker compose down`);
+  void runGuardedCommand(`cd ${shQuote(root)} && docker compose down`, "docker compose down");
 }
 
 // ── Vista Services (painel inferior #pc-services) ───────────────────────────────────
@@ -558,6 +580,8 @@ const STUDIO_STRINGS = {
     "studio.runTip": "Run `docker compose up --build -d` in the open folder (real terminal).",
     "studio.cmdRun": "Stack: run (docker compose up)",
     "studio.cmdStop": "Stack: stop (docker compose down)",
+    "studio.cmdConfirm": "{mode} mode — run this command?\n\n{cmd}",
+    "studio.cmdCancelled": "Command cancelled — not run.",
     "services.cmdOpen": "Services: show running stack",
     "services.title": "Services",
     "services.refresh": "Refresh",
@@ -620,6 +644,8 @@ const STUDIO_STRINGS = {
     "studio.runTip": "Corre `docker compose up --build -d` na pasta aberta (terminal real).",
     "studio.cmdRun": "Stack: executar (docker compose up)",
     "studio.cmdStop": "Stack: parar (docker compose down)",
+    "studio.cmdConfirm": "Modo {mode} — correr este comando?\n\n{cmd}",
+    "studio.cmdCancelled": "Comando cancelado — não foi corrido.",
     "services.cmdOpen": "Services: mostrar a stack em execução",
     "services.title": "Services",
     "services.refresh": "Actualizar",
