@@ -18,6 +18,11 @@ import { initProblems } from "./shell/problems";
 import { initTests } from "./shell/tests";
 import { initReview } from "./shell/review";
 import { initRemote } from "./shell/remote";
+import { initCodemap } from "./shell/codemap";
+import { initDebug } from "./shell/debug";
+import { initStudio } from "./shell/studio";
+import { initLearn } from "./shell/learn";
+import { initCodev } from "./shell/codev";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -37,11 +42,16 @@ function main(): void {
   initTests();                           // RP.test → list_tests/run_*
   initReview();                          // VIEW.analysis + comandos → review_code
   initRemote();                          // RP.remote/containers → detect_projects/devcontainer_*
+  initCodemap();                         // comando → symbol_relations (defs/refs/callers)
+  initDebug();                           // RP.run → run_path/run_measured/trace_execution/debug_capabilities
+  initStudio();                          // VIEW.studio + comando → arch_validate (Fase 7)
+  initLearn();                           // RP.tutor + VIEW.lt → list_courses/get_course/submit_step/request_hint (Fase 3)
   setOpenFolderHandler(() => void openFolder());
   setSwitchBranchHandler(() => void switchBranch());
   setGotoLineHandler((n) => revealLine(n));
   onLocaleChange(() => rebuildChrome());
   bootShell();
+  initCodev();                           // chat do dock Co-Dev → assistant_chat_stream (Fase 2→4)
   initTerminal();                        // terminal real (PTY) no painel inferior
   hideBoot();
 }

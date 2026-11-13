@@ -9,22 +9,22 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Substituir-tudo (pesquisa) | pane `search` | sem comando backend; replace client-side por fazer | 2 |
 | Descartar/diff (SCM) | pane `scm` | `git checkout --` (sem comando) / `git_diff` por ligar | 2 |
 | Aplicar correcção (review) | `VIEW.analysis` | `verify_review_fix` + content_version por ligar | 2 |
-| Run and Debug | pane `run` | `debug_*`/`trace_execution` por ligar | 2 |
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Commit graph | `VIEW.graph` | `git_log`/`git_show` por ligar | 6 |
 | Output · Co-Dev | panel `output` | log do Co-Dev por ligar | 4 |
 | Services | panel `services` | RUN de stack por ligar | 8 |
 | Quick-open (ficheiros) | paleta (sem prefixo) | precisa de pasta aberta (`list_files`) | 2 |
-| Co-Dev (chat/orquestração) | dock `agent` | `assistant_chat_stream`+modos por ligar | 4 |
-| Escolher modelo / providers | dock + Settings | `list_providers`/config por ligar | 4 |
-| Learning Track | pane `tutor`, `VIEW.lt`/`learn` | `get_course`/`submit_step` por ligar | 3 |
+| Co-Dev avançado (modos/conselho/juiz/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base já liga) | 4 |
+| Escolher modelo (UI de troca) / Settings providers | dock + Settings | `save_providers_config` + picker por ligar (rótulo já lê list_providers) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
-| Architecture Studio | `VIEW.studio` | `arch_validate`/`arch_scaffold` por ligar | 7 |
+| Studio: gerar backlog / RUN | `VIEW.studio` | `arch_scaffold` + orquestração por ligar (validação já liga) | 8 |
 | Board / kanban | `VIEW.board` | modelo de issues/sprints por ligar | 7 |
 | Team / harness | `VIEW.team` | harness no backend por ligar | 5 |
 | Mission manager | `VIEW.manager` | missões/checkpoints por ligar | 4 |
 | RUN / Stop (stack) | menu Run/Project, status | `docker compose up --build` por ligar | 8 |
+| Breakpoints (gutter) | editor Monaco | acoplamento ao gutter em workspace.ts por fazer | — |
+| Explain (resumo stream lado-a-lado) | `VIEW` explain | stream IA por ligar | 2 |
 
 Na Fase 1 todas estas superfícies aparecem **visíveis mas desactivadas**, com o aviso
 «not implemented yet (fase N)». Nenhuma devolve dados inventados.
