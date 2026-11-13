@@ -77,6 +77,15 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   `index.html` (aba) — nenhum ficheiro «quente» do dono foi editado. A linha «Services (pane)» do
   `PENDING.md` fica por remover porque esse ficheiro está em edição concorrente; passa a estar, de
   facto, ligada. Verificação: `tsc+vite` verde; backend `compose_ps` testado em F8d.
+- 2026-11-13 — **F4 gestor de missões é construído pelo dono; eu contribuo só o primitivo de
+  backend.** Ao tentar o `VIEW.manager` em paralelo, colidiu com trabalho concorrente do dono no
+  mesmo espaço (modos/`policy.rs`, loop agêntico em `edit.ts`/`codev.ts`, e brevemente
+  `initManager()` em `app.ts`). Para não duplicar nem clobbar, recuei a minha UI (removido
+  `shell/manager.ts`, revertido `studio.ts`) e mantive apenas o comando novo **`arch_scaffold_preview`**
+  (em `main.rs`): devolve os `(caminho, conteúdo)` do scaffold **sem escrever**, para a delegação
+  isolada (`agent_task_submit` → worktree patch → revisão) que o gestor de missões precisa. Testado
+  (`scaffold_preview_payload_has_compose`, crate desktop 11 verdes). O resto do F4 (manager/modos/
+  conselho) fica para o dono fechar nos ficheiros que está a editar.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

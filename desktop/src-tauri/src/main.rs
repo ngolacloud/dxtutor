@@ -842,6 +842,15 @@ fn study_policy(mode: String, step_id: Option<String>) -> tutor_llm::policy::Stu
     policy_for(Mode::parse(&mode), step_is_autonomous(step_id.as_deref()))
 }
 
+/// The active Co-Dev approval policy for the modebar mode (Manual/Assist/Auto). The
+/// frontend consults it so the modebar governs whether edits/commands auto-apply or must
+/// be approved. Destructive actions and push always ask, in every mode.
+#[tauri::command]
+fn codev_policy(mode: String) -> tutor_llm::policy::CoDevPolicy {
+    use tutor_llm::policy::{codev_policy, CoDevMode};
+    codev_policy(CoDevMode::parse(&mode))
+}
+
 #[tauri::command]
 fn assistant_chat_stream(
     app: tauri::AppHandle,
@@ -1311,6 +1320,15 @@ async fn arch_scaffold(
     })
     .await
     .map_err(|e| format!("scaffold task failed: {e}"))?
+}
+
+/// Preview the scaffold of a design WITHOUT writing: returns the (relPath, content) pairs
+/// `arch_scaffold` would write. Feeds the isolated-task delegation (agent_task_submit), so a
+/// mission can be reviewed as a worktree patch before anything lands. Empty if the design is
+/// invalid (same rule as scaffold).
+#[tauri::command]
+fn arch_scaffold_preview(arch: tutor_eval::arch::Architecture) -> Vec<(String, String)> {
+    arch.scaffold()
 }
 
 /// Run a delegated task in an isolated git worktree of HEAD: apply `writes` ([relPath,
@@ -2300,6 +2318,7 @@ fn main() {
             list_review_analyzers,
             verify_review_fix,
             study_policy,
+            codev_policy,
             symbol_relations,
             list_symbols,
             symbol_ranges,
@@ -2325,6 +2344,7 @@ fn main() {
             git_checkout,
             git_create_branch,
             agent_isolated_patch,
+            arch_scaffold_preview,
             agent_task_submit,
             agent_task_status,
             agent_task_cancel,
@@ -2406,6 +2426,20 @@ mod tests {
             space: "O(1)".into(),
             justification: "constant work".into(),
         }
+    }
+
+    /// F4 gestor de missões: o payload de `arch_scaffold_preview` (== `arch.scaffold()`) é o
+    /// conjunto de ficheiros que a missão delega como patch isolado — inclui o compose.
+    #[test]
+    fn scaffold_preview_payload_has_compose() {
+        use tutor_eval::arch::{Architecture, Component, Kind};
+        let arch = Architecture {
+            components: vec![Component { id: "api".into(), name: "api".into(), kind: Kind::Service, outbox: false }],
+            connections: vec![],
+        };
+        let files = arch.scaffold(); // exactamente o que arch_scaffold_preview devolve
+        assert!(files.iter().any(|(p, _)| p == "docker-compose.yml"), "sem compose: {:?}", files.iter().map(|(p, _)| p).collect::<Vec<_>>());
+        assert!(files.iter().any(|(p, _)| p == "services/api/Dockerfile"));
     }
 
     /// F8 Services: NDJSON (um objecto por linha) do `docker compose ps` é parseado nos
