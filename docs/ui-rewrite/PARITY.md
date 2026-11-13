@@ -11,14 +11,14 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 2 | Árvore de ficheiros (Explorer) | `fsops::list_dir/create_path` | pane `explorer` | ✅ |
 | 3 | Editor Monaco multi-aba + autosave | `read/write_text_file`, `monaco.ts` | `VIEW.file` + `#tabs` | ✅ |
 | 4 | Breadcrumbs + minimap (outline LSP pend.) | Monaco | breadcrumbs + minimap Monaco | 🔶 |
-| 5 | Go-to-definition / hover / refs | `lsp_*`, `resolve_*` | editor (Monaco LSP) | ⬜ |
+| 5 | Go-to-def / hover / refs / rename | `lsp_start/did_open/did_change/definition/hover/references/rename` | editor Monaco (reusa lsp.ts) | 🔶 |
 | 6 | CodeMap (defs/refs/callers) | `symbol_relations`, `codemap.ts` | pane/vista | ⬜ |
 | 7 | Pesquisa (substituir-tudo pend.) | `search_project` | pane `search` | 🔶 |
 | 8 | Source Control (discard/diff pend.) | `git_changes/stage/unstage/commit/branch/checkout` | pane `scm` | 🔶 |
 | 9 | Grafo de commits (DAG) + diff | `git_log/git_show`, `git.ts` | `VIEW.graph` | ⬜ |
 | 10 | Run & Debug (breakpoints/trace) | `debug_*`, `trace_execution`, `debug.ts` | pane `run` | ⬜ |
 | 11 | Testes (descobrir/correr) | `list_tests/run_test/run_all_tests`, `tests.ts` | pane `test` + painel Problems | ⬜ |
-| 12 | Problems (diagnósticos) | `get_diagnostics`, review | panel `problems` | ⬜ |
+| 12 | Problems (diagnósticos) | markers Monaco ← `lsp://diagnostics` | panel `problems` + st-prob | 🔶 |
 | 13 | Terminal (PTY) | `pty_spawn/write/resize`, `pty://data` | panel `terminal` (xterm) | 🔶 |
 | 14 | Remote Explorer | `detect_projects`, `remote.ts` | pane `remote` | ⬜ |
 | 15 | Dev Containers (sessão/exec/run) | `devcontainer_*`, `remote.ts` | pane `containers` | ⬜ |

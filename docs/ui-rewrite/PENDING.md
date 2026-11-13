@@ -18,7 +18,6 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Commit graph | `VIEW.graph` | `git_log`/`git_show` por ligar | 6 |
 | Analysis/Review | `VIEW.analysis` | `review_code` por ligar | 2 |
-| Problems | panel `problems` | `get_diagnostics` por ligar | 2 |
 | Output · Co-Dev | panel `output` | log do Co-Dev por ligar | 4 |
 | Services | panel `services` | RUN de stack por ligar | 8 |
 | Quick-open (ficheiros) | paleta (sem prefixo) | precisa de pasta aberta (`list_files`) | 2 |

@@ -10,8 +10,15 @@ import { t, registerStrings } from "../i18n";
 import { svg, hydrate } from "./icons";
 import { onThemeChange, currentTheme } from "./theme";
 import { VIEW, RP, openTab, toast, activeTabId, type Tab } from "./index";
+import { installLsp, lspStart, lspDidOpen, lspDidChange, LSP_LANGUAGES, type LspHost } from "../lsp";
 
 interface EntryDto { name: string; path: string; is_dir: boolean }
+
+// Estado do cliente LSP: ficheiros abertos no servidor + versão por ficheiro.
+const lspOpened = new Set<string>();
+const versions = new Map<string, number>();
+const dxPath = (m: monaco.editor.ITextModel | null): string | null =>
+  (m as (monaco.editor.ITextModel & { _dxPath?: string }) | null)?._dxPath ?? null;
 
 let rootPath: string | null = null;
 const expanded = new Set<string>();
@@ -44,6 +51,18 @@ function iconFor(entry: EntryDto): string {
   return `<span class="ic ${cls}">${svg(e === "rs" ? "rust" : "file")}</span>`;
 }
 
+// Ponte que o lsp.ts usa para conduzir editores + ficheiros (ver LspHost).
+const lspHost: LspHost = {
+  root: () => rootPath,
+  pathForModel: (m) => dxPath(m),
+  modelForPath: (p) => models.get(p) ?? null,
+  openAt: (p, line) => openFileAt(p, line),
+  readFile: (p) => invoke<string>("read_text_file", { path: p }),
+  writeFile: async (p, text) => { await invoke("write_text_file", { path: p, contents: text }); const m = models.get(p); if (m && m.getValue() !== text) m.setValue(text); },
+  promptRename: (cur) => window.prompt(t("ws.rename"), cur),
+  notify: (msg) => toast(msg),
+};
+
 // ─────────────────────────── Monaco ───────────────────────────
 function monacoTheme(): string { return currentTheme() === "Papel claro" ? "vs" : "vs-dark"; }
 
@@ -63,9 +82,16 @@ function ensureEditor(): monaco.editor.IStandaloneCodeEditor {
     if (el) el.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
   });
   editor.onDidChangeModelContent(() => {
-    const path = (editor?.getModel() as monaco.editor.ITextModel & { _dxPath?: string })?._dxPath;
-    if (path) scheduleSave(path);
+    const m = editor?.getModel() ?? null;
+    const path = dxPath(m);
+    if (!path) return;
+    scheduleSave(path);
+    if (lspOpened.has(path) && m) {
+      const v = (versions.get(path) || 1) + 1; versions.set(path, v);
+      void lspDidChange(path, m.getValue(), v).catch(() => { /* backend/LSP ausente */ });
+    }
   });
+  installLsp(monaco, editor, lspHost); // go-to-def/hover/refs/rename + diagnósticos
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const m = editor?.getModel() as (monaco.editor.ITextModel & { _dxPath?: string }) | null;
     if (m?._dxPath) saveNow(m._dxPath, m.getValue(), true);
@@ -105,7 +131,12 @@ const fileView = (tab: Tab, host: HTMLElement): void => {
     // Se o ficheiro mudou no disco e não há edições pendentes, actualiza.
     if (m.getValue() !== content && !saveTimers.has(tab.path!)) m.setValue(content);
     ed.setModel(m);
-    const lang = document.getElementById("st-lang"); if (lang) lang.textContent = m.getLanguageId();
+    const langId = m.getLanguageId();
+    const lang = document.getElementById("st-lang"); if (lang) lang.textContent = langId;
+    if ((LSP_LANGUAGES as readonly string[]).includes(langId) && !lspOpened.has(tab.path!)) {
+      lspOpened.add(tab.path!); versions.set(tab.path!, 1);
+      void lspDidOpen(tab.path!, content, langId).catch(() => { /* backend/LSP ausente */ });
+    }
     ed.layout();
     if (pendingReveal && pendingReveal.path === tab.path) {
       const ln = pendingReveal.line; pendingReveal = null;
@@ -202,6 +233,8 @@ export async function openFolder(): Promise<void> {
   const path = await invoke<string | null>("pick_folder");
   if (!path) return;
   rootPath = path; expanded.clear(); childCache.clear();
+  lspOpened.clear(); versions.clear();
+  void lspStart(path).catch(() => { /* backend/LSP ausente */ });
   await renderExplorer();
   folderOpenedHandlers.forEach((cb) => cb(path));
 }
@@ -240,13 +273,13 @@ const WS_STRINGS = {
     "ws.newFile": "New File", "ws.newFolder": "New Folder", "ws.refresh": "Refresh",
     "ws.collapse": "Collapse Folders", "ws.saved": "Saved",
     "ws.saveError": "Save failed: {e}", "ws.openError": "Cannot open: {e}",
-    "ws.createError": "Create failed: {e}",
+    "ws.createError": "Create failed: {e}", "ws.rename": "New name",
   },
   ptAO: {
     "ws.openFolder": "Abrir pasta", "ws.noFolder": "Nenhuma pasta aberta",
     "ws.newFile": "Novo ficheiro", "ws.newFolder": "Nova pasta", "ws.refresh": "Actualizar",
     "ws.collapse": "Colapsar pastas", "ws.saved": "Guardado",
     "ws.saveError": "Falha ao guardar: {e}", "ws.openError": "Não foi possível abrir: {e}",
-    "ws.createError": "Falha ao criar: {e}",
+    "ws.createError": "Falha ao criar: {e}", "ws.rename": "Novo nome",
   },
 };

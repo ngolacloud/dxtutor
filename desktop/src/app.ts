@@ -14,6 +14,7 @@ import { initWorkspace, openFolder } from "./shell/workspace";
 import { initTerminal } from "./shell/terminal";
 import { initSearch } from "./shell/search";
 import { initScm, switchBranch } from "./shell/scm";
+import { initProblems } from "./shell/problems";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -29,6 +30,7 @@ function main(): void {
   initWorkspace();                       // regista VIEW.file + RP.explorer reais
   initSearch();                          // RP.search → search_project
   initScm();                             // RP.scm → git_*
+  initProblems();                        // panel Problems ← markers (LSP)
   setOpenFolderHandler(() => void openFolder());
   setSwitchBranchHandler(() => void switchBranch());
   onLocaleChange(() => rebuildChrome());
