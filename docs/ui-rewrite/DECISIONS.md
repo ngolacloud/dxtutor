@@ -53,6 +53,13 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   delonix), o erro aparece no terminal — nada simulado; o scaffold tem de ter sido gerado antes
   (senão `docker compose` não encontra configuração, e di-lo). A **vista estruturada Services**
   (parse de `docker compose ps` em `#pc-services`) fica pendente. Verificação: `tsc+vite` verde.
+- 2026-11-13 — **`docs/v2/GAP.md` criado (reconcilia a decisão de 21-24 acima).** A missão v7
+  exigiu o Passo-0 num `docs/v2/GAP.md` próprio. Em vez de o recusar como duplicação (decisão
+  anterior «docs/v2 == docs/ui-rewrite, não se duplica»), cria-se o GAP.md como **vista de
+  síntese agregada por fase** (F1–F8: estado + comandos Tauri + ficheiros + lacuna) que aponta
+  para o `PLAN.md`/`PARITY.md`/`PENDING.md` como fonte fina — não os substitui. Motivo: o
+  protótipo v7 do anexo perdeu-se no `/clear`; o dono optou por manter o ramo `feat/ui-rewrite`
+  (não um `feature/v2-prototype` de `main`) e usar `docs/ui-rewrite` + v3 como fonte de verdade.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)
