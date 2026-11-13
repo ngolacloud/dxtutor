@@ -46,6 +46,13 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   honesto quando não há pasta (`open a folder first`) ou o desenho tem erros de validação. O
   resultado é invalidado a cada alteração do desenho. ▶ RUN (stack via docker compose) fica para
   o corte seguinte. Verificação: `tsc+vite` verde; backend `arch_scaffold` já testado em F8a.
+- 2026-11-13 — **F8 (3.º corte) = ▶ RUN/Stop da stack no PTY real.** O botão ▶ RUN do Studio e o
+  menu Run correm `cd <root> && docker compose up --build -d && docker compose ps` / `… down` no
+  terminal integrado (PTY real, via `runInTerminal` em terminal.ts + hooks `setRunStackHandler`/
+  `setStopStackHandler` em index.ts). Honesto: se docker/compose não existir no host (p.ex. só há
+  delonix), o erro aparece no terminal — nada simulado; o scaffold tem de ter sido gerado antes
+  (senão `docker compose` não encontra configuração, e di-lo). A **vista estruturada Services**
+  (parse de `docker compose ps` em `#pc-services`) fica pendente. Verificação: `tsc+vite` verde.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)

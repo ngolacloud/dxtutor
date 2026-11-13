@@ -9,12 +9,22 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { setTerminalClearHandler } from "./index";
+import { setTerminalClearHandler, setPanelTab } from "./index";
 import { onThemeChange, currentTheme } from "./theme";
 
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let spawned = false;
+
+/** Escreve uma linha de comando no PTY real e mostra o painel do terminal. Usado por
+ * tarefas da IDE (ex.: ▶ RUN da stack). Honesto: é a shell real a executar — se o comando
+ * (docker, make, …) não existir, o erro aparece no terminal, nada é simulado. */
+export function runInTerminal(cmd: string): void {
+  setPanelTab("terminal");
+  if (!spawned) void spawnShell();
+  void invoke("pty_write", { data: cmd + "\r" }).catch(() => { /* backend ausente */ });
+  term?.focus();
+}
 
 function theme(): import("@xterm/xterm").ITheme {
   const light = currentTheme() === "Papel claro";

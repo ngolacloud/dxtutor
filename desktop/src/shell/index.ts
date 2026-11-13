@@ -170,6 +170,12 @@ export function setFileListProvider(fn: () => Promise<string[]>): void { fileLis
 // dependência circular, tal como os outros handlers injectados).
 let providersPanelMount: ((host: HTMLElement) => void) | null = null;
 export function setProvidersPanel(render: (host: HTMLElement) => void): void { providersPanelMount = render; }
+// Fase 8: RUN/Stop da stack. O módulo que sabe correr (studio, via PTY) regista-se aqui;
+// o menu Run e o botão do Studio usam o mesmo caminho real.
+let runStackHandler: (() => void) | null = null;
+let stopStackHandler: (() => void) | null = null;
+export function setRunStackHandler(fn: () => void): void { runStackHandler = fn; }
+export function setStopStackHandler(fn: () => void): void { stopStackHandler = fn; }
 
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
@@ -431,8 +437,8 @@ function buildMenus(): void {
       { l: t("menu.prevTab"), act: () => stepTab(-1) },
     ] },
     { t: t("menu.run"), items: [
-      { l: t("menu.runStack"), k: "F5", act: () => nyiToast() },
-      { l: t("menu.stopStack"), act: () => nyiToast() },
+      { l: t("menu.runStack"), k: "F5", act: () => (runStackHandler ? runStackHandler() : nyiToast()) },
+      { l: t("menu.stopStack"), act: () => (stopStackHandler ? stopStackHandler() : nyiToast()) },
     ] },
     { t: t("menu.project"), items: [
       { l: t("nav.studio"), act: () => openView("studio", "view.studio") },

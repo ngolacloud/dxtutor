@@ -12,8 +12,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { t, registerStrings } from "../i18n";
-import { VIEW, openTab, addCommand, toast, type Tab } from "./index";
+import { VIEW, openTab, addCommand, toast, setRunStackHandler, setStopStackHandler, type Tab } from "./index";
 import { workspaceRoot } from "./workspace";
+import { runInTerminal } from "./terminal";
 
 // ───────────────────────────── modelo do cliente ──────────────────────────────
 // `tech` é a chave no catálogo TECH; `st` é um rótulo puramente visual (não entra
@@ -262,6 +263,20 @@ async function genScaffold(): Promise<void> {
   scaffolding = false; paintInspector();
 }
 
+// ▶ RUN / Stop da stack: corre `docker compose` na pasta aberta, no PTY REAL. Honesto —
+// se docker/compose não existir no host, o erro aparece no terminal (nada simulado).
+const shQuote = (s: string): string => "'" + s.replace(/'/g, "'\\''") + "'";
+function runStack(): void {
+  const root = workspaceRoot();
+  if (!root) { toast(t("studio.noFolder")); return; }
+  runInTerminal(`cd ${shQuote(root)} && docker compose up --build -d && docker compose ps`);
+}
+function stopStack(): void {
+  const root = workspaceRoot();
+  if (!root) { toast(t("studio.noFolder")); return; }
+  runInTerminal(`cd ${shQuote(root)} && docker compose down`);
+}
+
 // Bloco de resultado da geração, mostrado na visão geral do inspector.
 function scaffoldBlock(): string {
   if (scaffolding) return `<div class="st-kv" style="margin-top:12px"><span>…</span><code>${esc(t("studio.scaffolding"))}</code></div>`;
@@ -429,7 +444,6 @@ function onCanvasDown(e: MouseEvent): void {
 
 // ───────────────────────────── vista ──────────────────────────────
 const studioView = (_tab: Tab, host: HTMLElement): void => {
-  const nyi = esc(t("studio.nyi"));
   host.innerHTML = `<div class="studio">
     <div class="st-bar">
       <b style="font-size:14px">${esc(t("studio.title"))}</b>
@@ -437,7 +451,7 @@ const studioView = (_tab: Tab, host: HTMLElement): void => {
       <button class="mini" id="st-reset">${esc(t("studio.reset"))}</button>
       <span class="sp"></span>
       <button class="mini pri" id="st-scaffold" title="${esc(t("studio.genScaffoldTip"))}">${esc(t("studio.genScaffold"))}</button>
-      <button class="mini run" id="st-run" disabled title="${nyi}" style="opacity:.5;cursor:not-allowed">${esc(t("studio.run"))}</button>
+      <button class="mini run" id="st-run" title="${esc(t("studio.runTip"))}">${esc(t("studio.run"))}</button>
     </div>
     <div class="st-main">
       <div class="st-cat" id="st-cat"></div>
@@ -449,7 +463,7 @@ const studioView = (_tab: Tab, host: HTMLElement): void => {
   const link = el("st-link"); if (link) link.onclick = toggleConnect;
   const reset = el("st-reset"); if (reset) reset.onclick = resetDesign;
   const scaffoldBtn = el("st-scaffold"); if (scaffoldBtn) scaffoldBtn.onclick = () => void genScaffold();
-  // «▶ RUN» (stack real) fica desactivado até ao próximo corte da Fase 8.
+  const runBtn = el("st-run"); if (runBtn) runBtn.onclick = runStack;
   const svgEl = el<SVGSVGElement>("st-svg");
   if (svgEl) (svgEl as unknown as HTMLElement).onmousedown = onCanvasDown;
 
@@ -462,6 +476,11 @@ export function initStudio(): void {
   registerStrings(STUDIO_STRINGS);
   VIEW.studio = studioView;
   addCommand({ id: "studio:open", label: () => t("studio.cmdOpen"), run: () => openTab({ id: "studio", title: t("studio.title"), kind: "studio" }) });
+  // ▶ RUN/Stop da stack (menu Run + botão do Studio) correm no PTY real.
+  setRunStackHandler(runStack);
+  setStopStackHandler(stopStack);
+  addCommand({ id: "stack:run", label: () => t("studio.cmdRun"), run: runStack });
+  addCommand({ id: "stack:stop", label: () => t("studio.cmdStop"), run: stopStack });
 }
 
 const STUDIO_STRINGS = {
@@ -481,6 +500,9 @@ const STUDIO_STRINGS = {
     "studio.scaffoldFailed": "Scaffold failed: {err}",
     "studio.scaffoldInvalid": "Fix the design errors before generating the scaffold.",
     "studio.run": "▶ RUN",
+    "studio.runTip": "Run `docker compose up --build -d` in the open folder (real terminal).",
+    "studio.cmdRun": "Stack: run (docker compose up)",
+    "studio.cmdStop": "Stack: stop (docker compose down)",
     "studio.nyi": "not implemented yet (Phase 8)",
     "studio.connectTitle": "Connect",
     "studio.connectFrom": "Click the component that depends on another.",
@@ -529,6 +551,9 @@ const STUDIO_STRINGS = {
     "studio.scaffoldFailed": "Falha ao gerar o scaffold: {err}",
     "studio.scaffoldInvalid": "Corrige os erros do desenho antes de gerar o scaffold.",
     "studio.run": "▶ EXECUTAR",
+    "studio.runTip": "Corre `docker compose up --build -d` na pasta aberta (terminal real).",
+    "studio.cmdRun": "Stack: executar (docker compose up)",
+    "studio.cmdStop": "Stack: parar (docker compose down)",
     "studio.nyi": "ainda não implementado (Fase 8)",
     "studio.connectTitle": "Ligar",
     "studio.connectFrom": "Clica no componente que depende de outro.",

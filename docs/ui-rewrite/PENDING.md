@@ -12,14 +12,12 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Gitflow finish (merge+tag) | `VIEW.graph`/paleta | sem `git_merge`/`git_tag` no backend; mostra comandos p/ terminal | 6 |
-| Services | panel `services` | RUN de stack por ligar | 8 |
+| Services (vista estruturada) | panel `services` | parse de `docker compose ps` por ligar (RUN/Stop já correm no PTY real) | 8 |
 | Co-Dev avançado (conselho/juiz/auto-avaliação/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base + selector de modelo já ligam) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
-| Studio: ▶ RUN (stack) | `VIEW.studio` | `docker compose up --build` por ligar (gerar scaffold já liga: `arch_scaffold` escreve na pasta) | 8 |
 | Board: gerar backlog do Studio / executar sprint | `VIEW.board` | orquestração por ligar (kanban+auto-teste já ligam; `arch_scaffold` pronto) | 8 |
 | Team: imposição do harness no backend | `VIEW.team` | backend não bloqueia escrita/comando por chamada (config+preview já ligam; providers reais) | 5 |
 | Mission manager | `VIEW.manager` | missões/checkpoints por ligar | 4 |
-| RUN / Stop (stack) | menu Run/Project, status | `docker compose up --build` por ligar | 8 |
 | Breakpoints (gutter) | editor Monaco | acoplamento ao gutter em workspace.ts por fazer | — |
 | Explain (resumo stream lado-a-lado) | `VIEW` explain | stream IA por ligar | 2 |
 
