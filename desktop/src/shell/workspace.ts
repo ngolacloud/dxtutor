@@ -13,6 +13,10 @@ import { VIEW, RP, openTab, toast, activeTabId, type Tab } from "./index";
 import { installLsp, lspStart, lspDidOpen, lspDidChange, LSP_LANGUAGES, type LspHost } from "../lsp";
 
 interface EntryDto { name: string; path: string; is_dir: boolean }
+interface SymbolRange { name: string; kind: string; start_line: number; end_line: number }
+
+const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+let outlineTimer: number | undefined;
 
 // Estado do cliente LSP: ficheiros abertos no servidor + versão por ficheiro.
 const lspOpened = new Set<string>();
@@ -90,6 +94,8 @@ function ensureEditor(): monaco.editor.IStandaloneCodeEditor {
       const v = (versions.get(path) || 1) + 1; versions.set(path, v);
       void lspDidChange(path, m.getValue(), v).catch(() => { /* backend/LSP ausente */ });
     }
+    clearTimeout(outlineTimer);
+    outlineTimer = window.setTimeout(() => void updateOutline(), 450);
   });
   installLsp(monaco, editor, lspHost); // go-to-def/hover/refs/rename + diagnósticos
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -137,6 +143,7 @@ const fileView = (tab: Tab, host: HTMLElement): void => {
       lspOpened.add(tab.path!); versions.set(tab.path!, 1);
       void lspDidOpen(tab.path!, content, langId).catch(() => { /* backend/LSP ausente */ });
     }
+    void updateOutline();
     ed.layout();
     if (pendingReveal && pendingReveal.path === tab.path) {
       const ln = pendingReveal.line; pendingReveal = null;
@@ -148,6 +155,22 @@ const fileView = (tab: Tab, host: HTMLElement): void => {
     host.innerHTML = `<div class="empty"><div>${t("ws.openError", { e: String(e) })}</div></div>`;
   });
 };
+
+// ─────────────────────────── Outline ───────────────────────────
+async function updateOutline(): Promise<void> {
+  const box = document.getElementById("ws-outline"); if (!box) return;
+  const m = editor?.getModel() ?? null;
+  const path = dxPath(m);
+  if (!m || !path) { box.innerHTML = `<div class="sec-empty">${esc(t("outline.none"))}</div>`; return; }
+  try {
+    const syms = await invoke<SymbolRange[]>("file_outline", { code: m.getValue(), lang: m.getLanguageId(), root: rootPath, file: path });
+    if (!syms.length) { box.innerHTML = `<div class="sec-empty">${esc(t("outline.empty"))}</div>`; return; }
+    box.innerHTML = syms.map((s) => `<div class="row" data-line="${s.start_line}" style="padding-left:16px"><span class="chev leaf"></span><span class="nm">${esc(s.name)}</span><span class="pth" style="margin-left:auto">${esc(s.kind.toLowerCase())}</span></div>`).join("");
+    box.querySelectorAll<HTMLElement>(".row").forEach((r) => {
+      r.onclick = () => { const ln = Number(r.dataset.line); editor?.revealLineInCenter(ln); editor?.setPosition({ lineNumber: ln, column: 1 }); editor?.focus(); };
+    });
+  } catch { box.innerHTML = `<div class="sec-empty">${esc(t("outline.none"))}</div>`; }
+}
 
 // ─────────────────────────── Explorer ───────────────────────────
 async function listDir(path: string): Promise<EntryDto[]> {
@@ -197,11 +220,27 @@ async function renderExplorer(): Promise<void> {
     wireExplorerHeader(el);
     return;
   }
-  el.innerHTML = hd + `<div class="sections"><div class="sec-hd open"><span class="chev">${svg("chev")}</span><span class="lbl">${base(rootPath)}</span></div><div class="sec-body show"><div class="tree" id="ws-tree"></div></div></div>`;
+  el.innerHTML = hd + `<div class="sections">` +
+    `<div class="sec-hd open"><span class="chev">${svg("chev")}</span><span class="lbl">${esc(base(rootPath))}</span></div><div class="sec-body show"><div class="tree" id="ws-tree"></div></div>` +
+    `<div class="sec-hd open"><span class="chev">${svg("chev")}</span><span class="lbl">${esc(t("outline.title"))}</span></div><div class="sec-body show"><div id="ws-outline"></div></div>` +
+    `</div>`;
   hydrate(el);
   wireExplorerHeader(el);
+  wireSections(el);
   const tree = el.querySelector<HTMLElement>("#ws-tree")!;
   await renderTreeInto(tree, rootPath, 0);
+  void updateOutline();
+}
+
+// Secções colapsáveis: clicar no cabeçalho alterna .open e mostra/esconde o corpo.
+function wireSections(el: HTMLElement): void {
+  el.querySelectorAll<HTMLElement>(".sec-hd").forEach((hd) => {
+    hd.onclick = () => {
+      hd.classList.toggle("open");
+      const body = hd.nextElementSibling;
+      if (body?.classList.contains("sec-body")) body.classList.toggle("show", hd.classList.contains("open"));
+    };
+  });
 }
 
 function wireExplorerHeader(el: HTMLElement): void {
@@ -274,6 +313,7 @@ const WS_STRINGS = {
     "ws.collapse": "Collapse Folders", "ws.saved": "Saved",
     "ws.saveError": "Save failed: {e}", "ws.openError": "Cannot open: {e}",
     "ws.createError": "Create failed: {e}", "ws.rename": "New name",
+    "outline.title": "Outline", "outline.none": "Open a file to see its outline.", "outline.empty": "No symbols.",
   },
   ptAO: {
     "ws.openFolder": "Abrir pasta", "ws.noFolder": "Nenhuma pasta aberta",
@@ -281,5 +321,6 @@ const WS_STRINGS = {
     "ws.collapse": "Colapsar pastas", "ws.saved": "Guardado",
     "ws.saveError": "Falha ao guardar: {e}", "ws.openError": "Não foi possível abrir: {e}",
     "ws.createError": "Falha ao criar: {e}", "ws.rename": "Novo nome",
+    "outline.title": "Estrutura", "outline.none": "Abre um ficheiro para ver a estrutura.", "outline.empty": "Sem símbolos.",
   },
 };

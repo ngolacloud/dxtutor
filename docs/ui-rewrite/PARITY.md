@@ -10,7 +10,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 1 | Abrir pasta (recentes/clonar pend.) | `fsops::pick_folder` | menu File + empty-state explorer | ✅ |
 | 2 | Árvore de ficheiros (Explorer) | `fsops::list_dir/create_path` | pane `explorer` | ✅ |
 | 3 | Editor Monaco multi-aba + autosave | `read/write_text_file`, `monaco.ts` | `VIEW.file` + `#tabs` | ✅ |
-| 4 | Breadcrumbs + minimap (outline LSP pend.) | Monaco | breadcrumbs + minimap Monaco | 🔶 |
+| 4 | Outline + breadcrumbs + minimap | `file_outline` (LSP/sintáctico) + Monaco | explorer §Outline + breadcrumbs | ✅ |
 | 5 | Go-to-def / hover / refs / rename | `lsp_start/did_open/did_change/definition/hover/references/rename` | editor Monaco (reusa lsp.ts) | 🔶 |
 | 6 | CodeMap (defs/refs/callers) | `symbol_relations`, `codemap.ts` | pane/vista | ⬜ |
 | 7 | Pesquisa (substituir-tudo pend.) | `search_project` | pane `search` | 🔶 |
