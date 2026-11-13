@@ -417,6 +417,17 @@ const ptAO: Record<string, string> = {
 
 const DICTS: Record<Locale, Record<string, string>> = { en, ptAO };
 
+/**
+ * Merge additional strings into the dictionaries at runtime. Used by the shell
+ * (and later-phase modules) to register their keys without editing this file's
+ * literals — `en` is the canonical source, `ptAO` the translation (fallback to
+ * `en`). Call BEFORE `initI18n()` so `applyI18n()` can resolve `data-i18n`.
+ */
+export function registerStrings(extra: { en?: Record<string, string>; ptAO?: Record<string, string> }): void {
+  if (extra.en) Object.assign(en, extra.en);
+  if (extra.ptAO) Object.assign(ptAO, extra.ptAO);
+}
+
 function isLocale(v: unknown): v is Locale {
   return v === "en" || v === "ptAO";
 }

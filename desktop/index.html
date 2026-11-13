@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Delonix Tutor</title>
+    <title>dxtutor IDE</title>
     <!--
       Boot splash styling lives INLINE here (not in the external CSS) on purpose:
       during a reload the Vite/CSS bundle has not necessarily parsed yet, so the
@@ -55,787 +55,124 @@
   <body>
     <!-- Boot splash: covers everything until the app has mounted (no raw HTML). -->
     <div id="boot">
-      <div class="boot-brand"><svg class="boot-logo" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg> Delonix Tutor</div>
+      <div class="boot-brand"><svg class="boot-logo" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.8l1.4 4L13.4 7l-4 1.2L8 12.2 6.6 8.2 2.6 7l4-1.2z"/></svg> dxtutor IDE</div>
       <div class="boot-spinner"></div>
       <div class="boot-sub" data-i18n="boot.subtitle">Loading your workspace…</div>
     </div>
-    <div id="app">
-      <!-- Title bar -->
-      <header id="titlebar" data-tauri-drag-region>
-        <div class="title-left" data-tauri-drag-region>
-          <svg class="codicon-logo" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg>
-          <nav class="menu">
-            <span data-menu="file" data-i18n="menu.file">File</span><span data-menu="edit" data-i18n="menu.edit">Edit</span><span data-menu="selection">Selection</span><span data-menu="view" data-i18n="menu.view">View</span><span data-menu="go">Go</span><span data-menu="run" data-i18n="menu.run">Run</span><span data-menu="terminal">Terminal</span><span data-menu="help" data-i18n="menu.help">Help</span>
-          </nav>
+
+    <!--
+      Casca da IDE (Fase 1 da reescrita). Estrutura portada de
+      docs/prototype/index.html: titlebar (menu) / mid [activity · side · edit ·
+      agent] / status. Os handlers inline do protótipo foram removidos: a casca é
+      um módulo ES (src/app.ts → src/shell) e liga tudo por id/addEventListener.
+    -->
+    <div class="app">
+      <!-- MENU BAR -->
+      <div class="titlebar" data-tauri-drag-region>
+        <div class="tb-brand" id="brand" data-tauri-drag-region></div>
+        <div class="menubar" id="menubar"></div>
+        <button class="cmd-center" id="cmd-center"><span data-ic="search"></span><span data-i18n="shell.cmdCenter">dxtutor — files and commands</span> <kbd>Ctrl+P</kbd></button>
+        <div class="tb-right">
+          <button class="tb-ic" id="tgl-side" data-i18n-title="shell.toggleSide" data-ic="layout-side"></button>
+          <button class="tb-ic" id="tgl-panel" data-i18n-title="shell.togglePanel" data-ic="layout-panel"></button>
+          <button class="tb-ic on" id="tgl-agent" data-i18n-title="shell.toggleAgent" data-ic="sparkle"></button>
+          <button class="tb-ic" id="tb-account" data-ic="account" data-i18n-title="nav.account"></button>
+          <span class="win-dot r"></span><span class="win-dot y"></span><span class="win-dot g"></span>
         </div>
-        <div class="title-center" id="title-project" data-tauri-drag-region>Delonix Tutor</div>
-        <div class="tb-extras">
-          <span class="tb-avatar" title="Conta" aria-hidden="true">WA</span>
-          <button class="tb-update" id="tb-update" title="Estado da versão"><svg class="tb-xic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg><span>Update Available</span></button>
-          <button class="tb-ic" id="tb-toggle-panel" title="Alternar painel (Ctrl+\`)"><svg class="tb-xic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/></svg></button>
-          <button class="tb-ic" id="tb-toggle-agent" title="Alternar Assistant"><svg class="tb-xic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.3L12 15l-1.8-4.7L5.5 9l4.7-1.3L12 3Z"/></svg></button>
-          <button class="tb-ic" id="tb-account" title="Conta"><svg class="tb-xic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></button>
+      </div>
+
+      <!-- MIDDLE -->
+      <div class="mid">
+        <div class="activity" id="activity"></div>
+
+        <div class="side">
+          <div class="pane show" id="pane-explorer"></div>
+          <div class="pane" id="pane-search"></div>
+          <div class="pane" id="pane-scm"></div>
+          <div class="pane" id="pane-run"></div>
+          <div class="pane" id="pane-test"></div>
+          <div class="pane" id="pane-ext"></div>
+          <div class="pane" id="pane-codev"></div>
+          <div class="pane" id="pane-tutor"></div>
+          <div class="pane" id="pane-remote"></div>
+          <div class="pane" id="pane-containers"></div>
+          <div class="pane" id="pane-account"></div>
         </div>
-        <div class="title-right">
-          <button class="win-ctrl win-min" id="win-min" title="Minimizar" aria-label="Minimizar"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0" y="4.5" width="10" height="1" fill="currentColor"/></svg></button>
-          <button class="win-ctrl win-max" id="win-max" title="Maximizar" aria-label="Maximizar"><svg class="win-ico-max" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/></svg><svg class="win-ico-restore" width="10" height="10" viewBox="0 0 10 10" style="display:none" aria-hidden="true"><path d="M2.5 2.5h5v5h-5z" fill="none" stroke="currentColor"/><path d="M4 2.5V1h5.5v5.5H8" fill="none" stroke="currentColor"/></svg></button>
-          <button class="win-ctrl win-close" id="win-close" title="Fechar" aria-label="Fechar"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.1"/></svg></button>
-        </div>
-      </header>
 
-      <!-- Middle band: activity bar + sidebar + (editor stacked over panel) -->
-      <div id="body">
-        <!-- Activity bar. Monochromatic line icons (codicon/VSCode flavour),
-             drawn inline so there is zero external/CDN dependency. Every glyph
-             inherits `currentColor`, so the existing dim/active colouring and
-             the left accent bar keep working untouched. -->
-        <nav id="activitybar">
-          <button class="act active" data-view="explorer" data-mode="learning" title="Learning track" data-i18n-title="act.learning">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2 9l10 5 10-5-10-5Z"/><path d="M6 11.3V16c0 1.1 2.7 2.5 6 2.5s6-1.4 6-2.5v-4.7"/><path d="M21 9.5V15"/></svg>
-          </button>
-          <button class="act" data-view="workspace" data-mode="workspace" title="Explorer — open a real project" data-i18n-title="act.explorer">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7l-4-4Z"/><path d="M14 3v4h4"/><path d="M5 7v12a1 1 0 0 0 1 1h8"/></svg>
-          </button>
-          <button class="act" data-view="run" title="Run and Submit" data-i18n-title="act.run">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg>
-          </button>
-          <button class="act" data-view="debug" title="Run and Debug — step through a real trace" data-i18n-title="act.debug">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0"/><rect x="6" y="8" width="12" height="10" rx="6"/><path d="M12 12v6M6 11H3M6 15H3.2M18 11h3M18 15h2.8M7.3 8 5.3 6M16.7 8l2-2"/></svg>
-          </button>
-          <button class="act" data-view="remote" title="Remote — Dev Containers &amp; sandbox" data-i18n-title="act.remote">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="m7 8 3 2-3 2"/><path d="M13 12h4"/></svg>
-          </button>
-          <button class="act" data-view="search" title="Search — find in project" data-i18n-title="act.search">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          </button>
-          <button class="act" data-view="git" title="Git — working-tree changes" data-i18n-title="act.git">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7"/><path d="M18 11.5c0 3-3 3.5-6 3.5"/></svg>
-          </button>
-          <button class="act" data-view="tests" title="Tests — discover and run" data-i18n-title="act.tests">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v6l-5 9a2 2 0 0 0 1.8 3h12.4A2 2 0 0 0 20 18l-5-9V3"/><path d="M8 3h8"/><path d="M7.5 14h9"/></svg>
-          </button>
-          <button class="act" data-view="review" title="Code Review — offline analysis" data-i18n-title="act.review">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 11l2 2 4-4"/></svg>
-          </button>
-          <button class="act" data-view="assistant" title="Dev Assistant — chat" data-i18n-title="act.assistant">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M8 10h8M8 13h5"/></svg>
-          </button>
-          <button class="act" data-view="hint" title="Hints" data-i18n-title="act.hint">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3Z"/></svg>
-          </button>
-          <button class="act" data-view="glossary" title="Glossary — reserved words" data-i18n-title="act.glossary">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-          </button>
-          <button class="act" data-view="underhood" title="Under the hood — what the machine really does" data-i18n-title="act.underhood">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h4v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9"/></svg>
-          </button>
-          <button class="act" data-view="visualize" title="Visualize execution — run a program step by step" data-i18n-title="act.visualize">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4"/></svg>
-          </button>
-          <div class="act-spacer"></div>
-          <button class="act" data-view="settings" title="Change course / reset profile" data-i18n-title="act.settings">
-            <svg class="act-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-          </button>
-        </nav>
-
-        <!-- Sidebar -->
-        <aside id="sidebar">
-          <!-- Learning mode: the guided track (unchanged). -->
-          <div id="learning-sidebar">
-            <div class="sidebar-header">
-              <span data-i18n="sidebar.learningTrack">Learning Track</span>
-              <button id="btn-reset-profile" class="sidebar-hdr-btn hidden" title="Change course / reset profile" data-i18n-title="sidebar.resetProfile"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
-            </div>
-            <div class="sidebar-section-title" id="project-title" role="button" tabindex="0"
-              aria-expanded="true" title="Collapse / expand the track" data-i18n-title="sidebar.collapse">Loading…</div>
-            <div class="track-wrap"><ul id="track-list" class="track-list"></ul></div>
+        <!-- EDITOR / tab area -->
+        <div class="edit">
+          <div class="tabs" id="tabs"></div>
+          <div class="breadcrumbs" id="breadcrumbs"></div>
+          <div class="ebody">
+            <div class="ebody-scroll with-mm" id="ebody"></div>
+            <div class="minimap" id="minimap"></div>
           </div>
-
-          <!-- Workspace mode: a real file explorer for actual projects. -->
-          <div id="workspace-sidebar" class="hidden">
-            <div class="sidebar-header ws-header">
-              <span data-i18n="ws.explorer">Explorer</span>
-              <div class="ws-hdr-actions">
-                <button id="ws-act-newfile" class="sidebar-hdr-btn" title="New File" data-i18n-title="ws.newFile"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7l-4-4Z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14h6"/></svg></button>
-                <button id="ws-act-newfolder" class="sidebar-hdr-btn" title="New Folder" data-i18n-title="ws.newFolder"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z"/><path d="M12 12v4M10 14h4"/></svg></button>
-                <button id="ws-act-refresh" class="sidebar-hdr-btn" title="Refresh" data-i18n-title="ws.refresh"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
-                <button id="ws-act-open" class="sidebar-hdr-btn" title="Open Folder" data-i18n-title="ws.openFolder"><svg class="hdr-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg></button>
-              </div>
+          <div class="panel" id="panel">
+            <div class="panel-tabs" id="panel-tabs">
+              <button class="ptab" data-pt="problems">Problems <span class="pb" id="pb-prob">0</span></button>
+              <button class="ptab" data-pt="output">Output · Co-Dev</button>
+              <button class="ptab on" data-pt="terminal">Terminal</button>
+              <span class="panel-tools">
+                <button data-ic="trash" id="pt-clear" data-i18n-title="panel.clear"></button>
+                <button data-ic="close" id="pt-close" data-i18n-title="panel.close"></button>
+              </span>
             </div>
-            <div class="sidebar-section-title ws-root-title" id="ws-root-title"
-              title="Open a folder to start a real project" data-i18n-title="ws.rootHint">NO FOLDER OPENED</div>
-            <div id="ws-tree" class="ws-tree"></div>
-            <div id="ws-sections" class="ws-sections"></div>
-            <div id="ws-empty" class="ws-empty">
-              <p data-i18n="ws.emptyText">Build a real project with what you have learned.</p>
-              <button id="ws-open-folder-empty" class="btn btn-primary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg><span data-i18n="ws.openFolder">Open Folder</span></button>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Editor column: editor region stacked over the bottom panel -->
-        <main id="editor-main">
-          <!-- Left column: editor, with a toggleable terminal docked below it -->
-          <div id="editor-stack" class="term-open">
-            <section id="editor-region">
-              <div class="editor-topbar">
-                <div id="tabs" class="tabs"></div>
-                <div class="panel-actions">
-                  <button id="btn-underhood" class="btn btn-secondary" title="Under the hood — real, measured CPU / memory / I/O for this code, plus the compiler pipeline" data-i18n-title="btn.underhood.title"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h4v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9"/></svg><span data-i18n="btn.underhood">Under the hood</span></button>
-                  <button id="btn-run" class="btn btn-primary hidden" title="Run / Submit (Ctrl+Enter)" data-i18n-title="btn.run.title"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span data-i18n="btn.run">Run / Submit</span></button>
-                  <button id="btn-hint" class="btn btn-secondary hidden" title="Request a hint (F1)" data-i18n-title="btn.hint.title"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3Z"/></svg><span data-i18n="btn.hint">Hint</span></button>
-                  <button id="btn-continue" class="btn btn-primary hidden" title="Continue (Ctrl+Enter)" data-i18n-title="btn.continue.title"><span data-i18n="btn.continue">Continue</span>&nbsp;&#8594;</button>
-                  <button id="btn-start" class="btn btn-primary hidden" title="Start the exercise (Ctrl+Enter)" data-i18n-title="btn.start.title"><span data-i18n="btn.start">Start</span>&nbsp;&#8594;</button>
-                  <button id="btn-next" class="btn btn-primary hidden" title="Next step (Ctrl+Enter)" data-i18n-title="btn.next.title"><span data-i18n="btn.next">Next</span>&nbsp;&#8594;</button>
-                  <span id="spinner" class="spinner hidden"></span>
-                </div>
-              </div>
-              <div id="editor" class="editor"></div>
-            </section>
-          </div>
-
-          <!-- Right column: results (always visible) -->
-          <aside id="results-panel">
-            <div class="panel-header"><span class="panel-header-title" data-i18n="panel.results">Results</span></div>
             <div class="panel-body">
-              <div id="results-empty" class="results-empty" data-i18n="results.empty">
-                Your guided track appears here. Correctness is decided by the hidden tests — never by AI.
-              </div>
-              <div id="results-content" class="results-content hidden"></div>
+              <div class="pcontent show" id="pc-terminal"><div id="term"></div></div>
+              <div class="pcontent" id="pc-problems"></div>
+              <div class="pcontent" id="pc-output"></div>
+              <div class="pcontent" id="pc-services"></div>
             </div>
-          </aside>
-        </main>
+            <div class="tmux"><span class="win">[2] 0:bash*</span><span class="sp"></span><span class="host">"delonix" <span id="clock"></span></span></div>
+          </div>
+        </div>
 
-        <!-- Workspace editor region: real multi-tab editing + run output. -->
-        <main id="ws-main" class="hidden">
-          <div id="ws-editor-stack">
-            <section id="ws-editor-region">
-              <div class="editor-topbar">
-                <div id="ws-tabs" class="tabs"></div>
-                <div class="panel-actions">
-                  <button id="ws-btn-explain" class="btn btn-secondary" title="Explain this file — AI summary with jump links"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 9a2.5 2.5 0 1 1 3 2.4c-.9.3-1.5 1-1.5 2.1"/><path d="M11 17h.01"/><circle cx="12" cy="12" r="9"/></svg><span>Explain</span></button>
-                  <button id="ws-btn-review" class="btn btn-secondary" title="Code Review — offline analysis"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 11l2 2 4-4"/></svg><span>Review</span></button>
-                  <button id="ws-btn-debug" class="btn btn-secondary" title="Run and Debug — step through a real trace"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0"/><rect x="6" y="8" width="12" height="10" rx="6"/><path d="M12 12v6M6 11H3M6 15H3.2M18 11h3M18 15h2.8M7.3 8 5.3 6M16.7 8l2-2"/></svg><span>Debug</span></button>
-                  <button id="ws-btn-save" class="btn btn-secondary" title="Save (Ctrl+S)" data-i18n="ws.save" data-i18n-title="ws.saveTitle">Save</button>
-                  <button id="ws-btn-saveall" class="btn btn-secondary" title="Save all modified files" data-i18n="ws.saveAll" data-i18n-title="ws.saveAllTitle">Save All</button>
-                  <button id="ws-btn-run" class="btn btn-primary" title="Run the active file" data-i18n-title="ws.runTitle"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span data-i18n="ws.run">Run</span></button>
-                </div>
-              </div>
-              <div id="ws-breadcrumbs" class="ws-breadcrumbs"></div>
-              <div id="ws-editor" class="editor"></div>
-              <div id="explain-splitter" class="explain-splitter" title="Drag to resize"></div>
-              <aside id="explain-panel" class="explain-panel hidden" aria-label="Code explanation">
-                <header class="explain-hdr">
-                  <span class="explain-title">Explain</span>
-                  <span id="explain-file" class="explain-file"></span>
-                  <button id="explain-refresh" class="icon-btn" title="Re-explain">&#8635;</button>
-                  <button id="explain-close" class="icon-btn" title="Close">&#10005;</button>
-                </header>
-                <div id="explain-body" class="explain-body"></div>
-              </aside>
-              <div id="ws-welcome" class="ws-welcome">
-                <div class="ws-welcome-inner">
-                  <div class="ws-welcome-brand">
-                    <svg class="ws-welcome-mark" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true" width="56" height="56"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg>
-                    <div class="ws-welcome-title">Delonix Tutor</div>
-                  </div>
-                  <div class="ws-welcome-actions">
-                    <button id="ws-welcome-open" class="welcome-btn welcome-btn-primary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2H3V7Z"/><path d="M3 11h18l-2 7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V11Z"/></svg><span data-i18n="ws.openFolder">Open Folder</span></button>
-                    <button id="ws-welcome-clone" class="welcome-btn welcome-btn-secondary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg><span data-i18n="ws.cloneRepo">Clone Repository</span></button>
-                  </div>
-                  <form id="ws-clone-form" class="ws-clone-form hidden">
-                    <input id="ws-clone-url" class="ws-clone-url" type="text" autocomplete="off" placeholder="https://github.com/org/repo.git" aria-label="Repository URL" />
-                    <button type="submit" class="welcome-btn welcome-btn-primary ws-clone-go"><span data-i18n="ws.clone">Clone</span></button>
-                  </form>
-                  <div class="ws-welcome-recents">
-                    <div class="ws-recents-title" data-i18n="ws.workspaces">Workspaces</div>
-                    <div id="ws-recents-list" class="ws-recents-list"></div>
-                    <div id="ws-recents-empty" class="ws-recents-empty hidden" data-i18n="ws.noRecents">No recent folders yet.</div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- Bottom output panel (stdout / stderr of the last run). -->
-            <div id="ws-output-panel">
-              <div class="panel-header">
-                <span class="panel-header-title" data-i18n="panel.output">Output</span>
-                <button id="ws-out-close" class="icon-btn" title="Hide output" data-i18n-title="panel.hideOutput">&#10005;</button>
-              </div>
-              <div id="ws-output" class="ws-output"></div>
+        <!-- CO-DEV dock -->
+        <div class="agent" id="agent">
+          <div class="ag-hd"><div class="ag-mark" data-ic="sparkle"></div><div class="ag-name">Co-Dev</div>
+            <button class="ag-model" id="ag-model" data-i18n-title="codev.pickModel"><span class="live"></span><span id="ag-model-l"></span></button>
+            <button class="ag-ic" id="ag-popout" data-ic="popout" data-i18n-title="codev.popout"></button>
+            <button class="ag-ic" id="ag-history" data-ic="history" data-i18n-title="codev.manager"></button>
+            <button class="ag-ic" id="ag-new" data-ic="plus" data-i18n-title="codev.newChat"></button>
+          </div>
+          <div id="ag-body">
+            <div class="modebar" id="modebar"></div>
+            <div class="ag-msgs" id="ag-msgs"></div>
+            <div class="run-ctl hidden" id="ag-runctl">
+              <div class="rc-top"><span class="spin"></span><span class="rc-lbl" id="rc-lbl"></span><span class="rc-el" id="rc-el"></span></div>
+              <div class="rc-cmds"><button class="rc" id="rc-pause"><kbd>p</kbd> pause</button><button class="rc" id="rc-stop"><kbd>x</kbd> stop</button><button class="rc" id="rc-details"><kbd>d</kbd> log</button></div>
             </div>
+            <div class="ag-compose" id="ag-compose"><div class="composer">
+              <textarea id="ag-input" rows="2" data-i18n-placeholder="codev.placeholder"></textarea>
+              <div class="comp-bar"><button class="pill" id="pill-ctx" data-i18n-title="codev.ctx"></button><button class="pill" id="pill-test" data-i18n-title="codev.runTests">/test</button><button class="pill" id="pill-lint" data-i18n-title="codev.lint">/lint</button><button class="send" id="ag-send" data-ic="arrow-up" data-i18n-title="codev.send"></button></div>
+            </div></div>
           </div>
-        </main>
-
-        <!-- Bottom terminal dock. Lives at #body level so it overlays the editor
-             column in BOTH Learning and Workspace modes (toggled with Ctrl+`). -->
-        <div id="terminal-panel">
-          <div class="panel-tabs" id="panel-tabs">
-            <button class="ptab" data-ptab="problems">Problems<span class="ptab-count" id="problems-count"></span></button>
-            <button class="ptab" data-ptab="output">Output</button>
-            <button class="ptab" data-ptab="debug">Debug Console</button>
-            <button class="ptab active" data-ptab="terminal" data-i18n="panel.terminal">Terminal</button>
-            <button class="ptab" data-ptab="ports">Ports</button>
-            <button class="ptab" data-ptab="spell">Spell Checker</button>
-            <button class="ptab" data-ptab="sonar">SonarQube</button>
-            <span class="panel-tabs-sp"></span>
-            <button id="btn-term-close" class="icon-btn" title="Close panel (Ctrl+`)" data-i18n-title="panel.closeTerminal">&#10005;</button>
-          </div>
-          <div id="panel-terminal"></div>
-          <div id="panel-problems" class="panel-problems hidden"></div>
-          <div id="panel-generic" class="panel-problems hidden"></div>
-          <div class="term-tmux" aria-hidden="true"><span class="tmux-win">[0] bash*</span><span class="tmux-sp"></span><span class="tmux-host" id="tmux-host">dxtutor</span></div>
         </div>
 
-        <!-- Drag handle to resize the sidebar (both Learning track and
-             Explorer). Absolutely positioned over the sidebar's right seam;
-             the width itself lives in the `--sidebar-w` custom property on
-             #body and is persisted to localStorage by main.ts. -->
-        <div id="sidebar-resizer" role="separator" aria-orientation="vertical"
-          aria-label="Resize sidebar" title="Drag to resize"></div>
+        <div class="rsz" id="rsz-side"></div>
+        <div class="rsz" id="rsz-agent"></div>
       </div>
 
-      <!-- Status bar (full width, bottom) -->
-      <footer id="statusbar">
-        <div class="status-left">
-          <span id="status-mode" title="Current mode and active project">Learning</span>
-          <span id="status-phase">—</span>
-          <span id="status-level" class="pill"></span>
-          <span id="status-points" title="Points earned on this track" data-i18n-title="status.pointsTitle">&#9733; 0 pts</span>
-        </div>
-        <div class="status-right">
-          <span id="status-session" class="hidden" role="button" tabindex="0" title="A container session is running — click to open a terminal inside it">&#11042; container</span>
-          <span id="status-git" class="hidden" role="button" tabindex="0" title="Git branch — click to see changes"></span>
-          <span id="status-sandbox" role="button" tabindex="0"
-            title="Your code runs inside a Delonix container. Click to change the sandbox engine.">&#11041; Delonix sandbox</span>
-          <span id="status-lang">Rust</span>
-          <span id="status-honesty" title="Correctness is decided by the hidden tests, never by AI." data-i18n="status.honesty" data-i18n-title="status.honestyTitle">Tests decide correctness</span>
-        </div>
-      </footer>
-    </div>
-
-    <!-- Onboarding overlay (shown when there is no saved profile) -->
-    <div id="onboarding" class="overlay hidden">
-      <div class="onb-card">
-        <div class="onb-brand"><svg class="onb-logo" viewBox="0 0 48 48" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M24 5 7 38h10l7-14 7 14h10L24 5Z M24 20l-5 10h10l-5-10Z"/></svg> Delonix Tutor</div>
-
-        <section class="onb-screen" data-screen="language">
-          <h1 data-i18n="onb.language.title">What do you want to learn?</h1>
-          <p class="onb-sub" data-i18n="onb.language.sub">Pick a language and we'll guide you through a hands-on track, one step at a time.</p>
-          <div class="onb-grid" id="onb-languages"></div>
-        </section>
-
-        <section class="onb-screen hidden" data-screen="level">
-          <h1 data-i18n="onb.level.title">What's your level?</h1>
-          <p class="onb-sub" data-i18n="onb.level.sub">Pick one or more. Your track loads only the levels you choose &mdash; mix Basic and Intermediate, go straight to Advanced, or take all three. You can change this later from the &#9881; gear icon.</p>
-          <div class="onb-levels" id="onb-levels"></div>
-          <div class="onb-level-actions">
-            <button class="onb-back" id="onb-back" data-i18n="onb.back">&#8592; Back</button>
-            <button class="btn btn-primary onb-start" id="onb-start" disabled data-i18n="onb.start">Start&nbsp;&#8594;</button>
-          </div>
-        </section>
+      <!-- STATUS BAR -->
+      <div class="status">
+        <button class="si remote" id="st-remote" data-ic="remote-arrows" data-i18n-title="status.commands"></button>
+        <button class="si" id="st-branch" data-ic="branch-sm" data-i18n-title="status.switchBranch"><span id="st-branch-l">—</span></button>
+        <button class="si" id="st-prob" data-i18n-title="status.problems"></button>
+        <button class="si opt" id="st-tests" data-i18n-title="status.tests"></button>
+        <span class="spacer"></span>
+        <button class="si opt" id="st-pos" data-i18n-title="status.goToLine"></button>
+        <span class="si opt" id="st-lang"></span>
+        <button class="si opt" id="st-ctx" data-i18n-title="status.context"></button>
+        <button class="si" id="st-model" data-ic="sparkle" data-i18n-title="status.model"><span id="st-model-l"></span></button>
+        <button class="si mode" id="st-mode" data-i18n-title="status.mode"></button>
+        <button class="si" id="st-bell" data-ic="bell" data-i18n-title="status.notifications"><span id="st-bell-n"></span></button>
       </div>
     </div>
 
-    <!-- Settings overlay (sandbox engine + change course) -->
-    <div id="settings-overlay" class="overlay hidden">
-      <div class="settings-card">
-        <div class="gloss-head">
-          <div class="gloss-title"><span class="gloss-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></span> <span data-i18n="settings.title">Settings</span></div>
-          <span class="settings-scope" title="These settings apply to this device / profile">Personal</span>
-          <input id="settings-search" class="settings-search" type="text" autocomplete="off" placeholder="Search settings…" aria-label="Search settings" />
-          <button id="settings-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
-        </div>
-        <div class="settings-body">
-          <section class="settings-sec">
-            <h3 class="settings-h" data-i18n="settings.language.h">Language / Idioma</h3>
-            <p class="settings-note" data-i18n="settings.language.note">Choose the language of the app's interface. Course content (exercises, glossary and guides) stays in the language of the course.</p>
-            <div id="locale-choices" class="sandbox-choices" role="radiogroup" aria-label="Language / Idioma">
-              <label class="sandbox-opt">
-                <input type="radio" name="locale" value="en" />
-                <span class="sandbox-main">English</span>
-              </label>
-              <label class="sandbox-opt">
-                <input type="radio" name="locale" value="ptAO" />
-                <span class="sandbox-main">Português (Angola)</span>
-              </label>
-            </div>
-          </section>
-          <section class="settings-sec">
-            <h3 class="settings-h" data-i18n="settings.sandbox.h">Sandbox engine</h3>
-            <p class="settings-note" data-i18n="settings.sandbox.note">Your code runs in an isolated sandbox. Pick the engine that executes it.
-              The first run on a container engine can be slower (it starts the engine and pulls the image/packages);
-              <strong>Host</strong> is the fastest but the least isolated.</p>
-            <div id="sandbox-choices" class="sandbox-choices" role="radiogroup" aria-label="Sandbox engine">
-              <label class="sandbox-opt">
-                <input type="radio" name="sandbox" value="delonix" />
-                <span class="sandbox-main"><span class="sandbox-ic">&#11041;</span> Delonix <span class="sandbox-tag" data-i18n="settings.sandbox.default">default</span></span>
-                <span class="sandbox-desc" data-i18n="sandbox.delonix.desc">runs your code in a Delonix container &mdash; the engine that powers Delonix</span>
-              </label>
-              <label class="sandbox-opt">
-                <input type="radio" name="sandbox" value="docker" />
-                <span class="sandbox-main"><span class="sandbox-ic">&#11041;</span> Docker</span>
-                <span class="sandbox-desc" data-i18n="sandbox.docker.desc">runs your code in a Docker container</span>
-              </label>
-              <label class="sandbox-opt">
-                <input type="radio" name="sandbox" value="podman" />
-                <span class="sandbox-main"><span class="sandbox-ic">&#11041;</span> Podman</span>
-                <span class="sandbox-desc" data-i18n="sandbox.podman.desc">runs your code in a Podman container (rootless, daemonless)</span>
-              </label>
-              <label class="sandbox-opt">
-                <input type="radio" name="sandbox" value="host" />
-                <span class="sandbox-main"><span class="sandbox-ic">&#8962;</span> <span data-i18n="sandbox.host.name">Host (direct)</span></span>
-                <span class="sandbox-desc" data-i18n="sandbox.host.desc">runs on this machine without a container &mdash; fastest, less isolated</span>
-              </label>
-            </div>
-            <p id="sandbox-appnote" class="settings-note settings-appnote hidden" data-i18n-html="settings.sandbox.appnote">
-              Sandbox selection applies only inside the Delonix Tutor app. Run <code>npm run tauri dev</code> to execute code.
-            </p>
-          </section>
-          <section class="settings-sec">
-            <h3 class="settings-h" data-i18n="settings.course.h">Course</h3>
-            <p class="settings-note" data-i18n="settings.course.note">Start over with a different language or level.
-              This clears your saved profile, points and progress on this device.</p>
-            <button id="settings-reset" class="btn btn-secondary" data-i18n="settings.reset">Change course / reset profile</button>
-          </section>
-          <section class="settings-sec" id="settings-sec-ai">
-            <h3 class="settings-h">AI &amp; providers</h3>
-            <p class="settings-note">The Dev Assistant and the tutor use an AI provider. The active provider and model are shown in the Agent composer; pick among a provider's models there. Keys and availability are managed below. In study mode the policy keeps the AI tutoring — it never hands over the solution.</p>
-            <div class="settings-ai-row">
-              <span class="settings-ai-active">Active: <b id="settings-ai-model">—</b></span>
-              <button id="settings-open-providers" class="btn btn-secondary">Manage AI providers &amp; keys…</button>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
+    <div id="pal"><div class="pal-box"><input id="pal-in" autocomplete="off" spellcheck="false" /><div id="pal-list"></div></div></div>
+    <div id="notes"></div>
+    <div id="toast" style="position:fixed;bottom:40px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg-menu);border:1px solid var(--border-strong);box-shadow:var(--sh-pop);border-radius:9px;padding:9px 16px;font-size:12.5px;opacity:0;transition:.2s;pointer-events:none;z-index:500"></div>
 
-    <!-- Architecture Studio overlay (System Design + live validation + scaffold) -->
-    <div id="arch-overlay" class="overlay hidden">
-      <div class="arch-card">
-        <div class="gloss-head">
-          <div class="gloss-title">⬡ <span>Architecture Studio</span></div>
-          <button id="arch-scaffold" class="btn btn-secondary" title="Generate a project scaffold from a valid design">Generate scaffold</button>
-          <button id="arch-close" class="icon-btn" title="Close (Esc)">&#10005;</button>
-        </div>
-        <div class="arch-body">
-          <div class="arch-left">
-            <label class="arch-label" for="arch-spec">Design spec (components + connections)</label>
-            <textarea id="arch-spec" class="arch-spec" spellcheck="false" aria-label="Architecture design spec"></textarea>
-            <div id="arch-findings" class="arch-findings"></div>
-          </div>
-          <div class="arch-right">
-            <div class="arch-toolbar">
-              <span class="arch-tb-add">Add:</span>
-              <button class="arch-add" data-kind="service">+ Service</button>
-              <button class="arch-add" data-kind="store">+ Store</button>
-              <button class="arch-add" data-kind="relay">+ Relay</button>
-              <button class="arch-add" data-kind="broker">+ Broker</button>
-              <button class="arch-add" data-kind="consumer">+ Consumer</button>
-              <span id="arch-hint" class="arch-hint">Click a node, then another, to connect · double-click to delete.</span>
-            </div>
-            <div id="arch-diagram" class="arch-diagram" aria-label="Architecture diagram"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Glossary overlay (reserved-word reference) -->
-    <div id="glossary-overlay" class="overlay hidden">
-      <div class="gloss-card">
-        <div class="gloss-head">
-          <div class="gloss-title"><span class="gloss-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></span> <span data-i18n="gloss.title">Glossary</span>
-            <span class="gloss-sub" data-i18n="gloss.sub">reserved words</span></div>
-          <button id="gloss-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
-        </div>
-        <input id="gloss-search" class="gloss-search" type="text"
-          placeholder="Filter keywords…" aria-label="Filter glossary keywords" data-i18n-placeholder="gloss.filter" />
-        <div id="gloss-list" class="gloss-list"></div>
-      </div>
-    </div>
-
-    <!-- Study-guide overlay (remediation when unit accuracy is low) -->
-    <div id="studyguide-overlay" class="overlay hidden">
-      <div class="study-card">
-        <div class="study-head">
-          <div class="study-title"><span class="study-icon">&#129517;</span>
-            <span id="study-title-text">Study guide</span></div>
-          <button id="study-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
-        </div>
-        <div id="study-body" class="markdown study-body"></div>
-      </div>
-    </div>
-
-    <!-- Under-the-hood overlay (REAL, measured resources + compiler pipeline) -->
-    <div id="underhood-overlay" class="overlay hidden">
-      <div class="uh-card">
-        <div class="uh-head">
-          <div class="uh-title"><span class="uh-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h4v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9"/></svg></span> <span data-i18n="uh.title">Under the hood</span>
-            <span class="uh-sub" data-i18n="uh.sub">real &amp; measured</span></div>
-          <div class="uh-head-actions">
-            <button id="uh-rerun" class="btn btn-secondary" title="Compile and measure the current code again" data-i18n-title="uh.remeasureTitle">&#8635;&nbsp;<span data-i18n="uh.remeasure">Re-measure</span></button>
-            <button id="uh-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
-          </div>
-        </div>
-        <div id="uh-body" class="uh-body"></div>
-      </div>
-    </div>
-
-    <!-- Visualize-execution overlay (step-by-step tracer, "Python Tutor" style) -->
-    <div id="visualize-overlay" class="overlay hidden">
-      <div class="viz-card">
-        <div class="viz-head">
-          <div class="viz-title"><span class="viz-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4"/></svg></span> <span data-i18n="viz.title">Visualize execution</span>
-            <span class="viz-sub" data-i18n="viz.sub">step by step</span></div>
-          <div class="viz-head-actions">
-            <button id="viz-run" class="btn btn-primary" title="Run this program step by step" data-i18n-title="viz.runTitle">&#9654;&nbsp;<span data-i18n="viz.run">Visualize</span></button>
-            <span id="viz-spinner" class="spinner hidden"></span>
-            <button id="viz-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
-          </div>
-        </div>
-
-        <!-- Transport: shown once a trace is ready -->
-        <div id="viz-transport" class="viz-transport hidden">
-          <div class="viz-controls">
-            <button id="viz-back" class="viz-ctrl" title="Step back" data-i18n-title="viz.backTitle">&#9664;&nbsp;<span data-i18n="viz.back">Step back</span></button>
-            <button id="viz-play" class="viz-ctrl viz-ctrl-play" title="Play / Pause" data-i18n-title="viz.playTitle">&#9654;&nbsp;<span data-i18n="viz.play">Play</span></button>
-            <button id="viz-fwd" class="viz-ctrl" title="Step forward" data-i18n-title="viz.fwdTitle"><span data-i18n="viz.fwd">Step</span>&nbsp;&#9654;</button>
-            <label class="viz-speed" title="Playback speed" data-i18n-title="viz.speedTitle">
-              <span data-i18n="viz.speed">Speed</span>
-              <input id="viz-speed" type="range" min="1" max="10" value="5" aria-label="Playback speed" />
-            </label>
-          </div>
-          <div class="viz-progress">
-            <span id="viz-progress-label" class="viz-progress-label">0 / 0</span>
-            <div class="viz-progress-track"><div id="viz-progress-fill" class="viz-progress-fill"></div></div>
-          </div>
-        </div>
-
-        <div class="viz-body">
-          <div class="viz-left">
-            <div id="viz-editor" class="viz-editor"></div>
-          </div>
-          <div class="viz-right">
-            <div id="viz-notes" class="viz-notes hidden"></div>
-            <div id="viz-player" class="viz-player hidden">
-              <div class="viz-panel">
-                <div class="viz-panel-head" data-i18n="viz.variables">Variables</div>
-                <div id="viz-vars" class="viz-vars"></div>
-              </div>
-              <div class="viz-panel">
-                <div class="viz-panel-head" data-i18n="viz.callstack">Call stack</div>
-                <div id="viz-stack" class="viz-stack"></div>
-              </div>
-              <div class="viz-panel viz-panel-output">
-                <div class="viz-panel-head"><span data-i18n="viz.output">Output</span> <span class="viz-panel-sub" data-i18n="viz.stdoutSoFar">stdout so far</span></div>
-                <pre id="viz-output" class="viz-output"></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Run and Debug overlay (VSCode-style debugger over a REAL pre-computed trace) -->
-    <div id="debug-overlay" class="overlay hidden">
-      <div class="dbg-card">
-        <div class="dbg-head">
-          <div class="dbg-title"><span class="dbg-icon"><svg class="title-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0"/><rect x="6" y="8" width="12" height="10" rx="6"/><path d="M12 12v6M6 11H3M6 15H3.2M18 11h3M18 15h2.8M7.3 8 5.3 6M16.7 8l2-2"/></svg></span> <span data-i18n="dbg.title">Run and Debug</span>
-            <span class="dbg-sub" data-i18n="dbg.sub">real trace</span>
-            <span id="dbg-cap" class="dbg-cap" title=""></span>
-            <span id="dbg-target-name" class="dbg-target"></span>
-          </div>
-          <div class="dbg-head-actions">
-            <button id="dbg-close" class="icon-btn" title="Close (Esc)" data-i18n-title="common.close">&#10005;</button>
-          </div>
-        </div>
-
-        <!-- Debug toolbar -->
-        <div id="dbg-toolbar" class="dbg-toolbar">
-          <button id="dbg-start" class="dbg-btn dbg-btn-start" title="Start Debugging (F5)" data-i18n-title="dbg.startTitle">&#9654;&nbsp;<span data-i18n="dbg.start">Start Debugging</span><span class="dbg-kbd">F5</span></button>
-          <div id="dbg-controls" class="dbg-controls hidden">
-            <button id="dbg-continue" class="dbg-btn" title="Continue to next breakpoint (F5)" data-i18n-title="dbg.continueTitle">&#9654;&#9654;&nbsp;<span data-i18n="dbg.continue">Continue</span><span class="dbg-kbd">F5</span></button>
-            <button id="dbg-stepover" class="dbg-btn" title="Step Over (F10)" data-i18n-title="dbg.stepoverTitle">&#8631;&nbsp;<span data-i18n="dbg.stepover">Step Over</span><span class="dbg-kbd">F10</span></button>
-            <button id="dbg-stepinto" class="dbg-btn" title="Step Into (F11)" data-i18n-title="dbg.stepintoTitle">&#8628;&nbsp;<span data-i18n="dbg.stepinto">Step Into</span><span class="dbg-kbd">F11</span></button>
-            <button id="dbg-stepback" class="dbg-btn" title="Step Back (Shift+F11)" data-i18n-title="dbg.stepbackTitle">&#8630;&nbsp;<span data-i18n="dbg.stepback">Step Back</span></button>
-            <button id="dbg-stop" class="dbg-btn dbg-btn-stop" title="Stop (Shift+F5)" data-i18n-title="dbg.stopTitle">&#9632;&nbsp;<span data-i18n="dbg.stop">Stop</span></button>
-          </div>
-          <span id="dbg-stepcount" class="dbg-stepcount hidden">0 / 0</span>
-          <span id="dbg-spinner" class="spinner hidden"></span>
-          <span id="dbg-status" class="dbg-status"></span>
-        </div>
-
-        <div class="dbg-body">
-          <!-- Left: Variables / Call Stack / Breakpoints -->
-          <aside class="dbg-side">
-            <section class="dbg-pane">
-              <div class="dbg-pane-head" data-i18n="dbg.variables">Variables</div>
-              <div id="dbg-vars" class="dbg-vars"></div>
-            </section>
-            <section class="dbg-pane">
-              <div class="dbg-pane-head" data-i18n="dbg.callstack">Call Stack</div>
-              <div id="dbg-stack" class="dbg-stack"></div>
-            </section>
-            <section class="dbg-pane">
-              <div class="dbg-pane-head" data-i18n="dbg.breakpoints">Breakpoints</div>
-              <div id="dbg-breakpoints" class="dbg-breakpoints"></div>
-            </section>
-          </aside>
-
-          <!-- Right: source editor (breakpoint gutter) over the Debug Console -->
-          <div class="dbg-main">
-            <div id="dbg-notes" class="dbg-notes hidden"></div>
-            <div id="dbg-editor" class="dbg-editor"></div>
-            <div id="dbg-console-wrap" class="dbg-console-wrap">
-              <div class="dbg-console-head"><span data-i18n="dbg.console">Debug Console</span>
-                <span class="dbg-console-sub" data-i18n="dbg.stdoutSoFar">stdout so far</span></div>
-              <pre id="dbg-console" class="dbg-console"></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Toast host for satisfying drill / unit feedback -->
-    <div id="toast-host" aria-live="polite"></div>
-
-    <!-- Code Review: right-hand investigation drawer (P2) -->
-    <aside id="review-overlay" class="review-drawer hidden" aria-label="Code Review">
-      <header class="review-hdr">
-        <span class="review-title">Code Review</span>
-        <div id="review-tools" class="review-tools"></div>
-        <button id="review-close" class="review-close" title="Close" aria-label="Close Code Review">&times;</button>
-      </header>
-      <div class="review-controls">
-        <select id="review-scope" class="review-scope" aria-label="Review scope">
-          <option value="project" selected>Whole project</option>
-          <option value="changes">Working changes</option>
-          <option value="file">Current file</option>
-        </select>
-        <button id="review-run" class="btn btn-primary review-run">Review</button>
-        <button id="review-report" class="btn btn-secondary review-run" title="Generate a report + an AI second-opinion prompt">Report</button>
-      </div>
-      <div id="review-coverage" class="review-coverage"></div>
-      <div id="review-filters" class="review-filters"></div>
-      <div id="review-results" class="review-results"></div>
-    </aside>
-    <!-- CodeMap: symbol navigation drawer (P3) -->
-    <aside id="codemap-overlay" class="codemap-drawer hidden" aria-label="CodeMap">
-      <header class="codemap-hdr">
-        <span class="codemap-label">CodeMap</span>
-        <span id="codemap-title" class="codemap-title"></span>
-        <span id="codemap-res" class="cm-res inferred">inferred</span>
-        <button id="codemap-close" class="review-close" title="Close" aria-label="Close CodeMap">&times;</button>
-      </header>
-      <div id="codemap-body" class="codemap-body"></div>
-    </aside>
-    <!-- Remote: Dev Containers + sandbox engine (VSCode Remote Explorer style) -->
-    <aside id="remote-overlay" class="codemap-drawer hidden" aria-label="Remote Explorer">
-      <header class="codemap-hdr">
-        <span class="codemap-label">Remote</span>
-        <span class="codemap-title"></span>
-        <button id="remote-refresh" class="assistant-iconbtn" title="Refresh" aria-label="Refresh remote">&#8635;</button>
-        <button id="remote-close" class="review-close" title="Close" aria-label="Close Remote">&times;</button>
-      </header>
-      <div id="remote-body" class="remote-body"></div>
-      <pre id="remote-log" class="remote-log hidden" aria-label="Container log"></pre>
-    </aside>
-    <!-- Run and Debug: VSCode-style sidebar entry point for the debugger -->
-    <aside id="rundebug-overlay" class="codemap-drawer hidden" aria-label="Run and Debug">
-      <header class="codemap-hdr">
-        <span class="codemap-label">Run and Debug</span>
-        <span class="codemap-title"></span>
-        <button id="rundebug-close" class="review-close" title="Close" aria-label="Close Run and Debug">&times;</button>
-      </header>
-      <div class="rundebug-empty">
-        <button id="rundebug-start" class="welcome-btn welcome-btn-primary"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg><span>Run and Debug</span></button>
-        <p class="rundebug-hint">Step through a real trace of the current Learning step or Workspace file.</p>
-        <p class="rundebug-hint">To customize Run and Debug, <a id="rundebug-launch" class="rundebug-link" role="button" tabindex="0">create a launch.json file</a>.</p>
-      </div>
-      <div class="rundebug-bps">
-        <div class="rundebug-bps-hdr"><span>Breakpoints</span><button id="bp-clear" class="rundebug-link" title="Remove all breakpoints">Remove all</button></div>
-        <div id="bp-list" class="bp-list"></div>
-      </div>
-    </aside>
-    <!-- Tests: discover #[test] functions in the open project and run one -->
-    <aside id="tests-overlay" class="codemap-drawer hidden" aria-label="Tests">
-      <header class="codemap-hdr">
-        <span class="codemap-label">Tests</span>
-        <span id="tests-count" class="codemap-title"></span>
-        <button id="tests-runall" class="test-run" title="Run the whole suite">Run all</button>
-        <button id="tests-refresh" class="assistant-iconbtn" title="Rescan" aria-label="Rescan tests">&#8635;</button>
-        <button id="tests-close" class="review-close" title="Close" aria-label="Close Tests">&times;</button>
-      </header>
-      <div id="tests-list" class="tests-list"></div>
-      <pre id="tests-output" class="tests-output" aria-label="Test output"></pre>
-    </aside>
-    <!-- Git: working-tree changes + unified diff (read-only) -->
-    <aside id="git-overlay" class="codemap-drawer hidden" aria-label="Source Control">
-      <header class="codemap-hdr">
-        <span class="codemap-label">Source Control</span>
-        <button id="git-branch" class="git-branch-btn" title="Switch or create branch" aria-label="Switch or create branch">⎇ —</button>
-        <span id="git-count" class="codemap-title"></span>
-        <button id="git-graph-toggle" class="assistant-iconbtn" title="Toggle commit graph" aria-label="Toggle commit graph">&#9696;</button>
-        <button id="git-stageall" class="assistant-iconbtn" title="Stage all changes" aria-label="Stage all changes">&#43;</button>
-        <button id="git-refresh" class="assistant-iconbtn" title="Refresh" aria-label="Refresh git changes">&#8635;</button>
-        <button id="git-close" class="review-close" title="Close" aria-label="Close Source Control">&times;</button>
-      </header>
-      <div id="git-branches" class="git-branches hidden" role="listbox" aria-label="Branches"></div>
-      <!-- SCM (changes) view -->
-      <div id="git-scm-view">
-        <div class="git-commit">
-          <textarea id="git-message" class="git-message" rows="2" placeholder="Message (Ctrl+Enter to commit)" aria-label="Commit message"></textarea>
-          <button id="git-commit-btn" class="git-commit-btn" title="Commit staged changes (Ctrl+Enter)">&#10003; Commit</button>
-        </div>
-        <div id="git-list" class="tests-list git-scm"></div>
-        <pre id="git-diff" class="git-diff" aria-label="Diff"></pre>
-      </div>
-      <!-- Commit graph view -->
-      <div id="git-graph-view" class="hidden">
-        <div id="git-graph-list" class="git-graph-list"></div>
-        <pre id="git-graph-detail" class="git-diff" aria-label="Commit detail"></pre>
-      </div>
-    </aside>
-    <!-- Global search: find literal text across the open project -->
-    <!-- Quick-open (Ctrl/Cmd+P): go to a file by name -->
-    <div id="quickopen-overlay" class="qo-overlay hidden">
-      <div class="qo-box">
-        <input id="qo-input" type="text" class="qo-input" placeholder="Go to file…" aria-label="Go to file" />
-        <div id="qo-list" class="qo-list"></div>
-      </div>
-    </div>
-    <!-- Styled in-app prompt (replaces the native window.prompt — aligned to the design). -->
-    <div id="uiprompt-overlay" class="uip-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="uip-title">
-      <div class="uip-box">
-        <div id="uip-title" class="uip-title"></div>
-        <input id="uip-input" type="text" class="uip-input" autocomplete="off" spellcheck="false" aria-labelledby="uip-title" />
-        <div id="uip-hint" class="uip-hint"></div>
-        <div class="uip-btns">
-          <button id="uip-cancel" class="uip-btn" type="button">Cancelar</button>
-          <button id="uip-ok" class="uip-btn primary" type="button">OK</button>
-        </div>
-      </div>
-    </div>
-    <aside id="search-overlay" class="codemap-drawer hidden" aria-label="Search">
-      <header class="codemap-hdr">
-        <span class="codemap-label">Search</span>
-        <span id="search-count" class="codemap-title"></span>
-        <button id="search-close" class="review-close" title="Close" aria-label="Close Search">&times;</button>
-      </header>
-      <div class="search-bar">
-        <input id="search-input" type="text" class="search-input" placeholder="Find in project…" aria-label="Search query" />
-        <label class="search-opt" title="Case sensitive"><input id="search-case" type="checkbox" /> Aa</label>
-      </div>
-      <div id="search-results" class="tests-list"></div>
-    </aside>
-    <!-- Code Review report + AI second-opinion prompt -->
-    <div id="report-overlay" class="overlay hidden">
-      <div class="report-box">
-        <header class="report-hdr">
-          <span>Code Review report &amp; AI second-opinion prompt</span>
-          <button id="report-close" class="review-close" title="Close" aria-label="Close report">&times;</button>
-        </header>
-        <textarea id="report-text" class="report-text" readonly aria-label="Report markdown"></textarea>
-        <div class="report-actions">
-          <button id="report-copy" class="btn btn-secondary">Copy</button>
-          <button id="report-download" class="btn btn-primary">Download .md</button>
-        </div>
-      </div>
-    </div>
-    <!-- Dev Assistant: chat drawer (local Ollama; streaming/providers in P4) -->
-    <aside id="assistant-overlay" class="assistant-drawer hidden" aria-label="Dev Assistant">
-      <div id="assistant-resizer" title="Drag to resize"></div>
-      <header class="assistant-hdr">
-        <span class="assistant-brand" aria-hidden="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2Z"/></svg></span>
-        <span class="assistant-title">Assistant</span>
-        <span class="assistant-hdr-spacer"></span>
-        <select id="assistant-project" class="assistant-provider assistant-project hidden" aria-label="Focused project" title="Project the assistant is focused on"></select>
-        <span id="assistant-model-h" class="assistant-model-h" title="Modelo activo — clica para trocar" role="button" tabindex="0">…</span>
-        <button id="assistant-new" class="assistant-iconbtn" title="New chat" aria-label="New chat"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-        <button id="assistant-history" class="assistant-iconbtn" title="Chat history" aria-label="Chat history"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></button>
-        <button id="assistant-dock" class="assistant-iconbtn" title="Dock / float panel" aria-label="Dock or float the panel">&#9707;</button>
-        <button id="assistant-settings" class="assistant-iconbtn" title="AI providers &amp; keys" aria-label="AI settings">&#9881;</button>
-        <button id="assistant-close" class="review-close" title="Close" aria-label="Close assistant">&times;</button>
-      </header>
-      <div id="assistant-history-panel" class="assistant-history-panel hidden"></div>
-      <div id="assistant-messages" class="assistant-messages"></div>
-      <!-- Faixa de uso (protótipo): preenchida/alternada por assistant.ts quando houver
-           dados reais de quota; fica oculta até lá para não mostrar números inventados. -->
-      <div id="assistant-usage" class="assistant-usage hidden" role="status">
-        <span class="au-dot" aria-hidden="true"></span>
-        <span id="assistant-usage-text" class="au-text"></span>
-        <button id="assistant-usage-see" class="au-link" type="button">Ver uso</button>
-        <button id="assistant-usage-x" class="au-x" type="button" title="Dispensar" aria-label="Dispensar">&times;</button>
-      </div>
-      <div id="assistant-running" class="assistant-running hidden">
-        <span class="ar-spin" aria-hidden="true"></span>
-        <span class="ar-label">A executar…</span>
-        <span class="ar-time"></span>
-        <span class="ar-keys" aria-hidden="true"><kbd>p</kbd> pausar <span class="ar-sep">·</span> <kbd>x</kbd> parar</span>
-        <button id="ar-stop" class="ar-stop" type="button">Parar</button>
-      </div>
-      <div class="assistant-compose">
-        <div id="assistant-project-label" class="assistant-project-label hidden"></div>
-        <div class="composer">
-          <div id="assistant-templates" class="assistant-templates hidden" role="listbox" aria-label="Prompt templates"></div>
-          <textarea id="assistant-input" class="assistant-input" rows="2" placeholder="Ask anything — / for prompt templates…" aria-label="Message"></textarea>
-          <div class="composer-bar">
-            <select id="assistant-provider" class="composer-model" aria-label="AI provider"></select>
-            <span id="assistant-model" class="assistant-model off">…</span>
-            <span class="composer-chip" title="Alterações aplicadas num worktree isolado"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="9" r="2.4"/><path d="M6 8.4v7.2"/><path d="M18 11.4c0 3-3 3.3-6 3.3"/></svg>worktree</span>
-            <span class="composer-spacer"></span>
-            <button id="assistant-send" class="composer-send" title="Send (Ctrl+Enter)" aria-label="Send"></button>
-          </div>
-        </div>
-        <div class="assistant-disclaimer">AI may make mistakes — you decide what to build; review every change.</div>
-      </div>
-    </aside>
-    <!-- Edit with me: interruptible AI-assisted editing (P4 §6) -->
-    <div id="edit-overlay" class="overlay hidden">
-      <div class="edit-box">
-        <header class="edit-hdr">
-          <span class="edit-title">Edit with me — <span id="edit-file"></span></span>
-          <span id="edit-status" class="edit-status"></span>
-          <button id="edit-close" class="review-close" title="Close" aria-label="Close editor">&times;</button>
-        </header>
-        <div class="edit-instr">
-          <input id="edit-instruction" class="edit-instruction" placeholder="Describe the change… (e.g. add error handling to parse())" aria-label="Edit instruction" />
-          <button id="edit-generate" class="btn btn-primary">Generate</button>
-        </div>
-        <div id="edit-diff" class="edit-diff"></div>
-        <div class="edit-actions">
-          <span class="edit-tip">Pause to take over — edit the right side by hand — then Continue.</span>
-          <button id="edit-pause" class="btn btn-secondary" disabled>Pause</button>
-          <button id="edit-apply" class="btn btn-primary" disabled>Apply</button>
-          <button id="edit-discard" class="btn btn-secondary">Discard</button>
-        </div>
-      </div>
-    </div>
-    <!-- AI providers & keys settings -->
-    <div id="providers-overlay" class="overlay hidden">
-      <div class="providers-box">
-        <header class="report-hdr">
-          <span>AI providers &amp; keys</span>
-          <button id="providers-close" class="review-close" title="Close" aria-label="Close settings">&times;</button>
-        </header>
-        <div class="providers-form">
-          <label>Default provider<select id="cfg-provider" aria-label="Default provider"></select></label>
-          <div id="providers-caps" class="providers-caps" aria-label="Provider capabilities"></div>
-          <label>Anthropic API key<input id="cfg-anthropic-key" type="password" autocomplete="off" placeholder="sk-ant-…" /></label>
-          <label>Anthropic workspace id<input id="cfg-anthropic-ws" autocomplete="off" placeholder="for org-scoped keys" /></label>
-          <label>Anthropic model<input id="cfg-assistant-model" autocomplete="off" placeholder="claude-haiku-4-5" /></label>
-          <label>OpenAI API key<input id="cfg-openai-key" type="password" autocomplete="off" placeholder="sk-…" /></label>
-          <label>Gemini API key<input id="cfg-gemini-key" type="password" autocomplete="off" placeholder="AIza…" /></label>
-          <label>Ollama host<input id="cfg-ollama-host" autocomplete="off" placeholder="http://localhost:11434" /></label>
-          <label>Ollama model<input id="cfg-ollama-model" autocomplete="off" placeholder="qwen2.5:latest" /></label>
-          <p class="providers-note">Stored locally at <code>~/.config/dxtutor/providers.json</code> (mode 0600). Environment variables are used as a fallback.</p>
-        </div>
-        <div class="report-actions">
-          <span id="providers-status" class="providers-status"></span>
-          <button id="providers-save" class="btn btn-primary">Save</button>
-        </div>
-      </div>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/app.ts"></script>
   </body>
 </html>
