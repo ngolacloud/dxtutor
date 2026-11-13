@@ -11,6 +11,7 @@ import { SHELL_STRINGS } from "./shell/strings";
 import { initTheme } from "./shell/theme";
 import { bootShell, rebuildChrome, setOpenFolderHandler } from "./shell";
 import { initWorkspace, openFolder } from "./shell/workspace";
+import { initTerminal } from "./shell/terminal";
 
 function hideBoot(): void {
   const b = document.getElementById("boot");
@@ -27,6 +28,7 @@ function main(): void {
   setOpenFolderHandler(() => void openFolder());
   onLocaleChange(() => rebuildChrome());
   bootShell();
+  initTerminal();                        // terminal real (PTY) no painel inferior
   hideBoot();
 }
 

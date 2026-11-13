@@ -249,7 +249,11 @@ function setPanelTab(pt: string): void {
   $$(".pcontent").forEach((c) => c.classList.remove("show"));
   $("#pc-" + pt)?.classList.add("show");
 }
+let terminalClearHandler: (() => void) | null = null;
+/** O terminal real (PTY) regista-se aqui; sem ele, mostra-se o placeholder. */
+export function setTerminalClearHandler(fn: () => void): void { terminalClearHandler = fn; }
 function termClear(): void {
+  if (terminalClearHandler) { terminalClearHandler(); return; }
   const el = $("#term");
   if (el) el.innerHTML = `<span class="dim">${esc(t("term.placeholder"))}</span>`;
 }

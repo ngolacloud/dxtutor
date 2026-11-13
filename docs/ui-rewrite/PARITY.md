@@ -19,7 +19,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 10 | Run & Debug (breakpoints/trace) | `debug_*`, `trace_execution`, `debug.ts` | pane `run` | ⬜ |
 | 11 | Testes (descobrir/correr) | `list_tests/run_test/run_all_tests`, `tests.ts` | pane `test` + painel Problems | ⬜ |
 | 12 | Problems (diagnósticos) | `get_diagnostics`, review | panel `problems` | ⬜ |
-| 13 | Terminal (PTY) | `pty_*`, `pty.rs` | panel `terminal` | ⬜ |
+| 13 | Terminal (PTY) | `pty_spawn/write/resize`, `pty://data` | panel `terminal` (xterm) | 🔶 |
 | 14 | Remote Explorer | `detect_projects`, `remote.ts` | pane `remote` | ⬜ |
 | 15 | Dev Containers (sessão/exec/run) | `devcontainer_*`, `remote.ts` | pane `containers` | ⬜ |
 | 16 | Explain (resumo lado-a-lado, stream) | `explain.ts`, chat stream | `VIEW` explain (split) | ⬜ |
