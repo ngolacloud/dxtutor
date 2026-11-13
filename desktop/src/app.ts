@@ -23,6 +23,7 @@ import { initDebug } from "./shell/debug";
 import { initStudio } from "./shell/studio";
 import { initLearn } from "./shell/learn";
 import { initCodev } from "./shell/codev";
+import { initEdit } from "./shell/edit";
 import { initGitflow } from "./shell/gitflow";
 import { initTeam } from "./shell/team";
 import { initBoard } from "./shell/board";
@@ -57,6 +58,7 @@ function main(): void {
   setGotoLineHandler((n) => revealLine(n));
   setFileListProvider(() => listWorkspaceFiles());
   onLocaleChange(() => rebuildChrome());
+  initEdit();                            // VIEW.diff → edição ancorada (dxpatch) revista no diff (Fase 2)
   bootShell();
   initCodev();                           // chat do dock Co-Dev → assistant_chat_stream (Fase 2→4)
   initTerminal();                        // terminal real (PTY) no painel inferior

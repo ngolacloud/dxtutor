@@ -321,6 +321,43 @@ export function activeFile(): string | null {
   return id && models.has(id) ? id : null;
 }
 
+/** Conteúdo VIVO de um ficheiro já aberto (o buffer do editor, que pode ter edições por
+ *  gravar), ou `null` se o ficheiro não está aberto. A edição ancorada resolve-se contra
+ *  este buffer quando existe — o conteúdo sujo é a verdade, não o disco. */
+export function currentFileContent(path: string): string | null {
+  const m = models.get(path);
+  return m ? m.getValue() : null;
+}
+
+/** Garante um modelo Monaco para `path`, lendo o disco quando ainda não está aberto. Não
+ *  activa o separador — serve de base coerente antes de aplicar uma edição. */
+async function ensureModel(path: string): Promise<monaco.editor.ITextModel | null> {
+  const existing = models.get(path);
+  if (existing) return existing;
+  let disk: string;
+  try { disk = await invoke<string>("read_text_file", { path }); }
+  catch { return null; }
+  return modelFor(path, disk);
+}
+
+/** Substitui todo o conteúdo de `path` por `content` como UMA edição desfazível (Ctrl+Z
+ *  reverte-a de uma vez) e grava no disco. Grava ANTES de activar o separador, para que o
+ *  `fileView` (que lê o disco de forma assíncrona) encontre disco==modelo e nunca sobreponha
+ *  a edição acabada de aplicar. Devolve false se o ficheiro não pôde ser lido/aberto. */
+export async function replaceFileContent(path: string, content: string): Promise<boolean> {
+  const m = await ensureModel(path);
+  if (!m) return false;
+  const ed = ensureEditor();
+  if (ed.getModel() !== m) ed.setModel(m);
+  ed.pushUndoStop();
+  m.pushEditOperations([], [{ range: m.getFullModelRange(), text: content }], () => null);
+  ed.pushUndoStop();
+  await saveNow(path, content, false);
+  openFile(path); // disco==modelo==content → o fileView não re-sobrepõe
+  ed.focus();
+  return true;
+}
+
 const WS_STRINGS = {
   en: {
     "ws.openFolder": "Open Folder", "ws.noFolder": "No folder opened",

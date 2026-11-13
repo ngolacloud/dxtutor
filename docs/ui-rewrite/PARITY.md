@@ -27,7 +27,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 18 | Command Palette + quick-open + go-to-linha | `list_files` / `revealLine` | `#pal` palette | ✅ |
 | 19 | Dev Assistant (chat streaming) | `assistant_chat_stream` + `llm://`, `list_providers` | dock `agent` | 🔶 |
 | 20 | Orquestração (plano/continue/auto/verify) | `assistant.ts`, `run_tests` | dock `agent` + run-ctl | ⬜ |
-| 21 | Edição ancorada (dxpatch) + conflito | `edit.ts`, `patch.ts`, `agent_isolated_patch` | editor (diff inline) | ⬜ |
+| 21 | Edição ancorada (dxpatch) + conflito | `shell/edit.ts`, `patch.ts` (puro) | separador `diff` (Monaco, só regiões alteradas) | 🔶 |
 | 22 | Tarefa isolada (worktree→patch) | `agent_task_submit/status/cancel` | agent (run in isolation) | ⬜ |
 | 23 | Architecture Studio (scaffold F8) | `arch_validate` (arch_scaffold → F8) | `VIEW.studio` | 🔶 |
 | 24 | Learning Track (cursos/avaliação) | `list_courses/get_course/submit_step/request_hint/run_drill` | pane `tutor` + `VIEW.lt` | 🔶 |

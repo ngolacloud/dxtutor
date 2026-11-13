@@ -13,8 +13,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { t, registerStrings } from "../i18n";
-import { activeFile } from "./workspace";
+import { activeFile, workspaceRoot } from "./workspace";
 import { toast, setPanelTab, setProvidersPanel } from "./index";
+import { offerAnchoredPatch, setPatchLog } from "./edit";
+
+/** Bloco ```dxpatch — removido da bolha para nunca despejar um patch como texto cru (é
+ *  aplicado como edição revista no diff). */
+const DXPATCH_RE = /```dxpatch\s*\n[\s\S]*?```/;
 
 /** Espelha `tutor_llm::chat::ProvidersConfig` (crates/tutor-llm/src/chat.rs). */
 interface ProvidersConfig {
@@ -157,6 +162,57 @@ async function withContext(text: string): Promise<string> {
   return `${t("codev.ctxHeader", { file })}\n\n\`\`\`\n${excerpt}\n\`\`\`\n\n${text}`;
 }
 
+// ── System prompt (modo projecto: assistente do workspace, edições ancoradas) ─────
+//
+// O Co-Dev da IDE é assistência em MODO PROJECTO — passamos `mode:"project"` ao backend
+// (o estudo tutor-constrangido vive no Learning Track, não aqui). Em modo projecto o
+// backend não injecta directiva de tutor; é o cliente que fundamenta o assistente no
+// projecto aberto e lhe ensina a gramática `dxpatch` (edições ancoradas por conteúdo). Sem
+// pasta aberta devolvemos null → chat genérico honesto, sem oferecer edições.
+const PROJECT_MODE = "project";
+
+function dxpatchSystem(root: string): string {
+  return (
+    "You are the dxtutor workspace assistant, working INSIDE the user's open project — not a " +
+    "generic chatbot. The developer decides what to build; you help. Ground every answer in " +
+    `THIS real project by its actual paths. Project root: ${root}.\n\n` +
+    "To CHANGE existing code (fix a bug, tweak a line, edit a function — ANY edit to a file " +
+    "that already has content), reply with a SHORT plan (1–3 lines) then EXACTLY ONE fenced " +
+    "block:\n" +
+    "```dxpatch\n" +
+    '{"file":"<path relative to root>","edits":[{"old":"<exact snippet copied VERBATIM from the file>","new":"<its replacement>"}]}\n' +
+    "```\n" +
+    "Rules that make this safe:\n" +
+    "  – `old` must be copied CHARACTER-FOR-CHARACTER from the file content you were shown " +
+    "(indentation and whitespace included). Do NOT retype from memory and do NOT use line numbers.\n" +
+    "  – Include ENOUGH surrounding context in `old` that it appears EXACTLY ONCE in the file. " +
+    "A non-unique or not-found `old` is REFUSED and nothing is applied — err on more context.\n" +
+    "  – Keep each `new` MINIMAL: change only what must change. Use several {old,new} hunks for " +
+    'several changes. To delete code, set `new` to "". NEVER rewrite the whole file to change part of it.\n' +
+    "  – For several files in one change, use {\"files\":[{\"file\":\"…\",\"edits\":[…]}, …]} — resolved " +
+    "atomically. Only edit files whose content you were shown; if you have not seen a file, ask to open it."
+  );
+}
+
+/** Constrói a mensagem `system` do modo projecto (fundamentação + gramática dxpatch +
+ *  conteúdo do ficheiro activo para ancorar). Devolve null sem pasta aberta. */
+async function buildSystemPrompt(): Promise<ChatMsg | null> {
+  const root = workspaceRoot();
+  if (!root) return null;
+  let activeBlock = "";
+  const file = activeFile();
+  if (file) {
+    try {
+      const content = await invoke<string>("read_text_file", { path: file });
+      const MAX = 12000;
+      const body = content.length > MAX ? content.slice(0, MAX) + "\n…(truncado)" : content;
+      const rel = file.startsWith(root) ? file.slice(root.replace(/\/$/, "").length + 1) : file;
+      activeBlock = `\n\nActive file (${rel}) — you HAVE its content; edit it directly with dxpatch, do not ask to re-open it:\n\`\`\`\n${body}\n\`\`\``;
+    } catch { /* sem acesso: segue sem o bloco */ }
+  }
+  return { role: "system", content: dxpatchSystem(root) + activeBlock };
+}
+
 // ── Envio + streaming ───────────────────────────────────────────────────────────
 async function send(): Promise<void> {
   const input = $<HTMLTextAreaElement>("#ag-input"); if (!input) return;
@@ -174,6 +230,11 @@ async function send(): Promise<void> {
   // histórico visível guarda o texto puro do utilizador.
   const content = await withContext(raw);
   history.push({ role: "user", content });
+
+  // Modo projecto: fundamenta o assistente no projecto e ensina-lhe a gramática dxpatch. O
+  // system é reconstruído a cada turno (como no assistant.ts) e NÃO entra no histórico.
+  const sys = await buildSystemPrompt();
+  const outgoing = sys ? [sys, ...history] : history;
 
   const bd = newAiBubble();
   const requestId = `codev-${Date.now()}-${++seq}`;
@@ -201,6 +262,9 @@ async function send(): Promise<void> {
     logOutput("recv", acc ? oneLine(acc) : t("codev.out.empty"));
     cleanup();
     scrollMsgs();
+    // Se a resposta traz um ```dxpatch, resolve-o ancorado e abre um diff para revisão —
+    // nunca é aplicado em silêncio nem despejado como texto cru.
+    void handlePatchBlock(acc, bd);
   });
   unlisteners.push(unDone);
 
@@ -216,15 +280,30 @@ async function send(): Promise<void> {
 
   try {
     await invoke("assistant_chat_stream", {
-      messages: history,
+      messages: outgoing,
       provider: activeProvider,
       model: activeModel,
       requestId,
+      mode: PROJECT_MODE,
     });
   } catch (err) {
     if (bd) bd.textContent = t("codev.error", { error: String(err) });
     cleanup();
   }
+}
+
+/** Detecta um `dxpatch` na resposta e, havendo, retira o bloco cru da bolha e delega a
+ *  resolução ancorada + revisão em diff ao módulo de edição. O histórico guarda o texto cru
+ *  (contexto para o modelo); a bolha mostra a versão sem o bloco + o estado honesto. */
+async function handlePatchBlock(acc: string, bd: HTMLElement | null): Promise<void> {
+  const out = await offerAnchoredPatch(acc);
+  if (out.kind === "none") return;
+  const shown = acc.replace(DXPATCH_RE, "").trim();
+  let note: string;
+  if (out.kind === "refused") { note = `⚠ ${out.reason}`; logOutput("error", out.reason); }
+  else { note = out.total > 1 ? t("codev.patch.reviewN", { n: out.total }) : t("codev.patch.review"); logOutput("recv", note); }
+  if (bd) bd.textContent = shown ? `${shown}\n${note}` : note;
+  scrollMsgs();
 }
 
 /** Nova conversa: limpa o histórico e repõe a intro curta. */
@@ -370,6 +449,9 @@ export function initCodev(): void {
   // Secção de provedores em Settings (real: get/save_providers_config).
   setProvidersPanel((host) => providersPanel(host));
 
+  // O desfecho de cada edição ancorada (aplicada/rejeitada/conflito) regista-se no Output·Co-Dev.
+  setPatchLog((msg) => logOutput("recv", msg));
+
   renderIntro();
   renderCtxPill();
   void refreshModelLabel();
@@ -396,6 +478,8 @@ const CODEV_STRINGS = {
     "codev.out.recv": "reply",
     "codev.out.error": "error",
     "codev.out.empty": "(empty reply)",
+    "codev.patch.review": "— anchored edit resolved; review it in the diff.",
+    "codev.patch.reviewN": "— {n}-file anchored changeset resolved; review each diff.",
     "codev.providers.loading": "Loading providers…",
     "codev.providers.loadErr": "Could not read the provider settings.",
     "codev.providers.anthropicKey": "Anthropic API key",
@@ -422,6 +506,8 @@ const CODEV_STRINGS = {
     "codev.out.recv": "resposta",
     "codev.out.error": "erro",
     "codev.out.empty": "(resposta vazia)",
+    "codev.patch.review": "— edição ancorada resolvida; revê-a no diff.",
+    "codev.patch.reviewN": "— conjunto ancorado de {n} ficheiros resolvido; revê cada diff.",
     "codev.providers.loading": "A carregar provedores…",
     "codev.providers.loadErr": "Não foi possível ler as definições dos provedores.",
     "codev.providers.anthropicKey": "Chave de API Anthropic",
