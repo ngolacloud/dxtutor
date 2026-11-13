@@ -12,7 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { t, registerStrings } from "../i18n";
-import { VIEW, openTab, addCommand, toast, setRunStackHandler, setStopStackHandler, type Tab } from "./index";
+import { VIEW, openTab, addCommand, toast, setRunStackHandler, setStopStackHandler, setPanelTab, type Tab } from "./index";
 import { workspaceRoot } from "./workspace";
 import { runInTerminal } from "./terminal";
 
@@ -277,6 +277,51 @@ function stopStack(): void {
   runInTerminal(`cd ${shQuote(root)} && docker compose down`);
 }
 
+// ── Vista Services (painel inferior #pc-services) ───────────────────────────────────
+// Consome o comando REAL `compose_ps` (parse de `docker compose ps --format json` no backend).
+// Estados honestos: sem pasta aberta; docker/stack ausente (erro propagado); stack parada.
+interface ComposeService { name: string; service: string; state: string; status: string; image: string; ports: string[] }
+let servicesBusy = false;
+
+async function renderServices(): Promise<void> {
+  const host = el("pc-services"); if (!host) return;
+  const root = workspaceRoot();
+  const head = `<div class="svc-head"><b>${esc(t("services.title"))}</b>`
+    + `<span class="sp" style="flex:1"></span>`
+    + `<button class="mini" id="svc-refresh">${esc(t("services.refresh"))}</button>`
+    + `<button class="mini" id="svc-stop">${esc(t("services.stop"))}</button></div>`;
+  const wire = (): void => {
+    const r = el("svc-refresh"); if (r) r.onclick = () => void renderServices();
+    const s = el("svc-stop"); if (s) s.onclick = () => { stopStack(); };
+  };
+  if (!root) { host.innerHTML = head + `<div class="sec-empty">${esc(t("studio.noFolder"))}</div>`; wire(); return; }
+  if (servicesBusy) return;
+  servicesBusy = true;
+  host.innerHTML = head + `<div class="sec-empty">${esc(t("services.loading"))}</div>`; wire();
+  let svcs: ComposeService[] = [];
+  let error = "";
+  try { svcs = await invoke<ComposeService[]>("compose_ps", { root }); }
+  catch (e) { error = String(e); }
+  servicesBusy = false;
+  if (error) {
+    host.innerHTML = head + `<div class="st-f e" style="margin:8px 12px"><span>✖</span><div>${esc(error)}</div></div>`
+      + `<div class="sec-empty">${esc(t("services.hint"))}</div>`; wire(); return;
+  }
+  if (!svcs.length) {
+    host.innerHTML = head + `<div class="sec-empty">${esc(t("services.none"))}</div>`; wire(); return;
+  }
+  const dot = (st: string): string => {
+    const run = /running|up|healthy/i.test(st);
+    return `<span class="pdot" style="background:${run ? "var(--green)" : "var(--fg-muted)"}"></span>`;
+  };
+  const rows = svcs.map((s) =>
+    `<tr><td>${dot(s.state)}${esc(s.service || s.name)}</td><td>${esc(s.status || s.state)}</td>`
+    + `<td style="color:var(--fg-muted)">${esc(s.image)}</td><td style="font-family:var(--font-mono)">${esc(s.ports.join(", "))}</td></tr>`).join("");
+  host.innerHTML = head
+    + `<table class="svc-tbl"><thead><tr><th>${esc(t("services.colService"))}</th><th>${esc(t("services.colStatus"))}</th><th>${esc(t("services.colImage"))}</th><th>${esc(t("services.colPorts"))}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  wire();
+}
+
 // Bloco de resultado da geração, mostrado na visão geral do inspector.
 function scaffoldBlock(): string {
   if (scaffolding) return `<div class="st-kv" style="margin-top:12px"><span>…</span><code>${esc(t("studio.scaffolding"))}</code></div>`;
@@ -481,6 +526,10 @@ export function initStudio(): void {
   setStopStackHandler(stopStack);
   addCommand({ id: "stack:run", label: () => t("studio.cmdRun"), run: runStack });
   addCommand({ id: "stack:stop", label: () => t("studio.cmdStop"), run: stopStack });
+  // Vista Services (#pc-services) ← compose_ps. Renderiza ao abrir a aba e por comando.
+  const svcTab = document.querySelector<HTMLElement>('[data-pt="services"]');
+  if (svcTab) svcTab.addEventListener("click", () => void renderServices());
+  addCommand({ id: "services:open", label: () => t("services.cmdOpen"), run: () => { setPanelTab("services"); void renderServices(); } });
 }
 
 const STUDIO_STRINGS = {
@@ -503,6 +552,17 @@ const STUDIO_STRINGS = {
     "studio.runTip": "Run `docker compose up --build -d` in the open folder (real terminal).",
     "studio.cmdRun": "Stack: run (docker compose up)",
     "studio.cmdStop": "Stack: stop (docker compose down)",
+    "services.cmdOpen": "Services: show running stack",
+    "services.title": "Services",
+    "services.refresh": "Refresh",
+    "services.stop": "Stop stack",
+    "services.loading": "Querying docker compose ps…",
+    "services.none": "No services running. Generate the scaffold, then ▶ RUN the stack.",
+    "services.hint": "Needs docker (or podman) with compose and a docker-compose.yml in the open folder.",
+    "services.colService": "Service",
+    "services.colStatus": "Status",
+    "services.colImage": "Image",
+    "services.colPorts": "Ports",
     "studio.nyi": "not implemented yet (Phase 8)",
     "studio.connectTitle": "Connect",
     "studio.connectFrom": "Click the component that depends on another.",
@@ -554,6 +614,17 @@ const STUDIO_STRINGS = {
     "studio.runTip": "Corre `docker compose up --build -d` na pasta aberta (terminal real).",
     "studio.cmdRun": "Stack: executar (docker compose up)",
     "studio.cmdStop": "Stack: parar (docker compose down)",
+    "services.cmdOpen": "Services: mostrar a stack em execução",
+    "services.title": "Services",
+    "services.refresh": "Actualizar",
+    "services.stop": "Parar stack",
+    "services.loading": "A consultar docker compose ps…",
+    "services.none": "Nenhum serviço a correr. Gera o scaffold e depois ▶ EXECUTA a stack.",
+    "services.hint": "Precisa de docker (ou podman) com compose e de um docker-compose.yml na pasta aberta.",
+    "services.colService": "Serviço",
+    "services.colStatus": "Estado",
+    "services.colImage": "Imagem",
+    "services.colPorts": "Portas",
     "studio.nyi": "ainda não implementado (Fase 8)",
     "studio.connectTitle": "Ligar",
     "studio.connectFrom": "Clica no componente que depende de outro.",

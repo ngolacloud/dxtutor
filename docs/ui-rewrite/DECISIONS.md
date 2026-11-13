@@ -68,6 +68,15 @@ Uma linha por decisão tomada perante ambiguidade (ordem cronológica).
   ausente → erro do spawn; sem stack/compose → mensagem do compose propagada. **O pane
   `#pc-services` fica por ligar** — vive em `index.ts`/`index.html`, em edição concorrente pelo
   dono, por isso evita-se tocar-lhes agora (só o backend, isolado, entra neste corte).
+- 2026-11-13 — **F8 (5.º corte) = vista Services (`#pc-services`) ligada ao `compose_ps`.** Nova
+  aba «Services» no painel inferior (botão em `index.html`) que renderiza a lista real de serviços
+  da stack: serviço/estado/imagem/portas, com Actualizar e Parar stack. Estados honestos — sem
+  pasta, docker/stack ausente (erro do backend propagado + dica), ou stack parada («gera o scaffold
+  e ▶ RUN»). Para NÃO colidir com a edição concorrente do dono em `index.ts`/`codev.ts`/`app.ts`, o
+  render e o wiring da aba vivem em `studio.ts` (já inicializado no arranque) e só se tocou
+  `index.html` (aba) — nenhum ficheiro «quente» do dono foi editado. A linha «Services (pane)» do
+  `PENDING.md` fica por remover porque esse ficheiro está em edição concorrente; passa a estar, de
+  facto, ligada. Verificação: `tsc+vite` verde; backend `compose_ps` testado em F8d.
 - 2026-11-13 — **Vistas do workspace reescritas de raiz** sobre os comandos Tauri reais, em vez de
   portar os módulos antigos (`workspace.ts`/`git.ts`/… acoplados ao DOM antigo de overlays). O
   backend (97 comandos) é a fonte de verdade; capacidades mais ricas (LSP, breakpoints, streaming)
