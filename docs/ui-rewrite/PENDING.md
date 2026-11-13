@@ -12,10 +12,8 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Diff | `VIEW.diff` | `diff_lines` por ligar | 2 |
 | Gitflow finish (merge+tag) | `VIEW.graph`/paleta | sem `git_merge`/`git_tag` no backend; mostra comandos p/ terminal | 6 |
-| Output · Co-Dev | panel `output` | log do Co-Dev por ligar | 4 |
 | Services | panel `services` | RUN de stack por ligar | 8 |
-| Co-Dev avançado (modos/conselho/juiz/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base já liga) | 4 |
-| Escolher modelo (UI de troca) / Settings providers | dock + Settings | `save_providers_config` + picker por ligar (rótulo já lê list_providers) | 4 |
+| Co-Dev avançado (conselho/juiz/auto-avaliação/checkpoints/cancelar) | dock `agent` | orquestração por ligar (chat-base + selector de modelo já ligam) | 4 |
 | Account | pane `account` | identidade/registo por definir | 5 |
 | Studio: gerar backlog / RUN | `VIEW.studio` | `arch_scaffold` + orquestração por ligar (validação já liga) | 8 |
 | Board: gerar backlog do Studio / executar sprint | `VIEW.board` | `arch_scaffold`+orquestração por ligar (kanban+auto-teste já ligam) | 8 |

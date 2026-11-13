@@ -166,6 +166,10 @@ export function setGotoLineHandler(fn: (n: number) => void): void { gotoLineHand
 let fileListProvider: (() => Promise<string[]>) | null = null;
 let quickFiles: string[] = [];
 export function setFileListProvider(fn: () => Promise<string[]>): void { fileListProvider = fn; }
+// Fase 4: o Co-Dev regista aqui o render da secção de provedores em Settings (evita
+// dependência circular, tal como os outros handlers injectados).
+let providersPanelMount: ((host: HTMLElement) => void) | null = null;
+export function setProvidersPanel(render: (host: HTMLElement) => void): void { providersPanelMount = render; }
 
 // ───────────────────────────── tab area + view router ──────────────────────────────
 function tabIc(t2: Tab): string {
@@ -553,10 +557,15 @@ VIEW.settings = (_tab, host) => {
     <div class="sub">${esc(t("settings.sub"))}</div>
     <h2>${esc(t("settings.language"))}</h2><div class="pgrid">${[["en", "English"], ["ptAO", "Português (Angola)"]].map(([code, label]) => `<button class="pcard${getLocale() === code ? " sel" : ""}" data-loc="${code}"><div class="ph">${esc(label)}${getLocale() === code ? '<span class="tag acc">✓</span>' : ""}</div></button>`).join("")}</div>
     <h2>${esc(t("settings.appearance"))}</h2><div class="pgrid">${Object.keys(THEMES).map((n) => `<button class="pcard${n === currentTheme() ? " sel" : ""}" data-theme="${esc(n)}"><div class="ph">${esc(n)}${n === currentTheme() ? '<span class="tag acc">activo</span>' : ""}</div></button>`).join("")}</div>
-    <h2>${esc(t("settings.providers"))}</h2><div class="pcard" style="max-width:520px"><div class="ph">${svg("shield")} ${esc(t("nyi.badge"))}</div><div class="pd">${esc(t("nyi.page", { phase: 4 }))}</div></div>
+    <h2>${esc(t("settings.providers"))}</h2><div id="settings-providers"></div>
     <h2>${esc(t("settings.shortcuts"))}</h2><div class="tbl-wrap">${CMD.filter((c) => c.key).map((c) => `<div class="rowline"><span>${esc(c.label)}</span><span class="sp"></span><kbd>${esc(c.key!)}</kbd></div>`).join("")}</div></div>`;
   host.querySelectorAll<HTMLElement>("[data-theme]").forEach((b) => (b.onclick = () => { setTheme(b.dataset.theme!); show("settings"); }));
   host.querySelectorAll<HTMLElement>("[data-loc]").forEach((b) => (b.onclick = () => setLocale(b.dataset.loc as Locale)));
+  const prov = host.querySelector<HTMLElement>("#settings-providers");
+  if (prov) {
+    if (providersPanelMount) providersPanelMount(prov);
+    else prov.innerHTML = `<div class="pcard" style="max-width:520px"><div class="ph">${svg("shield")} ${esc(t("nyi.badge"))}</div><div class="pd">${esc(t("nyi.page", { phase: 4 }))}</div></div>`;
+  }
   hydrate(host);
 };
 

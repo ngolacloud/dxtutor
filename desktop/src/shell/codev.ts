@@ -14,7 +14,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { t, registerStrings } from "../i18n";
 import { activeFile } from "./workspace";
-import { toast } from "./index";
+import { toast, setPanelTab, setProvidersPanel } from "./index";
+
+/** Espelha `tutor_llm::chat::ProvidersConfig` (crates/tutor-llm/src/chat.rs). */
+interface ProvidersConfig {
+  provider: string;
+  anthropicKey: string;
+  anthropicWorkspaceId: string;
+  openaiKey: string;
+  geminiKey: string;
+  ollamaHost: string;
+  ollamaModel: string;
+  assistantModel: string;
+}
 
 /** Um turno de conversa — espelha `tutor_llm::chat::ChatMsg { role, content }`. */
 interface ChatMsg { role: string; content: string }
@@ -90,27 +102,29 @@ function renderIntro(): void {
 // ── Modelo / provedor ──────────────────────────────────────────────────────────
 /** Lê os provedores reais e mostra o modelo activo em #ag-model-l (ou estado honesto). */
 async function refreshModelLabel(): Promise<void> {
-  const label = $("#ag-model-l");
-  const dot = $<HTMLElement>("#ag-model .live");
   let providers: ProviderInfo[] = [];
   try { providers = await invoke<ProviderInfo[]>("list_providers"); }
   catch { providers = []; }
-  const ready = providers.find((p) => p.available) || null;
-  if (!ready) {
+  const avail = providers.filter((p) => p.available);
+  if (!avail.length) {
     activeProvider = null;
     activeModel = null;
-    if (label) label.textContent = t("codev.noProvider");
-    if (dot) dot.style.background = "var(--fg-muted)";
+    applyModelLabel(providers);
     return;
   }
+  // Restaura a escolha persistida se ainda estiver disponível; senão o 1.º disponível.
+  let savedP: string | null = null, savedM: string | null = null;
+  try { savedP = localStorage.getItem("dxtutor.codev.provider"); savedM = localStorage.getItem("dxtutor.codev.model"); } catch { /* */ }
+  const ready = (savedP && avail.find((p) => p.id === savedP)) || avail[0];
   activeProvider = ready.id;
   // Ollama traz os modelos locais em `models`; para os restantes o backend escolhe.
   if (ready.id === "ollama" && ready.models.length === 0) {
     try { ready.models = await invoke<string[]>("assistant_models"); } catch { /* backend ausente */ }
   }
-  activeModel = ready.models.length ? ready.models[0] : null;
-  if (label) label.textContent = activeModel ? `${ready.name} · ${activeModel}` : ready.name;
-  if (dot) dot.style.background = "var(--green)";
+  activeModel = savedP === ready.id && savedM && ready.models.includes(savedM)
+    ? savedM
+    : (ready.models.length ? ready.models[0] : null);
+  applyModelLabel(providers);
 }
 
 // ── Contexto (ficheiro activo) ──────────────────────────────────────────────────
@@ -154,6 +168,7 @@ async function send(): Promise<void> {
 
   input.value = "";
   pushUserBubble(raw);
+  logOutput("sent", oneLine(raw));
 
   // A mensagem enviada ao modelo pode levar o ficheiro activo como contexto; o
   // histórico visível guarda o texto puro do utilizador.
@@ -183,6 +198,7 @@ async function send(): Promise<void> {
     if (e.payload.requestId !== requestId) return;
     if (bd && first) bd.textContent = ""; // resposta vazia honesta
     history.push({ role: "assistant", content: acc });
+    logOutput("recv", acc ? oneLine(acc) : t("codev.out.empty"));
     cleanup();
     scrollMsgs();
   });
@@ -191,6 +207,7 @@ async function send(): Promise<void> {
   const unError = await listen<ErrorEvt>("llm://error", (e) => {
     if (e.payload.requestId !== requestId) return;
     if (bd) bd.textContent = t("codev.error", { error: e.payload.error });
+    logOutput("error", e.payload.error);
     // Não se guarda no histórico uma resposta que falhou; a mensagem do utilizador fica.
     cleanup();
     scrollMsgs();
@@ -215,6 +232,113 @@ function newChat(): void {
   if (busy) { toast(t("codev.busy")); return; }
   history.length = 0;
   renderIntro();
+  clearOutput();
+}
+
+// ── Output · Co-Dev (registo honesto da actividade do dock) ─────────────────────────
+/** Acrescenta uma linha com carimbo de tempo ao painel inferior Output·Co-Dev. */
+function logOutput(kind: "sent" | "recv" | "error", msg: string): void {
+  const out = $("#pc-output"); if (!out) return;
+  const cls = kind === "error" ? "er" : kind === "sent" ? "dim" : "ok";
+  const tag = t("codev.out." + kind);
+  const line = document.createElement("div");
+  line.className = "oline";
+  line.innerHTML = `<span class="ts">${hhmm()}</span> <span class="${cls}">${tag}</span> `;
+  line.appendChild(document.createTextNode(msg)); // texto como nó: sem injecção
+  out.appendChild(line);
+  out.scrollTop = out.scrollHeight;
+}
+function clearOutput(): void { const out = $("#pc-output"); if (out) out.innerHTML = ""; }
+const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim().slice(0, 160);
+
+// ── Selector de modelo (real: list_providers + modelos de cada provedor) ───────────
+let pickerOpen = false;
+async function pickModel(anchorSel: string): Promise<void> {
+  if (pickerOpen) { closePicker(); return; }
+  let providers: ProviderInfo[] = [];
+  try { providers = await invoke<ProviderInfo[]>("list_providers"); } catch { providers = []; }
+  const avail = providers.filter((p) => p.available);
+  if (!avail.length) { toast(t("codev.noProvider")); return; }
+  // Expande cada provedor nos seus modelos (Ollama traz locais; outros via assistant_models).
+  const items: Array<{ provider: string; model: string | null; label: string }> = [];
+  for (const p of avail) {
+    let models = p.models;
+    if (p.id === "ollama" && models.length === 0) {
+      try { models = await invoke<string[]>("assistant_models"); } catch { models = []; }
+    }
+    if (models.length) for (const m of models) items.push({ provider: p.id, model: m, label: `${p.name} · ${m}` });
+    else items.push({ provider: p.id, model: null, label: p.name });
+  }
+  const anchor = $(anchorSel); if (!anchor) return;
+  const r = anchor.getBoundingClientRect();
+  const pop = document.createElement("div");
+  pop.className = "menu-pop show"; pop.id = "codev-model-pop";
+  pop.style.minWidth = "220px";
+  items.forEach((it) => {
+    const mi = document.createElement("div");
+    mi.className = "mi" + (it.provider === activeProvider && it.model === activeModel ? " has-key" : "");
+    mi.innerHTML = `<span>${it.label}</span>` + (it.provider === activeProvider && it.model === activeModel ? '<span class="key">✓</span>' : "");
+    mi.onclick = (e) => {
+      e.stopPropagation();
+      activeProvider = it.provider; activeModel = it.model;
+      try { localStorage.setItem("dxtutor.codev.provider", it.provider); localStorage.setItem("dxtutor.codev.model", it.model || ""); } catch { /* */ }
+      applyModelLabel(providers);
+      closePicker();
+    };
+    pop.appendChild(mi);
+  });
+  document.body.appendChild(pop);
+  pickerOpen = true;
+  let top = r.bottom + 4; const h = pop.offsetHeight;
+  if (top + h > innerHeight) top = Math.max(6, r.top - h - 4);
+  pop.style.left = Math.max(6, Math.min(innerWidth - pop.offsetWidth - 6, r.left)) + "px";
+  pop.style.top = top + "px";
+  setTimeout(() => document.addEventListener("click", closePicker, { once: true }), 0);
+}
+function closePicker(): void { $("#codev-model-pop")?.remove(); pickerOpen = false; }
+
+/** Escreve o rótulo do modelo activo em #ag-model-l e #st-model-l + ponto de vida. */
+function applyModelLabel(providers: ProviderInfo[]): void {
+  const label = $("#ag-model-l"); const st = $("#st-model-l");
+  const dot = $<HTMLElement>("#ag-model .live");
+  const p = providers.find((x) => x.id === activeProvider);
+  const text = p ? (activeModel ? `${p.name} · ${activeModel}` : p.name) : t("codev.noProvider");
+  if (label) label.textContent = text;
+  if (st) st.textContent = p ? p.name : "Co-Dev";
+  if (dot) dot.style.background = activeProvider ? "var(--green)" : "var(--fg-muted)";
+}
+
+// ── Provedores em Settings (real: get/save_providers_config) ────────────────────────
+function providersPanel(host: HTMLElement): void {
+  host.innerHTML = `<div class="sec-empty">${t("codev.providers.loading")}</div>`;
+  void invoke<ProvidersConfig>("get_providers_config").then((cfg) => renderProvidersForm(host, cfg))
+    .catch(() => { host.innerHTML = `<div class="sec-empty">${t("codev.providers.loadErr")}</div>`; });
+}
+function renderProvidersForm(host: HTMLElement, cfg: ProvidersConfig): void {
+  const field = (key: keyof ProvidersConfig, labelKey: string, type = "password"): string =>
+    `<label style="display:block;margin:8px 0 2px;font-size:11px;color:var(--fg-muted)">${t(labelKey)}</label>`
+    + `<input data-cfg="${key}" type="${type}" value="${String(cfg[key] ?? "").replace(/"/g, "&quot;")}" style="width:100%;max-width:480px"/>`;
+  host.innerHTML = `<div class="pcard" style="max-width:520px">
+    ${field("anthropicKey", "codev.providers.anthropicKey")}
+    ${field("openaiKey", "codev.providers.openaiKey")}
+    ${field("geminiKey", "codev.providers.geminiKey")}
+    ${field("ollamaHost", "codev.providers.ollamaHost", "text")}
+    ${field("ollamaModel", "codev.providers.ollamaModel", "text")}
+    <div style="margin-top:12px"><button class="btn" id="cfg-save">${t("codev.providers.save")}</button>
+    <span id="cfg-status" style="margin-left:10px;font-size:12px"></span></div>
+    <div class="pd" style="margin-top:8px">${t("codev.providers.note")}</div></div>`;
+  const save = host.querySelector<HTMLElement>("#cfg-save");
+  if (save) save.onclick = () => {
+    const next: ProvidersConfig = { ...cfg };
+    host.querySelectorAll<HTMLInputElement>("[data-cfg]").forEach((i) => {
+      (next as unknown as Record<string, string>)[i.dataset.cfg!] = i.value;
+    });
+    const status = host.querySelector<HTMLElement>("#cfg-status");
+    void invoke("save_providers_config", { config: next }).then(() => {
+      if (status) { status.textContent = t("codev.providers.saved"); status.style.color = "var(--green)"; }
+      void refreshModelLabel(); // o provedor pode ter passado a disponível
+    }).catch((e) => { if (status) { status.textContent = String(e); status.style.color = "var(--red)"; } });
+  };
 }
 
 // ── Arranque ──────────────────────────────────────────────────────────────────
@@ -237,10 +361,22 @@ export function initCodev(): void {
   const ctxBtn = $("#pill-ctx");
   if (ctxBtn) ctxBtn.onclick = () => toggleCtx();
 
+  // Selector de modelo real (dock + barra de estado) — reassume o aviso da casca.
+  const modelBtn = $("#ag-model");
+  if (modelBtn) modelBtn.onclick = (e) => { e.stopPropagation(); void pickModel("#ag-model"); };
+  const stModel = $("#st-model");
+  if (stModel) stModel.onclick = (e) => { e.stopPropagation(); void pickModel("#st-model"); };
+
+  // Secção de provedores em Settings (real: get/save_providers_config).
+  setProvidersPanel((host) => providersPanel(host));
+
   renderIntro();
   renderCtxPill();
   void refreshModelLabel();
 }
+
+/** Mostra o painel Output·Co-Dev (usado pelos comandos/atalhos da casca). */
+export function showCodevOutput(): void { setPanelTab("output"); }
 
 // Chaves NOVAS (codev.*). As já registadas pela casca (placeholder, intro, send,
 // newChat, pickModel, ctx…) NÃO são redefinidas aqui.
@@ -256,6 +392,20 @@ const CODEV_STRINGS = {
     "codev.ctxOff": "Context off.",
     "codev.ctxNone": "no file",
     "codev.ctxHeader": "Active file as context: {file}",
+    "codev.out.sent": "sent",
+    "codev.out.recv": "reply",
+    "codev.out.error": "error",
+    "codev.out.empty": "(empty reply)",
+    "codev.providers.loading": "Loading providers…",
+    "codev.providers.loadErr": "Could not read the provider settings.",
+    "codev.providers.anthropicKey": "Anthropic API key",
+    "codev.providers.openaiKey": "OpenAI API key",
+    "codev.providers.geminiKey": "Gemini API key",
+    "codev.providers.ollamaHost": "Ollama host (e.g. http://localhost:11434)",
+    "codev.providers.ollamaModel": "Ollama model",
+    "codev.providers.save": "Save",
+    "codev.providers.saved": "Saved.",
+    "codev.providers.note": "Keys are stored locally at ~/.config/dxtutor/providers.json (mode 0600). Empty fields fall back to the matching environment variable.",
   },
   ptAO: {
     "codev.you": "tu",
@@ -268,5 +418,19 @@ const CODEV_STRINGS = {
     "codev.ctxOff": "Contexto desligado.",
     "codev.ctxNone": "sem ficheiro",
     "codev.ctxHeader": "Ficheiro activo como contexto: {file}",
+    "codev.out.sent": "enviado",
+    "codev.out.recv": "resposta",
+    "codev.out.error": "erro",
+    "codev.out.empty": "(resposta vazia)",
+    "codev.providers.loading": "A carregar provedores…",
+    "codev.providers.loadErr": "Não foi possível ler as definições dos provedores.",
+    "codev.providers.anthropicKey": "Chave de API Anthropic",
+    "codev.providers.openaiKey": "Chave de API OpenAI",
+    "codev.providers.geminiKey": "Chave de API Gemini",
+    "codev.providers.ollamaHost": "Host Ollama (ex.: http://localhost:11434)",
+    "codev.providers.ollamaModel": "Modelo Ollama",
+    "codev.providers.save": "Guardar",
+    "codev.providers.saved": "Guardado.",
+    "codev.providers.note": "As chaves ficam localmente em ~/.config/dxtutor/providers.json (modo 0600). Campos vazios recorrem à variável de ambiente correspondente.",
   },
 };
