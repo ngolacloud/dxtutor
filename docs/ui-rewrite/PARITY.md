@@ -23,7 +23,7 @@ Verificar = abrir a app na nova casca e observar o comportamento real (não «o 
 | 14 | Remote Explorer | `detect_projects`, `remote.ts` | pane `remote` | ⬜ |
 | 15 | Dev Containers (sessão/exec/run) | `devcontainer_*`, `remote.ts` | pane `containers` | ⬜ |
 | 16 | Explain (resumo lado-a-lado, stream) | `explain.ts`, chat stream | `VIEW` explain (split) | ⬜ |
-| 17 | Review (offline + fix ancorado) | `review_code/verify_review_fix`, `review.ts` | `VIEW.analysis` / pane | ⬜ |
+| 17 | Review (achados; aplicar-fix pend.) | `review_code` (list_review_analyzers/verify_fix pend.) | `VIEW.analysis` + paleta | 🔶 |
 | 18 | Quick Open / Command Palette | `list_files`, `quickopen.ts` | `#pal` palette | ⬜ |
 | 19 | Dev Assistant (chat, providers) | `assistant_chat_stream`, `assistant.ts` | dock `agent` | ⬜ |
 | 20 | Orquestração (plano/continue/auto/verify) | `assistant.ts`, `run_tests` | dock `agent` + run-ctl | ⬜ |

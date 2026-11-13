@@ -296,7 +296,16 @@ function buildCmds(): void {
     ...Object.keys(THEMES).map((n) => ({ id: "theme:" + n, label: t("cmd.theme") + " — " + n, key: "", run: () => setTheme(n) })),
     { id: "lang:en", label: t("cmd.lang") + " — English", run: () => setLocale("en") },
     { id: "lang:ptAO", label: t("cmd.lang") + " — Português (Angola)", run: () => setLocale("ptAO" as Locale) },
+    ...extraCommands.map((x) => ({ id: x.id, label: x.label(), key: x.key, run: x.run })),
   ];
+}
+
+// Comandos extra registados por módulos de feature (review, explain, …).
+interface ExtraCmd { id: string; label: () => string; key?: string; run: () => void }
+const extraCommands: ExtraCmd[] = [];
+export function addCommand(c: ExtraCmd): void {
+  if (!extraCommands.some((x) => x.id === c.id)) extraCommands.push(c);
+  buildCmds();
 }
 
 function palette(pre: string): void {

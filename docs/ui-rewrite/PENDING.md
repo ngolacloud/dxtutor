@@ -8,6 +8,7 @@ mas ainda não está ligada ao backend real. Regra: nunca simular em silêncio; 
 |------------|------|-----------------|---------------|
 | Substituir-tudo (pesquisa) | pane `search` | sem comando backend; replace client-side por fazer | 2 |
 | Descartar/diff (SCM) | pane `scm` | `git checkout --` (sem comando) / `git_diff` por ligar | 2 |
+| Aplicar correcção (review) | `VIEW.analysis` | `verify_review_fix` + content_version por ligar | 2 |
 | Run and Debug | pane `run` | `debug_*`/`trace_execution` por ligar | 2 |
 | Extensions | pane `ext` | catálogo de extensões por definir | 2 |
 | Remote Explorer | pane `remote` | `detect_projects` por ligar | 2 |
